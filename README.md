@@ -138,59 +138,163 @@ Note what you did *not* write: no loop over deployments, no `allow` rule, no
 violation strings, no handling of the missing `approved_by`. You declared one
 set and one clause.
 
-### Reading the report
+### The report, in full
 
-The verdict:
-
-```json
-"compliant": false
-```
-
-The per-set summary — three deployments in the input, two of them in scope
-after the filter, and the set is not satisfied because one of those two has no
-approver:
+This is the entire output of that command, verbatim — nothing elided, so you
+can read the shape without running anything. Key order is `opa eval`'s
+(alphabetical). The only cosmetic difference: raw `opa` output writes the `>` of
+`>=` as a unicode escape, shown here as a plain character.
 
 ```json
-"sets": [
-  {
-    "name": "prod_deploy",
-    "quantifier": "every",
-    "satisfied": false,
-    "subjects": {"total": 3, "matching": 2},
-    "clauses": {
-      "approved": {
-        "description": "A named approver signed off on the deployment",
-        "op": "non_empty_string",
-        "path": ["approved_by"],
-        "expression": "approved_by is a non-empty string"
-      },
-      "$min_count": {
-        "description": "at least 1 matching deployment subject(s) required",
-        "expression": "count(matching(deployments)) >= 1"
-      },
-      "$matches_filter": {
-        "description": "subject qualifies as a deployment under this set's filter; non-matching subjects are recorded but not evaluated",
-        "expression": "environment == prod"
+{
+  "compliant": false,
+  "results": [
+    {
+      "inputs": [
+        {
+          "name": "count(matching(deployments))",
+          "value": 2
+        }
+      ],
+      "passed": true,
+      "predicate": "$min_count",
+      "set": "prod_deploy",
+      "subject": {
+        "id": null,
+        "type": "deployment"
+      }
+    },
+    {
+      "inputs": [
+        {
+          "name": "environment",
+          "value": "prod"
+        }
+      ],
+      "passed": true,
+      "predicate": "$matches_filter",
+      "set": "prod_deploy",
+      "subject": {
+        "id": "d-1",
+        "type": "deployment"
+      }
+    },
+    {
+      "inputs": [
+        {
+          "name": "environment",
+          "value": "prod"
+        }
+      ],
+      "passed": true,
+      "predicate": "$matches_filter",
+      "set": "prod_deploy",
+      "subject": {
+        "id": "d-2",
+        "type": "deployment"
+      }
+    },
+    {
+      "inputs": [
+        {
+          "name": "environment",
+          "value": "staging"
+        }
+      ],
+      "passed": false,
+      "predicate": "$matches_filter",
+      "set": "prod_deploy",
+      "subject": {
+        "id": "d-3",
+        "type": "deployment"
+      }
+    },
+    {
+      "inputs": [
+        {
+          "name": "approved_by",
+          "value": "bob"
+        }
+      ],
+      "passed": true,
+      "predicate": "approved",
+      "set": "prod_deploy",
+      "subject": {
+        "id": "d-1",
+        "type": "deployment"
+      }
+    },
+    {
+      "inputs": [
+        {
+          "name": "approved_by",
+          "value": null
+        }
+      ],
+      "passed": false,
+      "predicate": "approved",
+      "set": "prod_deploy",
+      "subject": {
+        "id": "d-2",
+        "type": "deployment"
       }
     }
-  }
-]
+  ],
+  "sets": [
+    {
+      "clauses": {
+        "$matches_filter": {
+          "description": "subject qualifies as a deployment under this set's filter; non-matching subjects are recorded but not evaluated",
+          "expression": "environment == prod"
+        },
+        "$min_count": {
+          "description": "at least 1 matching deployment subject(s) required",
+          "expression": "count(matching(deployments)) >= 1"
+        },
+        "approved": {
+          "description": "A named approver signed off on the deployment",
+          "expression": "approved_by is a non-empty string",
+          "op": "non_empty_string",
+          "path": [
+            "approved_by"
+          ]
+        }
+      },
+      "name": "prod_deploy",
+      "quantifier": "every",
+      "satisfied": false,
+      "subjects": {
+        "matching": 2,
+        "total": 3
+      }
+    }
+  ]
+}
 ```
 
+Three parts: the `compliant` roll-up, the `results` rows (the evidence), and
+the `sets` summary (the definitions, plus each set's own verdict). Note
+`subjects: {total: 3, matching: 2}` — three deployments in the input, two in
+scope after the filter — and `satisfied: false`, because one of those two has
+no approver.
+
 `expression` is rendered by the library from the clause spec — you get a
-human-readable form of the check for free. You only write `expression` yourself
-for custom ops, where the library can't derive it.
+human-readable form of each check for free. You only write `expression`
+yourself for custom ops, where the library can't derive it.
 
-And the evidence itself, six rows for one clause and three deployments:
+### Reading the rows
 
-| set | subject | predicate | inputs | passed |
+The same six rows, condensed. Row order is deterministic: `$min_count` rows
+first, then `$matches_filter` rows, then clause rows.
+
+| set | subject.id | predicate | inputs | passed |
 | --- | --- | --- | --- | --- |
-| prod_deploy | *(set-level, `id: null`)* | `$min_count` | `count(matching(deployments)) = 2` | ✅ |
-| prod_deploy | d-1 | `$matches_filter` | `environment = "prod"` | ✅ |
-| prod_deploy | d-2 | `$matches_filter` | `environment = "prod"` | ✅ |
-| prod_deploy | d-3 | `$matches_filter` | `environment = "staging"` | ❌ |
-| prod_deploy | d-1 | `approved` | `approved_by = "bob"` | ✅ |
-| prod_deploy | d-2 | `approved` | `approved_by = null` | ❌ |
+| prod_deploy | `null` *(set-level)* | `$min_count` | `count(matching(deployments)) = 2` | ✅ |
+| prod_deploy | `"d-1"` | `$matches_filter` | `environment = "prod"` | ✅ |
+| prod_deploy | `"d-2"` | `$matches_filter` | `environment = "prod"` | ✅ |
+| prod_deploy | `"d-3"` | `$matches_filter` | `environment = "staging"` | ❌ |
+| prod_deploy | `"d-1"` | `approved` | `approved_by = "bob"` | ✅ |
+| prod_deploy | `"d-2"` | `approved` | `approved_by = null` | ❌ |
 
 Three things to take from that table:
 
@@ -211,10 +315,78 @@ Three things to take from that table:
      `matching: 2` discrepancy. It gets no clause rows — it was never
      evaluated.
 
-That last point matters when you project violations: **`$matches_filter`
-failures are not violations.** Being out of scope isn't a breach. `$min_count`
-failures *are* — "no production deployment at all" is exactly what that guard
-exists to report. See `violations` in `examples/code_review.rego`.
+### Which subject failed?
+
+Failing subjects are found by filtering `results` on `passed == false` and
+reading `subject.id`. There is no separate list of failures in the report — the
+rows *are* the list, and that's deliberate: a passing row and a failing row
+carry exactly the same fields, so a consumer never has to handle two shapes.
+
+The one thing to get right is that not every failing row means "this subject
+breached the policy". Three kinds of row, three meanings:
+
+| Failing row | `subject.id` | What it means | A violation? |
+| --- | --- | --- | --- |
+| your own predicate (`approved`) | the subject that failed | this subject breached this check | **yes** |
+| `$matches_filter` | the subject that didn't qualify | out of scope, never evaluated | **no** |
+| `$min_count` | `null` — the row is about the set, not a subject | too few in-scope subjects existed | **yes** |
+
+So `d-3` above is not a problem; `d-2` is. And `subject.id` is `null` on
+`$min_count` rows because there is no single subject to blame — "no production
+deployment at all" is a fact about the set.
+
+In Rego, the failing ids are one comprehension:
+
+```rego
+failing_subjects contains id if {
+	some r in report.results
+	r.passed == false
+	r.predicate != "$matches_filter"
+	id := r.subject.id
+}
+```
+
+→ `["d-2"]`
+
+For a human-readable message, join the row back to its clause definition
+through `(set, predicate)` to pick up the `description`. This is the pattern
+`examples/code_review.rego` uses, with one extra guard: only project from sets
+that aren't satisfied, so that in a `some`-quantified set the failing rows of
+the *other* subjects don't turn into violations when one subject did meet
+everything.
+
+```rego
+violations contains msg if {
+	some s in report.sets
+	not s.satisfied
+	some r in report.results
+	r.set == s.name
+	r.passed == false
+	r.predicate != "$matches_filter"
+	description := object.get(s.clauses, [r.predicate, "description"], "")
+	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.predicate, description])
+}
+```
+
+→ `["deployment 'd-2': approved — A named approver signed off on the deployment"]`
+
+Note `object.get(s.clauses, [r.predicate, ...])`, not a lookup by predicate name
+alone. Two different sets may reuse a predicate name for unrelated checks, so
+the `set` half of the pair is what makes the lookup unambiguous.
+
+From outside Rego, the same projection over the report JSON:
+
+```sh
+opa eval -d path/to/src/library.rego -d prod_deploy.rego -i deployments.json \
+  --format=pretty 'data.tutorial.report' \
+  | jq -r '.results[] | select(.passed == false)
+           | "\(.subject.type) \(.subject.id // "(set-level)"): \(.predicate) — inputs: \(.inputs | map("\(.name)=\(.value|tojson)") | join(", "))"'
+```
+
+```
+deployment d-3: $matches_filter — inputs: environment="staging"
+deployment d-2: approved — inputs: approved_by=null
+```
 
 ### Checking a list inside a subject
 
