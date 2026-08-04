@@ -1,0 +1,10 @@
+{
+  "commits": [
+    {"sha": "a1b2c3", "author": "alice", "timestamp": "2026-07-20T10:00:00Z",
+     "review": {"reviewer": "bob", "timestamp": "2026-07-20T14:30:00Z"}},
+    {"sha": "d4e5f6", "author": "bob", "timestamp": "2026-07-21T09:00:00Z",
+     "review": {"reviewer": "bob", "timestamp": "2026-07-21T11:00:00Z"}},
+    {"sha": "0aa111", "author": "carol", "timestamp": "2026-07-21T16:00:00Z",
+     "review": {"reviewer": "dave", "timestamp": "2026-07-21T15:00:00Z"}}
+  ]
+}

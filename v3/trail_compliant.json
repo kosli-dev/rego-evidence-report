@@ -1,0 +1,31 @@
+{
+  "trail": {
+    "compliance_status": {
+      "artifacts_statuses": {
+        "artifact": {
+          "artifact_fingerprint": "3f1a9c2e8b7d6f4a5c0e1d2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f",
+          "attestations_statuses": {
+            "pull-request": {
+              "status": "COMPLETE",
+              "pull_requests": [
+                {
+                  "url": "https://github.com/kosli-dev/app/pull/42",
+                  "state": "MERGED",
+                  "base_ref": "main",
+                  "author": "alice",
+                  "commits": [
+                    {"sha1": "aaaa111122223333", "verified": true, "timestamp": 1753600000},
+                    {"sha1": "bbbb444455556666", "verified": true, "timestamp": 1753603600}
+                  ],
+                  "approvers": [
+                    {"username": "bob", "state": "APPROVED", "timestamp": 1753607200}
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
