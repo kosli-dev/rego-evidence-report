@@ -18,6 +18,12 @@
 # (one nesting level: Rego forbids recursion).
 # Custom ops: contribute op_passed(clause, subj) bodies to this package from
 # another file; give the clause "expression" and "echo" for report rendering.
+#
+# Report shape: report.sets[].clauses is the definition table — one entry per
+# predicate name, holding the raw clause spec plus its rendered "expression".
+# report.results[] rows carry only {set, subject, predicate, inputs, passed} —
+# look up report.sets[<set>].clauses[<predicate>] for the description and
+# expression instead of repeating them on every row.
 package kosli.evidence
 
 import rego.v1
@@ -228,6 +234,25 @@ clause_inputs(subj, clause) := [{"name": path_name(clause.path), "value": value_
 	clause.path
 }
 
+# ---------- clause definitions (looked up once per set, not per row) ----------
+
+# The raw clause spec plus its rendered human-readable expression, keyed by
+# predicate name so rows can reference {set, predicate} instead of repeating
+# this on every row.
+clause_def(clause) := object.union(clause, {"expression": expression_of(clause)})
+
+min_count_def(set) := {"min_count": {
+	"description": sprintf("at least %d matching %s subject(s) required", [set.min_count, object.get(set, "type", "subject")]),
+	"expression": sprintf("count(%s) >= %d", [path_name(object.get(set, "path", [])), set.min_count]),
+}} if set.min_count
+
+min_count_def(set) := {} if not set.min_count
+
+set_clause_defs(set) := object.union(
+	{name: clause_def(clause) | some name, clause in set.clauses},
+	min_count_def(set),
+)
+
 # ---------- rows ----------
 
 subject_passed(set, subj) if {
@@ -243,8 +268,6 @@ subject_rows(doc, set) := [row |
 		"set": set_name(set),
 		"subject": subject_ref(subj, set),
 		"predicate": name,
-		"description": object.get(clause, "description", ""),
-		"expression": expression_of(clause),
 		"inputs": clause_inputs(subj, clause),
 		"passed": op_passed(clause, subj),
 	}
@@ -254,8 +277,6 @@ meta_rows(doc, set) := [{
 	"set": set_name(set),
 	"subject": {"type": object.get(set, "type", "subject"), "id": null},
 	"predicate": "min_count",
-	"description": sprintf("at least %d matching %s subject(s) required", [set.min_count, object.get(set, "type", "subject")]),
-	"expression": sprintf("count(%s) >= %d", [path_name(object.get(set, "path", [])), set.min_count]),
 	"inputs": [{"name": sprintf("count(%s)", [path_name(object.get(set, "path", []))]), "value": count(matching_subjects(doc, set))}],
 	"passed": count(matching_subjects(doc, set)) >= set.min_count,
 }] if {
@@ -297,6 +318,7 @@ report(doc, sets) := {
 		"quantifier": quantifier(set),
 		"satisfied": set_satisfied(doc, set),
 		"subjects": {"total": count(raw_subjects(doc, set)), "matching": count(matching_subjects(doc, set))},
+		"clauses": set_clause_defs(set),
 	} |
 		some set in sets
 	],

@@ -89,7 +89,8 @@ violations contains msg if {
 	some r in report.results
 	r.set == s.name
 	r.passed == false
-	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.predicate, r.description])
+	description := object.get(s.clauses, [r.predicate, "description"], "")
+	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.predicate, description])
 }
 
 output := {
