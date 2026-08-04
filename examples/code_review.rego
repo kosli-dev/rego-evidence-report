@@ -70,7 +70,9 @@ sets := [
 				"description": "An APPROVED reviewer who is not the PR author, approving after the last commit",
 				"op": "peer_approved",
 				"expression": "some approver: state == APPROVED and username != author and timestamp > max(commits[].timestamp)",
-				"echo": [["author"], ["approvers"]],
+				# Every input the op reads, so the verdict can be
+				# recomputed from the row alone.
+				"echo": [["author"], ["approvers"], {"path": ["commits"], "each": ["timestamp"]}],
 			},
 		},
 	},
@@ -83,12 +85,17 @@ allow := report.compliant
 # Violations as a projection of the report: failed rows of unsatisfied sets.
 # (Failed rows in a SATISFIED "some"-set are not violations — another PR
 # met all requirements.)
+#
+# $matches_filter rows are skipped: a PR that isn't merged is out of scope for
+# this control, not in breach of it. $min_count rows are kept — "no merged pull
+# request at all" is exactly the violation that guard exists to report.
 violations contains msg if {
 	some s in report.sets
 	not s.satisfied
 	some r in report.results
 	r.set == s.name
 	r.passed == false
+	r.predicate != "$matches_filter"
 	description := object.get(s.clauses, [r.predicate, "description"], "")
 	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.predicate, description])
 }
