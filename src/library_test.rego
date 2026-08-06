@@ -8,8 +8,9 @@
 #
 # Convention for a known-open issue: prefix its rule `todo_test_` and `opa test`
 # skips it, so the suite stays green while the assertion states the behaviour we
-# want; closing the issue is the change that renames it to `test_`. Nothing is
-# skipped at the moment.
+# want; closing the issue is the change that renames it to `test_`. Two are
+# skipped: see the pair at the end of the violations section, where an
+# unsatisfied requirement can currently yield no violation to explain itself.
 #
 # The final section holds the regression tests for the fail-open and
 # evidence-integrity bugs this library shipped with — the cases most worth not
@@ -843,6 +844,160 @@ test_every_row_resolves_to_one_check_definition if {
 			check_name == row.check
 		]) == 1
 	}
+}
+
+# ---------- violations ----------
+
+violating_req := {"s": {
+	"subject_type": "thing",
+	"from": ["items"],
+	"id": ["id"],
+	"checks": {
+		"signed": {"description": "Signed", "op": "equals", "path": ["signed"], "value": true},
+		"reviewed": {"description": "Reviewed", "op": "equals", "path": ["reviewed"], "value": true},
+	},
+}}
+
+test_violations_are_empty_for_a_compliant_report if {
+	rep := evidence.report({"items": [{"id": "a", "signed": true, "reviewed": true}]}, violating_req)
+	rep.compliant == true
+	evidence.violations(rep) == []
+}
+
+test_violation_entry_carries_exactly_the_documented_keys if {
+	rep := evidence.report({"items": [{"id": "a"}]}, violating_req)
+	count(evidence.violations(rep)) == 2
+	every v in evidence.violations(rep) {
+		object.keys(v) == {"requirement", "subject", "check", "description", "expression", "inputs"}
+	}
+}
+
+# The join every consumer would otherwise write by hand: description and
+# expression come from the definition table, the rest from the row.
+test_violations_join_the_definition_onto_the_row if {
+	rep := evidence.report({"items": [{"id": "a", "signed": true}]}, violating_req)
+	evidence.violations(rep) == [{
+		"requirement": "s",
+		"subject": {"type": "thing", "id": "a"},
+		"check": "reviewed",
+		"description": "Reviewed",
+		"expression": "reviewed == true",
+		"inputs": [{"name": "reviewed", "value": null}],
+	}]
+}
+
+test_violations_default_a_missing_description_to_an_empty_string if {
+	rep := evidence.report({"items": [{"id": "a"}]}, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
+		"id": ["id"],
+		"checks": {"undescribed": {"op": "equals", "path": ["x"], "value": 1}},
+	}})
+	v := evidence.violations(rep)
+	count(v) == 1
+	v[0].description == ""
+	v[0].expression == "x == 1"
+}
+
+test_violations_exclude_passing_rows if {
+	rep := evidence.report({"items": [{"id": "a", "signed": true}]}, violating_req)
+	[v.check | some v in evidence.violations(rep)] == ["reviewed"]
+}
+
+# $min_subjects failures ARE breaches: "no subject at all" is exactly what that
+# guard exists to report.
+test_violations_include_min_subjects_failures if {
+	rep := evidence.report({"items": []}, min_subjects_req(1))
+	v := evidence.violations(rep)
+	count(v) == 1
+	v[0].check == "$min_subjects"
+	v[0].subject == {"type": "thing", "id": null}
+	v[0].description == "at least 1 matching thing subject(s) required"
+}
+
+# $applies failures are not: out of scope is not in breach. The requirement here
+# is unsatisfied, so the exclusion is doing the work rather than passing
+# vacuously.
+test_violations_exclude_applies_rows if {
+	doc := {"items": [
+		{"id": "a", "state": "MERGED"},
+		{"id": "b", "state": "CLOSED"},
+	]}
+	rep := evidence.report(doc, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
+		"id": ["id"],
+		"applies_to": merged_only,
+		"checks": {"signed": {"op": "equals", "path": ["signed"], "value": true}},
+	}})
+	rep.requirements.s.satisfied == false
+
+	# The out-of-scope subject did produce a failing $applies row...
+	count([r | some r in rep.results; r.check == "$applies"; r.passed == false]) == 1
+
+	# ...and only the in-scope subject's own failure is a violation.
+	[[v.subject.id, v.check] | some v in evidence.violations(rep)] == [["a", "signed"]]
+}
+
+# The subtle one, and the reason this belongs in the library: under
+# "require": "some" a satisfied requirement's failing rows are evidence, not
+# breaches, because another subject met every check on its own. A consumer that
+# re-derived this and forgot the guard would report violations while allow was
+# true.
+test_violations_exclude_rows_of_a_satisfied_requirement if {
+	rep := evidence.report(
+		{"items": [
+			{"id": "a", "signed": true, "reviewed": true},
+			{"id": "b", "signed": false, "reviewed": true},
+		]},
+		require_req("some"),
+	)
+	rep.requirements.s.satisfied == true
+	count([r | some r in rep.results; r.passed == false]) == 1
+	evidence.violations(rep) == []
+}
+
+test_violations_span_multiple_requirements if {
+	doc := {"a": [{"id": "1"}], "b": [{"id": "2"}]}
+	policy := {
+		"first": {"subject_type": "t", "from": ["a"], "id": ["id"], "checks": {"c": {"op": "equals", "path": ["v"], "value": 1}}},
+		"second": {"subject_type": "t", "from": ["b"], "id": ["id"], "checks": {"c": {"op": "equals", "path": ["v"], "value": 1}}},
+	}
+	{v.requirement | some v in evidence.violations(evidence.report(doc, policy))} == {"first", "second"}
+}
+
+# Order follows report.results, which is itself deterministic — a violation list
+# that reordered between runs would be useless in a diff.
+test_violations_follow_results_order if {
+	rep := evidence.report({"items": [{"id": "a"}, {"id": "b"}]}, violating_req)
+	from_rows := [[r.requirement, r.check, r.subject.id] |
+		some r in rep.results
+		r.passed == false
+		r.check != "$applies"
+	]
+	[[v.requirement, v.check, v.subject.id] | some v in evidence.violations(rep)] == from_rows
+}
+
+# Known gap: "unsatisfied" and "produces a violation" are not yet equivalent.
+# Both cases below are policy authoring errors that fail closed on the verdict —
+# allow is false — but contribute no failing row, so violations() comes back
+# empty: denial with no stated reason, which is precisely the silence this
+# library exists to remove. Closing this means synthesising an entry for an
+# unsatisfied requirement that produced none.
+todo_test_a_requirement_without_checks_yields_a_violation if {
+	rep := evidence.report({"items": [{"id": "a"}]}, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
+		"id": ["id"],
+	}})
+	rep.compliant == false
+	count(evidence.violations(rep)) > 0
+}
+
+todo_test_an_unknown_require_value_yields_a_violation if {
+	rep := evidence.report(both_ok, require_req("most"))
+	rep.compliant == false
+	count(evidence.violations(rep)) > 0
 }
 
 # ---------- regressions ----------

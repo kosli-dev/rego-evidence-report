@@ -36,6 +36,12 @@
 # report.requirements[<requirement>].checks[<check>] for the description and
 # expression instead of repeating them on every row.
 #
+# The report is a superset: it records every check that ran, passing or failing,
+# in scope or out, because evidence that exonerates matters as much as evidence
+# that convicts. evidence.violations(report) narrows it to the actionable
+# subset — the failing rows that are breaches, joined to their descriptions. The
+# selection is generic and lives here; formatting a message is the policy's job.
+#
 # Checks the library synthesises are "$"-prefixed, so they can never collide
 # with a policy's own check names:
 #   $min_subjects — enough matching subjects (one row per requirement)
@@ -456,3 +462,51 @@ report(doc, policy) := {
 	},
 	"results": results(doc, policy),
 }
+
+# ---------- violations ----------
+
+# The actionable subset of a report: the failing rows that represent a breach,
+# joined to their check definitions so a caller can render a message without a
+# second lookup.
+#
+# A pure function of the report — no access to the input document or the policy
+# — which is what makes this selection generic rather than something every
+# consumer re-derives. Each of the three filters drops rows that are still
+# evidence:
+#   - passing rows;
+#   - rows of a requirement that was satisfied anyway, since under
+#     "require": "some" another subject met every check and these rows are
+#     exculpatory rather than breaches;
+#   - $applies rows, because out of scope is not in breach.
+# $min_subjects rows are deliberately kept: "no subject at all" is a breach.
+#
+# Rendering is the caller's: entries are structured, never formatted strings.
+# An array rather than a set, so order follows report.results (deterministic)
+# and two distinct failures that happen to render alike are not collapsed.
+violations(report) := [{
+	"requirement": row.requirement,
+	"subject": row.subject,
+	"check": row.check,
+	"description": definition_field(report, row, "description"),
+	"expression": definition_field(report, row, "expression"),
+	"inputs": row.inputs,
+} |
+	some row in report.results
+	is_violation(report, row)
+]
+
+default is_violation(_, _) := false
+
+is_violation(report, row) if {
+	row.passed == false
+	row.check != "$applies"
+	not report.requirements[row.requirement].satisfied
+}
+
+# Looked up through the row's requirement, never by check name alone: two
+# requirements may reuse a name for unrelated checks.
+definition_field(report, row, key) := object.get(
+	report.requirements,
+	[row.requirement, "checks", row.check, key],
+	"",
+)

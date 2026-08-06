@@ -80,6 +80,7 @@ this README. They are worth learning in this order.
 | **`require`** | Whether `every` in-scope subject must pass all checks, or `some` single subject must pass all of them on its own. |
 | **Result row** | One piece of evidence: this check, against this subject, read these inputs, and passed or didn't. |
 | **Report** | The whole output: an overall `compliant` verdict, a per-requirement summary with the check definitions, and every result row. |
+| **Violation** | A failing row that actually represents a **breach**. Not every failing row is one — see [Evidence vs. violations](#evidence-vs-violations). The report holds evidence; violations are an *interpretation* of it. |
 | **Fail-closed** | Missing, null, or wrong-typed input makes a check **fail**, never vanish and never accidentally pass. See [Fail-closed rules](#fail-closed-rules). |
 
 The mental model: a report is a **table of evidence** — one row per (subject,
@@ -336,7 +337,7 @@ So `d-3` above is not a problem; `d-2` is. And `subject.id` is `null` on
 `$min_subjects` rows because there is no single subject to blame — "no
 production deployment at all" is a fact about the requirement.
 
-In Rego, the failing ids are one comprehension:
+In Rego, the ids with a failing row are one comprehension:
 
 ```rego
 failing_subjects contains id if {
@@ -349,31 +350,85 @@ failing_subjects contains id if {
 
 → `["d-2"]`
 
-For a human-readable message, join the row back to its check definition through
-`(requirement, check)` to pick up the `description`. This is the pattern
-`examples/code_review.rego` uses, with one extra guard: only project from
-requirements that aren't satisfied, so that under `"require": "some"` the
-failing rows of the *other* subjects don't turn into violations when one subject
-did meet everything.
+That answers *"which subjects have a failing row"*. For this policy it happens
+to coincide with *"which subjects are in breach"* — but only because there's a
+single `every` requirement here. The general answer needs one more guard, which
+is the next section.
+
+### Evidence vs. violations
+
+The report is deliberately a **superset**. It records every check that ran —
+passing and failing, in scope and out — because evidence that exonerates
+matters as much as evidence that convicts. "PR #44 was CLOSED, so we never
+evaluated it" and "this PR failed, but another one met every check" are both
+facts an auditor may want, and neither is a breach.
+
+Narrowing that superset to the actionable subset is `evidence.violations`:
+
+```rego
+violations := evidence.violations(report)
+```
+
+It is a pure function of the report — no input document, no policy — and
+applies three filters, each dropping rows that remain in the report as
+evidence:
+
+| dropped | because |
+| --- | --- |
+| passing rows | nothing to answer for |
+| rows of a **satisfied** requirement | under `"require": "some"`, another subject met every check, so these are exculpatory |
+| `$applies` rows | out of scope is not in breach |
+
+`$min_subjects` rows are deliberately **kept** — "no production deployment at
+all" is exactly the breach that guard exists to report.
+
+Each entry is the row joined to its check definition, so a caller doesn't have
+to do that lookup itself:
+
+```json
+{
+  "requirement": "prod_deploy",
+  "subject": {"type": "deployment", "id": "d-2"},
+  "check": "approved",
+  "description": "A named approver signed off on the deployment",
+  "expression": "approved_by is a non-empty string",
+  "inputs": [{"name": "approved_by", "value": null}]
+}
+```
+
+**Selection is generic; wording is yours.** The library returns structured
+entries and never a formatted string, because the message is the one part that
+really is policy-specific:
 
 ```rego
 violations contains msg if {
-	some req_name, req in report.requirements
-	not req.satisfied
-	some r in report.results
-	r.requirement == req_name
-	r.passed == false
-	r.check != "$applies"
-	description := object.get(req.checks, [r.check, "description"], "")
-	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.check, description])
+	some v in evidence.violations(report)
+	msg := sprintf("%s '%v': %s — %s", [v.subject.type, v.subject.id, v.check, v.description])
 }
 ```
 
 → `["deployment 'd-2': approved — A named approver signed off on the deployment"]`
 
-Note that the lookup goes through the requirement, not by check name alone. Two
-different requirements may reuse a check name for unrelated things, so the
-`requirement` half of the pair is what makes it unambiguous.
+That's exactly what `examples/code_review.rego` does. The second filter in
+particular is worth *not* hand-rolling: a policy that forgets it reports
+violations while `allow` is `true`, which is two derivations of the same report
+visibly disagreeing.
+
+Note also that `allow` and `violations` are **independent** derivations —
+`allow := report.compliant` comes from the library's verdict, which never reads
+rows. So a bug in a violations projection can produce a misleading message list
+but cannot let a non-compliant trail through. That's also why the *report* is
+the hashable, attestable artifact and `violations` isn't: the report is a claim
+about what was observed, violations are an interpretation of it, and
+interpretations can be revised without invalidating the evidence.
+
+> **Known gap.** "Unsatisfied" and "produces a violation" are not yet
+> equivalent. A requirement that declares no checks, or carries an unrecognised
+> `require` value, is unsatisfied — so `allow` is `false`, failing closed — but
+> contributes no failing row, so `violations` comes back *empty*: a denial with
+> no stated reason. Both are policy authoring errors, and both are pinned by
+> `todo_test_` rules at the end of the violations section in
+> `src/library_test.rego`.
 
 From outside Rego, the same projection over the report JSON:
 
@@ -641,6 +696,40 @@ This makes the report:
   re-parsing the `.rego` source, by looking up its `(requirement, check)` in
   `requirements[].checks`.
 
+### Violations
+
+`evidence.violations(report)` returns the report's actionable subset as an
+array, each entry being a failing row joined to its check definition:
+
+```rego
+[
+  {
+    "requirement": "merged_pr",
+    "subject": {"type": "pull_request", "id": "https://github.com/.../pull/42"},
+    "check": "commits_signed",
+    "description": "Every commit in the pull request is signed ...",
+    "expression": "every commits: verified == true",
+    "inputs": [{"name": "commits[].verified", "value": [true, false]}]
+  }
+]
+```
+
+- A **pure function of the report** — it takes no input document and no policy,
+  which is what makes the selection generic rather than per-consumer.
+- Drops passing rows, rows of a **satisfied** requirement, and `$applies` rows.
+  Keeps `$min_subjects` failures. See
+  [Evidence vs. violations](#evidence-vs-violations) for why each.
+- `description` and `expression` fall back to `""` when the check didn't declare
+  them; every other field comes from the row.
+- An **array**, not a set: order follows `results` (deterministic), and two
+  distinct failures that would render to the same string are not collapsed.
+- Returns **structured entries, never formatted strings** — wording is the
+  policy's call.
+
+Empty violations do not currently guarantee compliance: see the known gap noted
+in [Evidence vs. violations](#evidence-vs-violations). Gate on `compliant`, and
+treat violations as the explanation rather than the verdict.
+
 ---
 
 ## Running it
@@ -670,8 +759,9 @@ build their fixtures inline instead.
   filters, every leaf and collection operator (including what each one does
   with missing, null, and wrong-typed input), echoed inputs, rendered
   expressions, row shape and totality, `min_subjects`, both `require` modes,
-  and the report-level invariants (determinism, order-independence of policy
-  keys, and every row resolving to exactly one check definition).
+  the `violations` projection, and the report-level invariants (determinism,
+  order-independence of policy keys, and every row resolving to exactly one
+  check definition).
 - **`examples/code_review_test.rego`** — the consumer policy: both README
   scenarios, the violation projection, the `peer_approved` custom op, and
   `data.params` configurability.
@@ -686,8 +776,10 @@ opa eval --strict-builtin-errors -d src/library.rego -d examples/code_review.reg
 
 A `todo_test_` prefix marks a known-open issue: `opa test` skips the rule, so
 the suite stays green while the assertion states the behaviour we want, and
-closing the issue is the change that renames it to `test_`. Nothing is skipped
-at the moment.
+closing the issue is the change that renames it to `test_`. Two are skipped at
+the moment, both stating the same wanted invariant — that an unsatisfied
+requirement always yields at least one violation to explain itself. See the
+known gap in [Evidence vs. violations](#evidence-vs-violations).
 
 The `regressions` section at the end of each file covers the fail-open and
 evidence-integrity bugs the library shipped with — `compare` passing on a

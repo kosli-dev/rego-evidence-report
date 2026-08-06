@@ -80,22 +80,13 @@ report := evidence.report(input, requirements)
 
 allow := report.compliant
 
-# Violations as a projection of the report: failed rows of unsatisfied
-# requirements. (Failed rows under a SATISFIED "some" requirement are not
-# violations — another PR met all the checks.)
-#
-# $applies rows are skipped: a PR that isn't merged is out of scope for this
-# control, not in breach of it. $min_subjects rows are kept — "no merged pull
-# request at all" is exactly the violation that guard exists to report.
+# evidence.violations() does the selecting — failing rows of unsatisfied
+# requirements, minus the $applies rows, since a PR that isn't merged is out of
+# scope for this control rather than in breach of it — and joins each row to its
+# description. All this policy decides is how to word the message.
 violations contains msg if {
-	some req_name, req in report.requirements
-	not req.satisfied
-	some r in report.results
-	r.requirement == req_name
-	r.passed == false
-	r.check != "$applies"
-	description := object.get(req.checks, [r.check, "description"], "")
-	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.check, description])
+	some v in evidence.violations(report)
+	msg := sprintf("%s '%v': %s — %s", [v.subject.type, v.subject.id, v.check, v.description])
 }
 
 output := {
