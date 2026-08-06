@@ -538,6 +538,11 @@ report(doc, policy) := {
 # Rendering is the caller's: entries are structured, never formatted strings.
 # An array rather than a set, so order follows report.results (deterministic)
 # and two distinct failures that happen to render alike are not collapsed.
+#
+# A $well_formed entry means the policy is broken rather than the thing being
+# judged. Both kinds share this one list, $well_formed first — deliberate, since
+# a malformed policy should be caught by its own tests. A "category" field is the
+# additive escape hatch if that ever proves confusing.
 violations(report) := [{
 	"requirement": row.requirement,
 	"subject": row.subject,

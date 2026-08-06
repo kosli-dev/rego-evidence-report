@@ -434,7 +434,18 @@ really is policy-specific:
 ```rego
 violations contains msg if {
 	some v in evidence.violations(report)
-	msg := sprintf("%s '%v': %s — %s", [v.subject.type, v.subject.id, v.check, v.description])
+	msg := sprintf("%s: %s — %s", [subject_label(v), v.check, v.description])
+}
+
+# $min_subjects and $well_formed are about the requirement rather than any one
+# subject, so their subject.id is null. Interpolate it blindly and you get
+# "deployment 'null': $min_subjects — ...".
+subject_label(v) := sprintf("%s '%v'", [v.subject.type, v.subject.id]) if {
+	v.subject.id != null
+}
+
+subject_label(v) := sprintf("%s (requirement-level)", [v.subject.type]) if {
+	v.subject.id == null
 }
 ```
 
@@ -464,6 +475,15 @@ input shape to keep it that way.
 
 Gate on `compliant` regardless — `violations` is the explanation, not the
 verdict.
+
+**Policy errors and subject breaches share one list.** A failing `$well_formed`
+says *your policy* is broken, not the thing being judged — a different person
+fixes it, and the other rows from that requirement may mean nothing until they
+do. Both kinds land in the same array, with `$well_formed` sorted first. That's
+a deliberate call rather than an oversight: it only arises from a malformed
+policy, which that policy's own tests should catch long before production. If it
+turns out to confuse people in practice, adding a `category` field to violation
+entries is purely additive and would break nothing that reads them today.
 
 From outside Rego, the same projection over the report JSON:
 

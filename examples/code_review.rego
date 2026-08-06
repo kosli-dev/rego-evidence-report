@@ -86,7 +86,18 @@ allow := report.compliant
 # description. All this policy decides is how to word the message.
 violations contains msg if {
 	some v in evidence.violations(report)
-	msg := sprintf("%s '%v': %s — %s", [v.subject.type, v.subject.id, v.check, v.description])
+	msg := sprintf("%s: %s — %s", [subject_label(v), v.check, v.description])
+}
+
+# $min_subjects and $well_formed are about the requirement, not about any one
+# subject, so their subject.id is null — which would otherwise render as the
+# literal string "null" ("artifact 'null': ...").
+subject_label(v) := sprintf("%s '%v'", [v.subject.type, v.subject.id]) if {
+	v.subject.id != null
+}
+
+subject_label(v) := sprintf("%s (requirement-level)", [v.subject.type]) if {
+	v.subject.id == null
 }
 
 output := {

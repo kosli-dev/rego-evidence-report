@@ -1119,6 +1119,34 @@ test_an_unsatisfied_report_always_explains_itself if {
 	count(unexplained) == 0
 }
 
+# Why a failing $well_formed row can never be swallowed by the satisfied-guard
+# in violations(): every requirement_satisfied body opens with the same two
+# conditions well_formed tests, so malformed implies unsatisfied. That is a
+# structural property rather than a coincidence of these inputs, and this pins
+# it against someone later relaxing one of those bodies.
+test_a_malformed_requirement_is_never_satisfied if {
+	malformed := [rep |
+		some rq in scan_requires
+		some mn in scan_mins
+		some cs in scan_checksets
+		some fl in scan_filters
+		some d in scan_docs
+		rep := evidence.report(d, scan_policy(rq, mn, cs, fl))
+		rows_for(rep, "s", "$well_formed")[0].passed == false
+	]
+
+	# The sweep genuinely covers malformed declarations, so this isn't vacuous.
+	count(malformed) > 0
+
+	every rep in malformed {
+		rep.requirements.s.satisfied == false
+		count([v |
+			some v in evidence.violations(rep)
+			v.check == "$well_formed"
+		]) == 1
+	}
+}
+
 # ---------- regressions ----------
 # One rule per bug this library shipped with, each naming the trap it fell into.
 
