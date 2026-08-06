@@ -1,4 +1,4 @@
-# Code Review (SDLC-CTRL-0007), expressed as kosli.evidence subject sets.
+# Code Review (SDLC-CTRL-0007), expressed as a kosli.evidence policy.
 # Same configurability via data.params; same input shape (input.trail).
 package policy
 
@@ -22,14 +22,13 @@ protected_branch := name if {
 
 artifact_path := ["trail", "compliance_status", "artifacts_statuses", artifact_name]
 
-sets := [
-	{
-		"name": "artifact",
-		"type": "artifact",
-		"path": artifact_path,
+requirements := {
+	"artifact": {
+		"subject_type": "artifact",
+		"from": artifact_path,
 		"id": ["artifact_fingerprint"],
-		"min_count": 1,
-		"clauses": {
+		"min_subjects": 1,
+		"checks": {
 			"fingerprint_recorded": {
 				"description": "Artifact has a SHA256 fingerprint so code review can be cryptographically linked to the artefact under review",
 				"op": "non_empty_string",
@@ -43,17 +42,16 @@ sets := [
 			},
 		},
 	},
-	{
-		"name": "merged_pr",
-		"type": "pull_request",
-		"path": array.concat(artifact_path, ["attestations_statuses", pr_attestation_name, "pull_requests"]),
+	"merged_pr": {
+		"subject_type": "pull_request",
+		"from": array.concat(artifact_path, ["attestations_statuses", pr_attestation_name, "pull_requests"]),
 		"id": ["url"],
-		# ONE merged PR must satisfy ALL clauses together — requirements
+		# ONE merged PR must satisfy ALL checks together — requirements
 		# may not be split across different pull requests.
-		"quantifier": "some",
-		"where": {"merged": {"op": "equals", "path": ["state"], "value": "MERGED"}},
-		"min_count": 1,
-		"clauses": {
+		"require": "some",
+		"applies_to": {"merged": {"op": "equals", "path": ["state"], "value": "MERGED"}},
+		"min_subjects": 1,
+		"checks": {
 			"protected_branch": {
 				"description": "Merged into the protected branch",
 				"op": "equals",
@@ -64,7 +62,7 @@ sets := [
 				"description": "Every commit in the pull request is signed with a verified signature (fail-closed on missing 'verified')",
 				"op": "all",
 				"path": ["commits"],
-				"clause": {"op": "equals", "path": ["verified"], "value": true},
+				"check": {"op": "equals", "path": ["verified"], "value": true},
 			},
 			"peer_approved": {
 				"description": "An APPROVED reviewer who is not the PR author, approving after the last commit",
@@ -72,32 +70,32 @@ sets := [
 				"expression": "some approver: state == APPROVED and username != author and timestamp > max(commits[].timestamp)",
 				# Every input the op reads, so the verdict can be
 				# recomputed from the row alone.
-				"echo": [["author"], ["approvers"], {"path": ["commits"], "each": ["timestamp"]}],
+				"inputs": [["author"], ["approvers"], {"path": ["commits"], "each": ["timestamp"]}],
 			},
 		},
 	},
-]
+}
 
-report := evidence.report(input, sets)
+report := evidence.report(input, requirements)
 
 allow := report.compliant
 
-# Violations as a projection of the report: failed rows of unsatisfied sets.
-# (Failed rows in a SATISFIED "some"-set are not violations — another PR
-# met all requirements.)
+# Violations as a projection of the report: failed rows of unsatisfied
+# requirements. (Failed rows under a SATISFIED "some" requirement are not
+# violations — another PR met all the checks.)
 #
-# $matches_filter rows are skipped: a PR that isn't merged is out of scope for
-# this control, not in breach of it. $min_count rows are kept — "no merged pull
+# $applies rows are skipped: a PR that isn't merged is out of scope for this
+# control, not in breach of it. $min_subjects rows are kept — "no merged pull
 # request at all" is exactly the violation that guard exists to report.
 violations contains msg if {
-	some s in report.sets
-	not s.satisfied
+	some req_name, req in report.requirements
+	not req.satisfied
 	some r in report.results
-	r.set == s.name
+	r.requirement == req_name
 	r.passed == false
-	r.predicate != "$matches_filter"
-	description := object.get(s.clauses, [r.predicate, "description"], "")
-	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.predicate, description])
+	r.check != "$applies"
+	description := object.get(req.checks, [r.check, "description"], "")
+	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.check, description])
 }
 
 output := {

@@ -14,8 +14,8 @@ package kosli.evidence
 
 import rego.v1
 
-op_passed(clause, pr) if {
-	clause.op == "peer_approved"
+op_passed(check, pr) if {
+	check.op == "peer_approved"
 	count(pr.commits) > 0
 	every c in pr.commits {
 		is_number(c.timestamp)

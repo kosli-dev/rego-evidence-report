@@ -73,19 +73,18 @@ this README. They are worth learning in this order.
 | Term | What it means |
 | --- | --- |
 | **Subject** | A single thing being judged: one pull request, one artifact, one deployment. Subjects come from the input document. |
-| **Subject set** | A group of subjects of the same kind, plus the checks that apply to them, plus how many must pass. This is the unit you declare. A policy is a list of subject sets. |
-| **Predicate** | The *name* of one check: `commits_signed`, `approved`, `protected_branch`. It's what a row of evidence points at. |
-| **Clause** | The *definition* of that check, as data: which field to read, which operator to apply, with what parameters. Predicate = name, clause = spec. `"clauses": {"approved": {...}}` declares the predicate `approved` with that clause. |
-| **Operator** (`op`) | The comparison a clause performs — `equals`, `range`, `all`, … The library ships a fixed vocabulary; anything beyond it is a custom op. |
-| **Filter** (`where`) | Clauses that decide which raw subjects are *in scope*. A PR that isn't merged isn't in breach of a code-review control — it's simply not a subject of it. |
-| **Quantifier** | Whether `every` in-scope subject must pass all clauses, or `some` single subject must pass all of them on its own. |
-| **Result row** | One piece of evidence: this predicate, against this subject, read these inputs, and passed or didn't. |
-| **Report** | The whole output: an overall `compliant` verdict, a per-set summary with the clause definitions, and every result row. |
+| **Requirement** | A group of subjects of the same kind, plus the checks that apply to them, plus how many must pass. This is the unit you declare; a policy declares one or more, each under its own name. |
+| **Check** | One named thing asserted about a subject — `commits_signed`, `approved`, `protected_branch`. The name is what a row of evidence points at; the definition is data: which field to read, which operator to apply, with what parameters. `"checks": {"approved": {...}}` declares a check named `approved`. |
+| **Operator** (`op`) | The comparison a check performs — `equals`, `range`, `all`, … The library ships a fixed vocabulary; anything beyond it is a custom op. |
+| **Scope filter** (`applies_to`) | Checks that decide which raw subjects a requirement *applies to*. A PR that isn't merged isn't in breach of a code-review control — it's simply not a subject of it. |
+| **`require`** | Whether `every` in-scope subject must pass all checks, or `some` single subject must pass all of them on its own. |
+| **Result row** | One piece of evidence: this check, against this subject, read these inputs, and passed or didn't. |
+| **Report** | The whole output: an overall `compliant` verdict, a per-requirement summary with the check definitions, and every result row. |
 | **Fail-closed** | Missing, null, or wrong-typed input makes a check **fail**, never vanish and never accidentally pass. See [Fail-closed rules](#fail-closed-rules). |
 
 The mental model: a report is a **table of evidence** — one row per (subject,
-predicate) pair — alongside a **definition table** saying what each predicate
-means. The `compliant` boolean is just the roll-up.
+check) pair — alongside a **definition table** saying what each check means.
+The `compliant` boolean is just the roll-up.
 
 ## Your first policy
 
@@ -111,20 +110,19 @@ package tutorial
 import data.kosli.evidence
 import rego.v1
 
-sets := [{
-	"name": "prod_deploy",                 # names this set; rows link back to it
-	"type": "deployment",                  # what kind of thing a subject is
-	"path": ["deployments"],               # where the subjects live in the input
+requirements := {"prod_deploy": {          # the requirement's name; rows link back to it
+	"subject_type": "deployment",          # what kind of thing a subject is
+	"from": ["deployments"],               # where the subjects live in the input
 	"id": ["id"],                          # how to identify one subject
-	"where": {"is_prod": {"op": "equals", "path": ["environment"], "value": "prod"}},
-	"clauses": {"approved": {
+	"applies_to": {"is_prod": {"op": "equals", "path": ["environment"], "value": "prod"}},
+	"checks": {"approved": {
 		"description": "A named approver signed off on the deployment",
 		"op": "non_empty_string",
 		"path": ["approved_by"],
 	}},
-}]
+}}
 
-report := evidence.report(input, sets)
+report := evidence.report(input, requirements)
 ```
 
 Run it:
@@ -136,7 +134,11 @@ opa eval -d path/to/src/library.rego -d prod_deploy.rego \
 
 Note what you did *not* write: no loop over deployments, no `allow` rule, no
 violation strings, no handling of the missing `approved_by`. You declared one
-set and one clause.
+requirement and one check.
+
+Note also the two different path keywords. **`from`** locates a collection in
+the *input document*; a check's **`path`** locates a field within *one subject*.
+Two different roots, so two different words.
 
 ### The report, in full
 
@@ -148,106 +150,14 @@ can read the shape without running anything. Key order is `opa eval`'s
 ```json
 {
   "compliant": false,
-  "results": [
-    {
-      "inputs": [
-        {
-          "name": "count(matching(deployments))",
-          "value": 2
-        }
-      ],
-      "passed": true,
-      "predicate": "$min_count",
-      "set": "prod_deploy",
-      "subject": {
-        "id": null,
-        "type": "deployment"
-      }
-    },
-    {
-      "inputs": [
-        {
-          "name": "environment",
-          "value": "prod"
-        }
-      ],
-      "passed": true,
-      "predicate": "$matches_filter",
-      "set": "prod_deploy",
-      "subject": {
-        "id": "d-1",
-        "type": "deployment"
-      }
-    },
-    {
-      "inputs": [
-        {
-          "name": "environment",
-          "value": "prod"
-        }
-      ],
-      "passed": true,
-      "predicate": "$matches_filter",
-      "set": "prod_deploy",
-      "subject": {
-        "id": "d-2",
-        "type": "deployment"
-      }
-    },
-    {
-      "inputs": [
-        {
-          "name": "environment",
-          "value": "staging"
-        }
-      ],
-      "passed": false,
-      "predicate": "$matches_filter",
-      "set": "prod_deploy",
-      "subject": {
-        "id": "d-3",
-        "type": "deployment"
-      }
-    },
-    {
-      "inputs": [
-        {
-          "name": "approved_by",
-          "value": "bob"
-        }
-      ],
-      "passed": true,
-      "predicate": "approved",
-      "set": "prod_deploy",
-      "subject": {
-        "id": "d-1",
-        "type": "deployment"
-      }
-    },
-    {
-      "inputs": [
-        {
-          "name": "approved_by",
-          "value": null
-        }
-      ],
-      "passed": false,
-      "predicate": "approved",
-      "set": "prod_deploy",
-      "subject": {
-        "id": "d-2",
-        "type": "deployment"
-      }
-    }
-  ],
-  "sets": [
-    {
-      "clauses": {
-        "$matches_filter": {
-          "description": "subject qualifies as a deployment under this set's filter; non-matching subjects are recorded but not evaluated",
+  "requirements": {
+    "prod_deploy": {
+      "checks": {
+        "$applies": {
+          "description": "subject is in scope as a deployment under this requirement's applies_to filter; out-of-scope subjects are recorded but not evaluated",
           "expression": "environment == prod"
         },
-        "$min_count": {
+        "$min_subjects": {
           "description": "at least 1 matching deployment subject(s) required",
           "expression": "count(matching(deployments)) >= 1"
         },
@@ -260,12 +170,103 @@ can read the shape without running anything. Key order is `opa eval`'s
           ]
         }
       },
-      "name": "prod_deploy",
-      "quantifier": "every",
+      "require": "every",
       "satisfied": false,
       "subjects": {
         "matching": 2,
         "total": 3
+      }
+    }
+  },
+  "results": [
+    {
+      "check": "$min_subjects",
+      "inputs": [
+        {
+          "name": "count(matching(deployments))",
+          "value": 2
+        }
+      ],
+      "passed": true,
+      "requirement": "prod_deploy",
+      "subject": {
+        "id": null,
+        "type": "deployment"
+      }
+    },
+    {
+      "check": "$applies",
+      "inputs": [
+        {
+          "name": "environment",
+          "value": "prod"
+        }
+      ],
+      "passed": true,
+      "requirement": "prod_deploy",
+      "subject": {
+        "id": "d-1",
+        "type": "deployment"
+      }
+    },
+    {
+      "check": "$applies",
+      "inputs": [
+        {
+          "name": "environment",
+          "value": "prod"
+        }
+      ],
+      "passed": true,
+      "requirement": "prod_deploy",
+      "subject": {
+        "id": "d-2",
+        "type": "deployment"
+      }
+    },
+    {
+      "check": "$applies",
+      "inputs": [
+        {
+          "name": "environment",
+          "value": "staging"
+        }
+      ],
+      "passed": false,
+      "requirement": "prod_deploy",
+      "subject": {
+        "id": "d-3",
+        "type": "deployment"
+      }
+    },
+    {
+      "check": "approved",
+      "inputs": [
+        {
+          "name": "approved_by",
+          "value": "bob"
+        }
+      ],
+      "passed": true,
+      "requirement": "prod_deploy",
+      "subject": {
+        "id": "d-1",
+        "type": "deployment"
+      }
+    },
+    {
+      "check": "approved",
+      "inputs": [
+        {
+          "name": "approved_by",
+          "value": null
+        }
+      ],
+      "passed": false,
+      "requirement": "prod_deploy",
+      "subject": {
+        "id": "d-2",
+        "type": "deployment"
       }
     }
   ]
@@ -273,26 +274,26 @@ can read the shape without running anything. Key order is `opa eval`'s
 ```
 
 Three parts: the `compliant` roll-up, the `results` rows (the evidence), and
-the `sets` summary (the definitions, plus each set's own verdict). Note
-`subjects: {total: 3, matching: 2}` — three deployments in the input, two in
-scope after the filter — and `satisfied: false`, because one of those two has
-no approver.
+the `requirements` summary (the definitions, plus each requirement's own
+verdict). Note `subjects: {total: 3, matching: 2}` — three deployments in the
+input, two in scope after the filter — and `satisfied: false`, because one of
+those two has no approver.
 
-`expression` is rendered by the library from the clause spec — you get a
+`expression` is rendered by the library from the check spec — you get a
 human-readable form of each check for free. You only write `expression`
 yourself for custom ops, where the library can't derive it.
 
 ### Reading the rows
 
-The same six rows, condensed. Row order is deterministic: `$min_count` rows
-first, then `$matches_filter` rows, then clause rows.
+The same six rows, condensed. Row order is deterministic: `$min_subjects` rows
+first, then `$applies` rows, then check rows.
 
-| set | subject.id | predicate | inputs | passed |
+| requirement | subject.id | check | inputs | passed |
 | --- | --- | --- | --- | --- |
-| prod_deploy | `null` *(set-level)* | `$min_count` | `count(matching(deployments)) = 2` | ✅ |
-| prod_deploy | `"d-1"` | `$matches_filter` | `environment = "prod"` | ✅ |
-| prod_deploy | `"d-2"` | `$matches_filter` | `environment = "prod"` | ✅ |
-| prod_deploy | `"d-3"` | `$matches_filter` | `environment = "staging"` | ❌ |
+| prod_deploy | `null` *(requirement-level)* | `$min_subjects` | `count(matching(deployments)) = 2` | ✅ |
+| prod_deploy | `"d-1"` | `$applies` | `environment = "prod"` | ✅ |
+| prod_deploy | `"d-2"` | `$applies` | `environment = "prod"` | ✅ |
+| prod_deploy | `"d-3"` | `$applies` | `environment = "staging"` | ❌ |
 | prod_deploy | `"d-1"` | `approved` | `approved_by = "bob"` | ✅ |
 | prod_deploy | `"d-2"` | `approved` | `approved_by = null` | ❌ |
 
@@ -303,17 +304,17 @@ Three things to take from that table:
    row.
 2. **The failure produced a row at all.** This is the thing plain Rego makes
    hard: an undefined check leaves no trace. Here `d-2` is named.
-3. **Two predicates you didn't declare showed up**, prefixed with `$`. The
-   library synthesises those, and `$` guarantees they can never collide with
-   your own clause names:
-   - **`$min_count`** — one row per set: were there enough in-scope subjects.
-     A typo in `path` finds nothing and fails here, rather than a set with zero
-     subjects quietly passing.
-   - **`$matches_filter`** — one row per *raw* subject, for sets with a
-     `where`: did this subject qualify. `d-3` is out of scope, and it's named
-     in the evidence saying so, instead of surviving only as the `total: 3` /
-     `matching: 2` discrepancy. It gets no clause rows — it was never
-     evaluated.
+3. **Two checks you didn't declare showed up**, prefixed with `$`. The library
+   synthesises those, and `$` guarantees they can never collide with your own
+   check names:
+   - **`$min_subjects`** — one row per requirement: were there enough in-scope
+     subjects. A typo in `from` finds nothing and fails here, rather than a
+     requirement with zero subjects quietly passing.
+   - **`$applies`** — one row per *raw* subject, for requirements with an
+     `applies_to`: was this subject in scope. `d-3` is out of scope, and it's
+     named in the evidence saying so, instead of surviving only as the
+     `total: 3` / `matching: 2` discrepancy. It gets no check rows — it was
+     never evaluated.
 
 ### Which subject failed?
 
@@ -327,13 +328,13 @@ breached the policy". Three kinds of row, three meanings:
 
 | Failing row | `subject.id` | What it means | A violation? |
 | --- | --- | --- | --- |
-| your own predicate (`approved`) | the subject that failed | this subject breached this check | **yes** |
-| `$matches_filter` | the subject that didn't qualify | out of scope, never evaluated | **no** |
-| `$min_count` | `null` — the row is about the set, not a subject | too few in-scope subjects existed | **yes** |
+| one of your own checks (`approved`) | the subject that failed | this subject breached this check | **yes** |
+| `$applies` | the subject that didn't qualify | out of scope, never evaluated | **no** |
+| `$min_subjects` | `null` — the row is about the requirement, not a subject | too few in-scope subjects existed | **yes** |
 
 So `d-3` above is not a problem; `d-2` is. And `subject.id` is `null` on
-`$min_count` rows because there is no single subject to blame — "no production
-deployment at all" is a fact about the set.
+`$min_subjects` rows because there is no single subject to blame — "no
+production deployment at all" is a fact about the requirement.
 
 In Rego, the failing ids are one comprehension:
 
@@ -341,38 +342,38 @@ In Rego, the failing ids are one comprehension:
 failing_subjects contains id if {
 	some r in report.results
 	r.passed == false
-	r.predicate != "$matches_filter"
+	r.check != "$applies"
 	id := r.subject.id
 }
 ```
 
 → `["d-2"]`
 
-For a human-readable message, join the row back to its clause definition
-through `(set, predicate)` to pick up the `description`. This is the pattern
-`examples/code_review.rego` uses, with one extra guard: only project from sets
-that aren't satisfied, so that in a `some`-quantified set the failing rows of
-the *other* subjects don't turn into violations when one subject did meet
-everything.
+For a human-readable message, join the row back to its check definition through
+`(requirement, check)` to pick up the `description`. This is the pattern
+`examples/code_review.rego` uses, with one extra guard: only project from
+requirements that aren't satisfied, so that under `"require": "some"` the
+failing rows of the *other* subjects don't turn into violations when one subject
+did meet everything.
 
 ```rego
 violations contains msg if {
-	some s in report.sets
-	not s.satisfied
+	some req_name, req in report.requirements
+	not req.satisfied
 	some r in report.results
-	r.set == s.name
+	r.requirement == req_name
 	r.passed == false
-	r.predicate != "$matches_filter"
-	description := object.get(s.clauses, [r.predicate, "description"], "")
-	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.predicate, description])
+	r.check != "$applies"
+	description := object.get(req.checks, [r.check, "description"], "")
+	msg := sprintf("%s '%v': %s — %s", [r.subject.type, r.subject.id, r.check, description])
 }
 ```
 
 → `["deployment 'd-2': approved — A named approver signed off on the deployment"]`
 
-Note `object.get(s.clauses, [r.predicate, ...])`, not a lookup by predicate name
-alone. Two different sets may reuse a predicate name for unrelated checks, so
-the `set` half of the pair is what makes the lookup unambiguous.
+Note that the lookup goes through the requirement, not by check name alone. Two
+different requirements may reuse a check name for unrelated things, so the
+`requirement` half of the pair is what makes it unambiguous.
 
 From outside Rego, the same projection over the report JSON:
 
@@ -380,11 +381,11 @@ From outside Rego, the same projection over the report JSON:
 opa eval -d path/to/src/library.rego -d prod_deploy.rego -i deployments.json \
   --format=pretty 'data.tutorial.report' \
   | jq -r '.results[] | select(.passed == false)
-           | "\(.subject.type) \(.subject.id // "(set-level)"): \(.predicate) — inputs: \(.inputs | map("\(.name)=\(.value|tojson)") | join(", "))"'
+           | "\(.subject.type) \(.subject.id // "(requirement-level)"): \(.check) — inputs: \(.inputs | map("\(.name)=\(.value|tojson)") | join(", "))"'
 ```
 
 ```
-deployment d-3: $matches_filter — inputs: environment="staging"
+deployment d-3: $applies — inputs: environment="staging"
 deployment d-2: approved — inputs: approved_by=null
 ```
 
@@ -392,14 +393,14 @@ deployment d-2: approved — inputs: approved_by=null
 
 Real checks often reach into a collection *within* a subject: every commit in
 the PR, every CI check on the deployment. That's the `all` operator (and `any`
-for at-least-one), which applies a nested leaf clause across each element:
+for at-least-one), which applies a nested check across each element:
 
 ```rego
 "checks_green": {
 	"description": "Every CI check on the deployment passed",
 	"op": "all",
 	"path": ["checks"],
-	"clause": {"op": "equals", "path": ["conclusion"], "value": "success"},
+	"check": {"op": "equals", "path": ["conclusion"], "value": "success"},
 }
 ```
 
@@ -408,8 +409,8 @@ deployment with a mixed pair of checks, the row echoes the whole projection —
 
 ```json
 {
-  "set": "prod_deploy", "subject": {"type": "deployment", "id": "d-1"},
-  "predicate": "checks_green",
+  "requirement": "prod_deploy", "subject": {"type": "deployment", "id": "d-1"},
+  "check": "checks_green",
   "inputs": [{"name": "checks[].conclusion", "value": ["success", "failure"]}],
   "passed": false
 }
@@ -422,26 +423,25 @@ principle showing up where it surprises people most.
 
 ### Requiring one subject to pass everything
 
-The default quantifier is `every`: all in-scope subjects must pass all clauses.
-Add `"quantifier": "some"` and the set is satisfied when **one** subject passes
-**all** clauses on its own.
+`require` defaults to `every`: all in-scope subjects must pass all checks. Set
+`"require": "some"` and the requirement is satisfied when **one** subject passes
+**all** checks on its own.
 
 That distinction is the whole point of the real code-review control. "One
 merged PR was on the protected branch, and one merged PR had signed commits,
 and one merged PR was peer-approved" must not add up to compliance if those
-were three different PRs. `some` forbids splitting the requirements across
-subjects — see `examples/trail_split.json`, which is built to fail exactly that
-way.
+were three different PRs. `some` forbids splitting the checks across subjects —
+see `examples/trail_split.json`, which is built to fail exactly that way.
 
 Note that with `some`, failed rows for the *other* subjects are still in the
-report. They're evidence, not violations: another subject met every
-requirement. `examples/code_review.rego` handles this by only projecting
-violations from sets that aren't satisfied.
+report. They're evidence, not violations: another subject met every check.
+`examples/code_review.rego` handles this by only projecting violations from
+requirements that aren't satisfied.
 
 ### Next step
 
 Read `examples/code_review.rego`. It's Kosli's real SDLC-CTRL-0007 code review
-control expressed as two subject sets — an artifact and a merged PR — and it
+control expressed as two requirements — an artifact and a merged PR — and it
 uses every concept above plus one custom op. It's roughly 100 lines, and a good
 share of them are descriptions and comments.
 
@@ -449,37 +449,55 @@ share of them are descriptions and comments.
 
 ## Reference
 
-### Subject set
+### Policy
+
+A policy is an object mapping requirement names to requirements:
+
+```rego
+requirements := {
+    "artifact":  { ... },
+    "merged_pr": { ... },
+}
+
+report := evidence.report(input, requirements)
+```
+
+The name is the **object key**, not a field inside the requirement. That's what
+makes names unique by construction, so a row's `(requirement, check)` pair
+always resolves to exactly one definition. A policy declaring **no
+requirements** asserts nothing and is never compliant.
+
+### Requirement
 
 ```rego
 {
-    "name": "merged_pr",          # row linkage + set verdict key (default: type)
-    "type": "pull_request",       # subject type label
-    "path": [...],                # collection location in input (array or single object)
-    "id": [...],                  # identity path within a subject
-    "quantifier": "every"|"some", # every subject must pass / some subject must pass ALL clauses
-    "where": {name: clause},      # filter: only subjects passing these become subjects
-    "min_count": 1,               # matching subjects required (default 1)
-    "clauses": {name: clause},
+    "subject_type": "pull_request", # subject type label (default: "subject")
+    "from": [...],                  # collection location in input (array or single object)
+    "id": [...],                    # identity path within a subject
+    "require": "every"|"some",      # every subject must pass / some subject must pass ALL checks
+    "applies_to": {name: check},    # scope filter: only matching subjects are evaluated
+    "min_subjects": 1,              # matching subjects required (default 1)
+    "checks": {name: check},
 }
 ```
 
-- **`path`** resolves to an array (each element is a subject) or to a single
+- **`from`** resolves to an array (each element is a subject) or to a single
   object (one subject). Anything else — missing, a string, a number — yields
-  zero subjects, which fails `$min_count`.
+  zero subjects, which fails `$min_subjects`.
 - **`id`** is a path *within* a subject. If it doesn't resolve, `subject.id` is
   `null`; the row still exists.
-- **`where`** clauses use the same clause vocabulary as `clauses`, collection
-  ops included. All of them must pass for a subject to be in scope.
-- **`min_count`** defaults to 1, so a typo in `path` fails the set instead of
-  vacuously satisfying it. Set it to `0` to opt back into a vacuous pass.
-- A set that declares **no clauses** is never satisfied — it asserts nothing.
-  Neither is a report with **no sets**.
+- **`applies_to`** entries use the same check vocabulary as `checks`,
+  collection ops included. All of them must pass for a subject to be in scope.
+- **`min_subjects`** defaults to 1, so a typo in `from` fails the requirement
+  instead of vacuously satisfying it. Set it to `0` to opt back into a vacuous
+  pass.
+- A requirement that declares **no checks** is never satisfied — it asserts
+  nothing.
 
 ### Operators
 
-A clause names one operator and its parameters. Every `path` is relative to
-the subject.
+A check names one operator and its parameters. Every `path` is relative to the
+subject.
 
 **Leaf operators** work on a single subject (or, inside `all`/`any`, on a
 single element):
@@ -501,22 +519,22 @@ single element):
 `right` are paths, not constants. To bound a field against a literal, use
 `range`.
 
-**Collection operators** apply a leaf clause across a nested array, one
+**Collection operators** apply a nested check across a nested array, one
 nesting level deep (Rego forbids recursion):
 
 | `op` | Parameters | Passes when |
 | --- | --- | --- |
-| `all` | `path`, `clause` | `path` is a non-empty array and *every* element passes `clause` |
-| `any` | `path`, `clause` | `path` is a non-empty array and *some* element passes `clause` |
+| `all` | `path`, `check` | `path` is a non-empty array and *every* element passes the nested `check` |
+| `any` | `path`, `check` | `path` is a non-empty array and *some* element passes the nested `check` |
 
 **Custom ops** cover anything the vocabulary can't express. You contribute an
-`op_passed(clause, subject)` rule body into the `kosli.evidence` package from
+`op_passed(check, subject)` rule body into the `kosli.evidence` package from
 your own file — see `examples/code_review_ops.rego` — and it flows through the
 same report machinery. Two things the library can't derive for you, so declare
-them on the clause:
+them on the check:
 
 - **`expression`** — the human-readable form.
-- **`echo`** — every input the op reads, so a row can still carry everything
+- **`inputs`** — every input the op reads, so a row can still carry everything
   needed to recompute its verdict. An entry is either a path (`["author"]`) or
   a projection across a collection (`{"path": ["commits"], "each":
   ["timestamp"]}` → `commits[].timestamp`).
@@ -537,56 +555,55 @@ Rego's defaults point the other way:
 - `all`/`any` require a non-empty array. "Every commit is signed" over a
   subject with no recorded commits is absence of evidence, not evidence of
   compliance.
-- `min_count` defaults to 1, so a typo in `path` fails the set instead of
-  vacuously satisfying it. Set it to `0` to opt back into a vacuous pass; a
-  report with no sets at all is never compliant, and neither is a set that
-  declares no clauses.
+- `min_subjects` defaults to 1, so a typo in `from` fails the requirement
+  instead of vacuously satisfying it. Set it to `0` to opt back into a vacuous
+  pass; a policy with no requirements at all is never compliant, and neither is
+  a requirement that declares no checks.
 
 `equals` distinguishes a field that is absent from one explicitly set to
 `null`: only the latter satisfies `"value": null`.
 
 ### Report shape
 
-`evidence.report(input, sets)` returns:
+`evidence.report(input, requirements)` returns:
 
 ```json
 {
   "compliant": true,
-  "sets": [
-    {
-      "name": "merged_pr",
-      "quantifier": "some",
+  "requirements": {
+    "merged_pr": {
+      "require": "some",
       "satisfied": true,
       "subjects": {"total": 2, "matching": 1},
-      "clauses": {
+      "checks": {
         "commits_signed": {
-          "op": "all", "path": ["commits"], "clause": {...},
+          "op": "all", "path": ["commits"], "check": {...},
           "description": "Every commit ... signed ...",
           "expression": "every commits: verified == true"
         },
-        "$min_count": {
+        "$min_subjects": {
           "description": "at least 1 matching pull_request subject(s) required",
           "expression": "count(matching(trail...pull_requests)) >= 1"
         },
-        "$matches_filter": {
-          "description": "subject qualifies as a pull_request under this set's filter; ...",
+        "$applies": {
+          "description": "subject is in scope as a pull_request under this requirement's applies_to filter; ...",
           "expression": "state == MERGED"
         }
       }
     }
-  ],
+  },
   "results": [
     {
-      "set": "merged_pr",
+      "requirement": "merged_pr",
       "subject": {"type": "pull_request", "id": "https://github.com/.../pull/42"},
-      "predicate": "commits_signed",
+      "check": "commits_signed",
       "inputs": [{"name": "commits[].verified", "value": [true, true]}],
       "passed": true
     },
     {
-      "set": "merged_pr",
+      "requirement": "merged_pr",
       "subject": {"type": "pull_request", "id": "https://github.com/.../pull/44"},
-      "predicate": "$matches_filter",
+      "check": "$applies",
       "inputs": [{"name": "state", "value": "CLOSED"}],
       "passed": false
     }
@@ -594,28 +611,35 @@ Rego's defaults point the other way:
 }
 ```
 
-The clause **definition** — its raw spec, description, and rendered
-`expression` string — is declared once per `(set, predicate)` pair, in
-`sets[].clauses`. Rows in `results` carry only what's actually different per
-subject: `{set, subject, predicate, inputs, passed}`. A row's
-`(set, predicate)` is a reference into `sets[<set>].clauses[<predicate>]` — it
-is not safe to look a clause up by predicate name alone, since two different
-sets may reuse the same name for unrelated clauses. That lookup always
-resolves to exactly one definition: two sets declaring the same `name` would
-break it, so the second one is suffixed with its position (`merged_pr`,
-`merged_pr#1`).
+The check **definition** — its raw spec, description, and rendered `expression`
+string — is declared once per `(requirement, check)` pair, in
+`requirements[<name>].checks`. Rows in `results` carry only what's actually
+different per subject: `{requirement, subject, check, inputs, passed}`. A row's
+`(requirement, check)` is a reference into
+`requirements[<requirement>].checks[<check>]` — it is not safe to look a check
+up by name alone, since two different requirements may reuse the same name for
+unrelated checks. That lookup always resolves to exactly one definition,
+because a requirement's name is the policy object's own key: duplicates are
+unrepresentable rather than something the library has to detect and
+disambiguate.
+
+Row order is deterministic and independent of how the policy object was
+written — requirements are visited in name order, and within that,
+`$min_subjects` rows come first, then `$applies` rows, then check rows. Two
+consumers building the same policy with its keys in a different order produce
+byte-identical reports, which is what makes the report safe to hash and attest.
 
 This makes the report:
 
-- **total** — every declared predicate produces a row, including on malformed
-  or missing input (`object.get` with defaults throughout), so "failed because
+- **total** — every declared check produces a row, including on malformed or
+  missing input (`object.get` with defaults throughout), so "failed because
   temp_c was missing" is still a row, not a silent gap;
-- **not redundant per-row** — a policy checking the same clause against many
-  subjects (many commits, many PRs) doesn't repeat that clause's
+- **not redundant per-row** — a policy running the same check against many
+  subjects (many commits, many PRs) doesn't repeat that check's
   description/expression on every one of those rows;
 - **self-contained** — a downstream consumer can interpret every row without
-  re-parsing the `.rego` source, by looking up its `(set, predicate)` in
-  `sets[].clauses`.
+  re-parsing the `.rego` source, by looking up its `(requirement, check)` in
+  `requirements[].checks`.
 
 ---
 
@@ -642,12 +666,12 @@ The `--ignore` is required: `examples/*.json` are `opa eval` fixtures and both
 define `data.trail`, so loading them together is a merge error. The test files
 build their fixtures inline instead.
 
-- **`src/library_test.rego`** — the engine: subject resolution, `where`
+- **`src/library_test.rego`** — the engine: subject resolution, `applies_to`
   filters, every leaf and collection operator (including what each one does
   with missing, null, and wrong-typed input), echoed inputs, rendered
-  expressions, row shape and totality, `min_count`, both quantifiers, and the
-  report-level invariants (determinism, and every row resolving to exactly one
-  clause definition).
+  expressions, row shape and totality, `min_subjects`, both `require` modes,
+  and the report-level invariants (determinism, order-independence of policy
+  keys, and every row resolving to exactly one check definition).
 - **`examples/code_review_test.rego`** — the consumer policy: both README
   scenarios, the violation projection, the `peer_approved` custom op, and
   `data.params` configurability.
@@ -668,9 +692,9 @@ at the moment.
 The `regressions` section at the end of each file covers the fail-open and
 evidence-integrity bugs the library shipped with — `compare` passing on a
 missing field, `peer_approved` ignoring commits with no timestamp, a vacuous
-pass over an empty collection, a `$min_count` row labelling a count it wasn't
-reporting, `where`-excluded subjects leaving no trace, colliding set names and
-predicate names. Those are the cases most worth not reintroducing.
+pass over an empty collection, a `$min_subjects` row labelling a count it
+wasn't reporting, out-of-scope subjects leaving no trace, and colliding
+requirement and check names. Those are the cases most worth not reintroducing.
 
 One residual: `compare_time` screens its inputs with a shape regex before
 parsing, so malformed timestamps produce a failing row even under
@@ -685,9 +709,9 @@ which means a builtin error — fatal under that flag, a failing row without it.
   `library_test.rego` is its test suite.
 - **`examples/`** — a worked example of consuming the library:
   `code_review.rego` expresses Kosli's real SDLC-CTRL-0007 code review control
-  as `kosli.evidence` subject sets; `code_review_ops.rego` supplies the one
-  custom op (`peer_approved`) that exceeds the operator vocabulary, contributed
-  into the `kosli.evidence` package from the policy side, the same way a real
+  as a `kosli.evidence` policy; `code_review_ops.rego` supplies the one custom
+  op (`peer_approved`) that exceeds the operator vocabulary, contributed into
+  the `kosli.evidence` package from the policy side, the same way a real
   customer would; `trail_compliant.json` and `trail_split.json` are input
   documents to evaluate it against; `code_review_test.rego` tests the policy
   and its custom op.

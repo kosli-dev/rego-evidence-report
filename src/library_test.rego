@@ -21,99 +21,96 @@ import rego.v1
 
 # ---------- helpers ----------
 
-# A one-subject, one-clause report: the smallest thing that drives a clause end
+# A one-subject, one-check report: the smallest thing that drives a check end
 # to end (subject resolution -> operator -> row -> definition table).
-solo(subj, clause) := evidence.report(
+solo(subj, check) := evidence.report(
 	{"items": [subj]},
-	[{
-		"name": "s",
-		"type": "thing",
-		"path": ["items"],
+	{"s": {
+		"subject_type": "thing",
+		"from": ["items"],
 		"id": ["id"],
-		"clauses": {"c": clause},
-	}],
+		"checks": {"c": check},
+	}},
 )
 
-# The verdict of the clause's own row (as opposed to the set's synthetic
-# $min_count row). Reads the row rather than calling op_passed directly, so a
-# clause that produces NO row fails the test (report totality) instead of
-# quietly looking like a pass.
-verdict(subj, clause) := row.passed if {
-	some row in solo(subj, clause).results
-	row.predicate == "c"
+# The verdict of the check's own row (as opposed to the requirement's synthetic
+# $min_subjects row). Reads the row rather than calling op_passed directly, so a
+# check that produces NO row fails the test (report totality) instead of quietly
+# looking like a pass.
+verdict(subj, check) := row.passed if {
+	some row in solo(subj, check).results
+	row.check == "c"
 }
 
-inputs_of(subj, clause) := row.inputs if {
-	some row in solo(subj, clause).results
-	row.predicate == "c"
+inputs_of(subj, check) := row.inputs if {
+	some row in solo(subj, check).results
+	row.check == "c"
 }
 
-rendered(subj, clause) := solo(subj, clause).sets[0].clauses.c.expression
+rendered(subj, check) := solo(subj, check).requirements.s.checks.c.expression
 
-rows_for(report, set_name, predicate) := [r |
+rows_for(report, req_name, check_name) := [r |
 	some r in report.results
-	r.set == set_name
-	r.predicate == predicate
+	r.requirement == req_name
+	r.check == check_name
 ]
 
 # ---------- subject resolution ----------
 
-id_set(path) := {
-	"name": "s",
-	"type": "thing",
-	"path": path,
+id_req(from) := {"s": {
+	"subject_type": "thing",
+	"from": from,
 	"id": ["id"],
-	"clauses": {"c": {"op": "present", "path": ["id"]}},
-}
+	"checks": {"c": {"op": "present", "path": ["id"]}},
+}}
 
-subject_counts(doc, path) := evidence.report(doc, [id_set(path)]).sets[0].subjects
+subject_counts(doc, from) := evidence.report(doc, id_req(from)).requirements.s.subjects
 
-test_array_path_yields_one_subject_per_element if {
+test_array_from_yields_one_subject_per_element if {
 	subject_counts({"items": [{"id": "a"}, {"id": "b"}]}, ["items"]) == {"total": 2, "matching": 2}
 }
 
-test_single_object_path_is_wrapped_as_one_subject if {
+test_single_object_from_is_wrapped_as_one_subject if {
 	subject_counts({"item": {"id": "a"}}, ["item"]) == {"total": 1, "matching": 1}
 }
 
-test_missing_path_yields_no_subjects if {
+test_missing_from_yields_no_subjects if {
 	subject_counts({"other": [{"id": "a"}]}, ["items"]) == {"total": 0, "matching": 0}
 }
 
-test_scalar_path_yields_no_subjects if {
+test_scalar_from_yields_no_subjects if {
 	subject_counts({"items": "not-a-collection"}, ["items"]) == {"total": 0, "matching": 0}
 }
 
-test_empty_path_treats_the_whole_document_as_one_subject if {
+test_empty_from_treats_the_whole_document_as_one_subject if {
 	subject_counts({"id": "root"}, []) == {"total": 1, "matching": 1}
 }
 
-test_nested_path_resolves_through_objects if {
+test_nested_from_resolves_through_objects if {
 	subject_counts({"a": {"b": {"items": [{"id": "x"}]}}}, ["a", "b", "items"]) == {"total": 1, "matching": 1}
 }
 
 test_missing_id_path_yields_a_null_subject_id if {
-	rep := evidence.report({"items": [{"no_id_here": 1}]}, [id_set(["items"])])
+	rep := evidence.report({"items": [{"no_id_here": 1}]}, id_req(["items"]))
 	some row in rep.results
 	row.subject == {"type": "thing", "id": null}
 }
 
 test_subject_id_is_read_from_the_declared_path if {
-	rep := evidence.report({"items": [{"id": "abc"}]}, [id_set(["items"])])
+	rep := evidence.report({"items": [{"id": "abc"}]}, id_req(["items"]))
 	some row in rep.results
 	row.subject == {"type": "thing", "id": "abc"}
 }
 
-# ---------- where filters ----------
+# ---------- applies_to filters ----------
 
-where_set(where) := {
-	"name": "s",
-	"type": "thing",
-	"path": ["items"],
+scoped_req(applies_to) := {"s": {
+	"subject_type": "thing",
+	"from": ["items"],
 	"id": ["id"],
-	"where": where,
-	"clauses": {"c": {"op": "present", "path": ["id"]}},
-}
+	"applies_to": applies_to,
+	"checks": {"c": {"op": "present", "path": ["id"]}},
+}}
 
 merged_only := {"merged": {"op": "equals", "path": ["state"], "value": "MERGED"}}
 
@@ -122,71 +119,71 @@ two_states := {"items": [
 	{"id": "b", "state": "CLOSED"},
 ]}
 
-test_where_narrows_matching_but_leaves_total_intact if {
-	rep := evidence.report(two_states, [where_set(merged_only)])
-	rep.sets[0].subjects == {"total": 2, "matching": 1}
+test_applies_to_narrows_matching_but_leaves_total_intact if {
+	rep := evidence.report(two_states, scoped_req(merged_only))
+	rep.requirements.s.subjects == {"total": 2, "matching": 1}
 }
 
-test_where_clauses_are_conjunctive if {
+test_applies_to_checks_are_conjunctive if {
 	both := object.union(merged_only, {"on_main": {"op": "equals", "path": ["base_ref"], "value": "main"}})
 	doc := {"items": [
 		{"id": "a", "state": "MERGED", "base_ref": "main"},
 		{"id": "b", "state": "MERGED", "base_ref": "topic"},
 	]}
-	rep := evidence.report(doc, [where_set(both)])
-	rep.sets[0].subjects == {"total": 2, "matching": 1}
+	rep := evidence.report(doc, scoped_req(both))
+	rep.requirements.s.subjects == {"total": 2, "matching": 1}
 }
 
-test_where_excludes_subjects_whose_filtered_field_is_missing if {
-	rep := evidence.report({"items": [{"id": "a"}]}, [where_set(merged_only)])
-	rep.sets[0].subjects == {"total": 1, "matching": 0}
+test_applies_to_excludes_subjects_whose_filtered_field_is_missing if {
+	rep := evidence.report({"items": [{"id": "a"}]}, scoped_req(merged_only))
+	rep.requirements.s.subjects == {"total": 1, "matching": 0}
 }
 
-test_where_with_no_clauses_matches_everything if {
-	rep := evidence.report(two_states, [where_set({})])
-	rep.sets[0].subjects == {"total": 2, "matching": 2}
+test_empty_applies_to_matches_everything if {
+	rep := evidence.report(two_states, scoped_req({}))
+	rep.requirements.s.subjects == {"total": 2, "matching": 2}
 }
 
-test_where_evaluates_the_filter_for_every_raw_subject if {
-	rep := evidence.report(two_states, [where_set(merged_only)])
+test_applies_to_is_evaluated_for_every_raw_subject if {
+	rep := evidence.report(two_states, scoped_req(merged_only))
 	verdicts := {r.subject.id: r.passed |
 		some r in rep.results
-		r.predicate == "$matches_filter"
+		r.check == "$applies"
 	}
 	verdicts == {"a": true, "b": false}
 }
 
-test_filter_row_echoes_the_field_the_filter_read if {
-	rep := evidence.report(two_states, [where_set(merged_only)])
+test_applies_row_echoes_the_field_the_filter_read if {
+	rep := evidence.report(two_states, scoped_req(merged_only))
 	some r in rep.results
-	r.predicate == "$matches_filter"
+	r.check == "$applies"
 	r.subject.id == "b"
 	r.inputs == [{"name": "state", "value": "CLOSED"}]
 }
 
-test_filter_definition_renders_the_filter_expression if {
-	rep := evidence.report(two_states, [where_set(merged_only)])
-	rep.sets[0].clauses["$matches_filter"].expression == "state == MERGED"
+test_applies_definition_renders_the_filter_expression if {
+	rep := evidence.report(two_states, scoped_req(merged_only))
+	rep.requirements.s.checks["$applies"].expression == "state == MERGED"
 }
 
-test_filter_definition_conjoins_multiple_filter_clauses if {
+test_applies_definition_conjoins_multiple_filter_checks if {
 	both := object.union(merged_only, {"on_main": {"op": "equals", "path": ["base_ref"], "value": "main"}})
-	rep := evidence.report(two_states, [where_set(both)])
+	rep := evidence.report(two_states, scoped_req(both))
 
-	# Ordered by filter-clause name — "merged", then "on_main".
-	rep.sets[0].clauses["$matches_filter"].expression == "state == MERGED and base_ref == main"
+	# Ordered by filter-check name — "merged", then "on_main".
+	rep.requirements.s.checks["$applies"].expression == "state == MERGED and base_ref == main"
 }
 
-test_no_filter_means_no_filter_rows_or_definition if {
-	rep := evidence.report(two_states, [id_set(["items"])])
-	count([r | some r in rep.results; r.predicate == "$matches_filter"]) == 0
-	not "$matches_filter" in object.keys(rep.sets[0].clauses)
+test_no_applies_to_means_no_applies_rows_or_definition if {
+	rep := evidence.report(two_states, id_req(["items"]))
+	count([r | some r in rep.results; r.check == "$applies"]) == 0
+	not "$applies" in object.keys(rep.requirements.s.checks)
 }
 
-# Excluded subjects are recorded, not evaluated: no clause rows for them.
-test_where_excluded_subject_gets_no_clause_rows if {
-	rep := evidence.report(two_states, [where_set(merged_only)])
-	ids := {r.subject.id | some r in rep.results; r.predicate == "c"}
+# Out-of-scope subjects are recorded, not evaluated: no check rows for them.
+test_out_of_scope_subject_gets_no_check_rows if {
+	rep := evidence.report(two_states, scoped_req(merged_only))
+	ids := {r.subject.id | some r in rep.results; r.check == "c"}
 	ids == {"a"}
 }
 
@@ -415,13 +412,13 @@ test_compare_time_rejects_a_missing_side if {
 all_verified := {
 	"op": "all",
 	"path": ["commits"],
-	"clause": {"op": "equals", "path": ["verified"], "value": true},
+	"check": {"op": "equals", "path": ["verified"], "value": true},
 }
 
 any_approved := {
 	"op": "any",
 	"path": ["approvers"],
-	"clause": {"op": "equals", "path": ["state"], "value": "APPROVED"},
+	"check": {"op": "equals", "path": ["state"], "value": "APPROVED"},
 }
 
 test_all_when_every_element_passes if {
@@ -444,7 +441,7 @@ test_all_rejects_object_collection if {
 	verdict({"commits": {"a": {"verified": true}}}, all_verified) == false
 }
 
-test_all_without_a_leaf_clause_fails if {
+test_all_without_a_nested_check_fails if {
 	verdict({"commits": [{"verified": true}]}, {"op": "all", "path": ["commits"]}) == false
 }
 
@@ -460,7 +457,7 @@ test_any_over_empty_collection if verdict({"approvers": []}, any_approved) == fa
 
 test_any_rejects_missing_path if verdict({}, any_approved) == false
 
-test_any_without_a_leaf_clause_fails if {
+test_any_without_a_nested_check_fails if {
 	verdict({"approvers": [{"state": "APPROVED"}]}, {"op": "any", "path": ["approvers"]}) == false
 }
 
@@ -475,8 +472,8 @@ test_inputs_echo_null_for_a_missing_field if {
 }
 
 test_inputs_name_nested_paths_with_dots if {
-	clause := {"op": "equals", "path": ["a", "b"], "value": 1}
-	inputs_of({"a": {"b": 1}}, clause) == [{"name": "a.b", "value": 1}]
+	check := {"op": "equals", "path": ["a", "b"], "value": 1}
+	inputs_of({"a": {"b": 1}}, check) == [{"name": "a.b", "value": 1}]
 }
 
 test_inputs_echo_both_sides_of_a_comparison if {
@@ -493,46 +490,46 @@ test_inputs_project_leaf_values_across_a_collection if {
 	}]
 }
 
-test_inputs_explicit_echo_wins if {
-	clause := {"op": "present", "path": ["id"], "echo": [["author"], ["approvers"]]}
-	inputs_of({"id": "x", "author": "alice", "approvers": []}, clause) == [
+test_explicit_inputs_win if {
+	check := {"op": "present", "path": ["id"], "inputs": [["author"], ["approvers"]]}
+	inputs_of({"id": "x", "author": "alice", "approvers": []}, check) == [
 		{"name": "author", "value": "alice"},
 		{"name": "approvers", "value": []},
 	]
 }
 
-test_inputs_empty_when_a_clause_declares_neither_path_nor_echo if {
+test_inputs_empty_when_a_check_declares_neither_path_nor_inputs if {
 	inputs_of({"id": "x"}, {"op": "bespoke"}) == []
 }
 
-# An echo entry can also project a field across a collection, so a custom op
+# An inputs entry can also project a field across a collection, so a custom op
 # reading commits[].timestamp can echo exactly that.
-test_inputs_echo_can_project_across_a_collection if {
-	clause := {"op": "bespoke", "echo": [{"path": ["commits"], "each": ["timestamp"]}]}
-	inputs_of({"commits": [{"timestamp": 1}, {"timestamp": 2}]}, clause) == [{
+test_inputs_can_project_across_a_collection if {
+	check := {"op": "bespoke", "inputs": [{"path": ["commits"], "each": ["timestamp"]}]}
+	inputs_of({"commits": [{"timestamp": 1}, {"timestamp": 2}]}, check) == [{
 		"name": "commits[].timestamp",
 		"value": [1, 2],
 	}]
 }
 
-test_inputs_echo_projection_over_a_missing_collection if {
-	clause := {"op": "bespoke", "echo": [{"path": ["commits"], "each": ["timestamp"]}]}
-	inputs_of({}, clause) == [{"name": "commits[].timestamp", "value": []}]
+test_inputs_projection_over_a_missing_collection if {
+	check := {"op": "bespoke", "inputs": [{"path": ["commits"], "each": ["timestamp"]}]}
+	inputs_of({}, check) == [{"name": "commits[].timestamp", "value": []}]
 }
 
-test_inputs_echo_mixes_paths_and_projections if {
-	clause := {"op": "bespoke", "echo": [["author"], {"path": ["commits"], "each": ["sha1"]}]}
-	inputs_of({"author": "alice", "commits": [{"sha1": "aaaa"}]}, clause) == [
+test_inputs_mix_paths_and_projections if {
+	check := {"op": "bespoke", "inputs": [["author"], {"path": ["commits"], "each": ["sha1"]}]}
+	inputs_of({"author": "alice", "commits": [{"sha1": "aaaa"}]}, check) == [
 		{"name": "author", "value": "alice"},
 		{"name": "commits[].sha1", "value": ["aaaa"]},
 	]
 }
 
-# ---------- clause definition table ----------
+# ---------- check definition table ----------
 
 test_definition_carries_the_raw_spec_and_description if {
-	clause := object.union(is_merged, {"description": "Merged"})
-	def := solo({"state": "MERGED"}, clause).sets[0].clauses.c
+	check := object.union(is_merged, {"description": "Merged"})
+	def := solo({"state": "MERGED"}, check).requirements.s.checks.c
 	def.op == "equals"
 	def.path == ["state"]
 	def.value == "MERGED"
@@ -560,13 +557,13 @@ test_expression_for_all if rendered({"commits": []}, all_verified) == "every com
 test_expression_for_any if rendered({"approvers": []}, any_approved) == "some approvers: state == APPROVED"
 
 test_expression_for_nested_paths_is_dotted if {
-	clause := {"op": "equals", "path": ["a", "b"], "value": 1}
-	rendered({}, clause) == "a.b == 1"
+	check := {"op": "equals", "path": ["a", "b"], "value": 1}
+	rendered({}, check) == "a.b == 1"
 }
 
 test_declared_expression_wins_over_the_rendered_one if {
-	clause := object.union(is_merged, {"expression": "state is MERGED"})
-	rendered({}, clause) == "state is MERGED"
+	check := object.union(is_merged, {"expression": "state is MERGED"})
+	rendered({}, check) == "state is MERGED"
 }
 
 # A custom op the library cannot render gets an empty expression; the policy is
@@ -575,37 +572,36 @@ test_unrenderable_op_yields_an_empty_expression if rendered({}, {"op": "bespoke"
 
 # ---------- rows ----------
 
-two_clause_set := {
-	"name": "s",
-	"type": "thing",
-	"path": ["items"],
+two_check_req := {"s": {
+	"subject_type": "thing",
+	"from": ["items"],
 	"id": ["id"],
-	"clauses": {
+	"checks": {
 		"a": {"op": "present", "path": ["id"]},
 		"b": {"op": "equals", "path": ["state"], "value": "MERGED"},
 	},
-}
+}}
 
-test_one_row_per_subject_and_clause if {
+test_one_row_per_subject_and_check if {
 	doc := {"items": [{"id": "a"}, {"id": "b"}]}
-	rep := evidence.report(doc, [two_clause_set])
-	count([r | some r in rep.results; not startswith(r.predicate, "$")]) == 4
+	rep := evidence.report(doc, two_check_req)
+	count([r | some r in rep.results; not startswith(r.check, "$")]) == 4
 
-	# ...plus the set's own $min_count row.
+	# ...plus the requirement's own $min_subjects row.
 	count(rep.results) == 5
 }
 
 test_row_carries_exactly_the_documented_keys if {
 	every row in solo({"state": "MERGED"}, is_merged).results {
-		object.keys(row) == {"set", "subject", "predicate", "inputs", "passed"}
+		object.keys(row) == {"requirement", "subject", "check", "inputs", "passed"}
 	}
 }
 
 test_rows_are_produced_even_for_an_empty_subject if {
-	rep := evidence.report({"items": [{}]}, [two_clause_set])
-	clause_rows := [r | some r in rep.results; not startswith(r.predicate, "$")]
-	count(clause_rows) == 2
-	every row in clause_rows {
+	rep := evidence.report({"items": [{}]}, two_check_req)
+	check_rows := [r | some r in rep.results; not startswith(r.check, "$")]
+	count(check_rows) == 2
+	every row in check_rows {
 		row.passed == false
 	}
 }
@@ -614,113 +610,108 @@ test_unknown_op_produces_a_failing_row_not_a_gap if {
 	verdict({"id": "x"}, {"op": "no_such_op", "path": ["id"]}) == false
 }
 
-test_set_name_defaults_to_the_type if {
-	rep := evidence.report({"items": [{"id": "a"}]}, [{
-		"type": "thing",
-		"path": ["items"],
-		"clauses": {"c": has_fingerprint},
-	}])
-	rep.sets[0].name == "thing"
-	rep.results[0].set == "thing"
-}
-
-test_set_name_defaults_to_subject_without_a_type if {
-	rep := evidence.report({"items": [{"id": "a"}]}, [{
-		"path": ["items"],
-		"clauses": {"c": has_fingerprint},
-	}])
-	rep.sets[0].name == "subject"
+test_subject_type_defaults_to_subject if {
+	rep := evidence.report({"items": [{"id": "a"}]}, {"s": {
+		"from": ["items"],
+		"checks": {"c": has_fingerprint},
+	}})
 	rep.results[0].subject.type == "subject"
 }
 
-test_rows_from_different_sets_are_labelled_separately if {
+test_rows_from_different_requirements_are_labelled_separately if {
 	doc := {"a": [{"id": "1"}], "b": [{"id": "2"}]}
-	sets := [
-		{"name": "first", "type": "t", "path": ["a"], "id": ["id"], "clauses": {"c": {"op": "present", "path": ["id"]}}},
-		{"name": "second", "type": "t", "path": ["b"], "id": ["id"], "clauses": {"c": {"op": "present", "path": ["id"]}}},
-	]
-	rep := evidence.report(doc, sets)
+	policy := {
+		"first": {"subject_type": "t", "from": ["a"], "id": ["id"], "checks": {"c": {"op": "present", "path": ["id"]}}},
+		"second": {"subject_type": "t", "from": ["b"], "id": ["id"], "checks": {"c": {"op": "present", "path": ["id"]}}},
+	}
+	rep := evidence.report(doc, policy)
 	count(rows_for(rep, "first", "c")) == 1
 	count(rows_for(rep, "second", "c")) == 1
 }
 
-# ---------- min_count ----------
+# The requirement name is the policy's own object key — it is never rewritten, so
+# a row's name always matches the key a consumer looks up.
+test_requirement_name_is_the_policy_key if {
+	rep := evidence.report({"items": [{"id": "a"}]}, id_req(["items"]))
+	object.keys(rep.requirements) == {"s"}
+	{r.requirement | some r in rep.results} == {"s"}
+}
 
-min_count_set(n) := {
-	"name": "s",
-	"type": "thing",
-	"path": ["items"],
+# ---------- min_subjects ----------
+
+min_subjects_req(n) := {"s": {
+	"subject_type": "thing",
+	"from": ["items"],
 	"id": ["id"],
-	"min_count": n,
-	"clauses": {"c": {"op": "present", "path": ["id"]}},
+	"min_subjects": n,
+	"checks": {"c": {"op": "present", "path": ["id"]}},
+}}
+
+test_min_subjects_satisfied if {
+	rep := evidence.report({"items": [{"id": "a"}]}, min_subjects_req(1))
+	rows_for(rep, "s", "$min_subjects")[0].passed == true
+	rep.requirements.s.satisfied == true
 }
 
-test_min_count_satisfied if {
-	rep := evidence.report({"items": [{"id": "a"}]}, [min_count_set(1)])
-	rows_for(rep, "s", "$min_count")[0].passed == true
-	rep.sets[0].satisfied == true
-}
-
-test_min_count_violated_fails_the_set if {
-	rep := evidence.report({"items": []}, [min_count_set(1)])
-	rows_for(rep, "s", "$min_count")[0].passed == false
-	rep.sets[0].satisfied == false
+test_min_subjects_violated_fails_the_requirement if {
+	rep := evidence.report({"items": []}, min_subjects_req(1))
+	rows_for(rep, "s", "$min_subjects")[0].passed == false
+	rep.requirements.s.satisfied == false
 	rep.compliant == false
 }
 
-test_min_count_row_has_a_null_subject_id if {
-	rep := evidence.report({"items": []}, [min_count_set(1)])
-	rows_for(rep, "s", "$min_count")[0].subject == {"type": "thing", "id": null}
+test_min_subjects_row_has_a_null_subject_id if {
+	rep := evidence.report({"items": []}, min_subjects_req(1))
+	rows_for(rep, "s", "$min_subjects")[0].subject == {"type": "thing", "id": null}
 }
 
-test_min_count_definition_is_in_the_clause_table if {
-	rep := evidence.report({"items": []}, [min_count_set(2)])
-	def := rep.sets[0].clauses["$min_count"]
+test_min_subjects_definition_is_in_the_check_table if {
+	rep := evidence.report({"items": []}, min_subjects_req(2))
+	def := rep.requirements.s.checks["$min_subjects"]
 	def.description == "at least 2 matching thing subject(s) required"
 	def.expression == "count(matching(items)) >= 2"
 }
 
-# Opt-in would mean a typo'd path silently satisfies a set (issue 3), so every
-# set gets the guard whether it asks for one or not.
-test_min_count_defaults_to_one if {
-	rep := evidence.report({"items": [{"id": "a"}]}, [id_set(["items"])])
-	rows_for(rep, "s", "$min_count")[0].passed == true
-	rep.sets[0].clauses["$min_count"].expression == "count(matching(items)) >= 1"
+# Opt-in would mean a typo'd "from" silently satisfies a requirement (issue 3),
+# so every requirement gets the guard whether it asks for one or not.
+test_min_subjects_defaults_to_one if {
+	rep := evidence.report({"items": [{"id": "a"}]}, id_req(["items"]))
+	rows_for(rep, "s", "$min_subjects")[0].passed == true
+	rep.requirements.s.checks["$min_subjects"].expression == "count(matching(items)) >= 1"
 }
 
 # ...and an explicit zero opts back into the vacuous pass, for a policy that
 # really does mean "if there are any, they must all pass".
-test_min_count_zero_permits_an_empty_collection if {
-	rep := evidence.report({"items": []}, [min_count_set(0)])
-	rows_for(rep, "s", "$min_count")[0].passed == true
-	rep.sets[0].satisfied == true
+test_min_subjects_zero_permits_an_empty_collection if {
+	rep := evidence.report({"items": []}, min_subjects_req(0))
+	rows_for(rep, "s", "$min_subjects")[0].passed == true
+	rep.requirements.s.satisfied == true
 }
 
-test_min_count_counts_subjects_after_the_where_filter if {
-	set_with_both := object.union(min_count_set(2), {"where": merged_only})
-	rep := evidence.report(two_states, [set_with_both])
-	rows_for(rep, "s", "$min_count")[0].passed == false
+test_min_subjects_counts_subjects_after_the_applies_to_filter if {
+	both := {"s": object.union(min_subjects_req(2).s, {"applies_to": merged_only})}
+	rep := evidence.report(two_states, both)
+	rows_for(rep, "s", "$min_subjects")[0].passed == false
 }
 
-test_min_count_guards_a_missing_collection if {
-	rep := evidence.report({}, [min_count_set(1)])
-	rows_for(rep, "s", "$min_count")[0].passed == false
+test_min_subjects_guards_a_missing_collection if {
+	rep := evidence.report({}, min_subjects_req(1))
+	rows_for(rep, "s", "$min_subjects")[0].passed == false
 	rep.compliant == false
 }
 
-# ---------- quantifiers ----------
+# ---------- require ----------
 
-quantified_set(q) := {
-	"name": "s",
-	"type": "thing",
-	"path": ["items"],
+require_req(q) := {"s": {
+	"subject_type": "thing",
+	"from": ["items"],
 	"id": ["id"],
-	"quantifier": q,
-	"clauses": {
+	"require": q,
+	"checks": {
 		"signed": {"op": "equals", "path": ["signed"], "value": true},
 		"reviewed": {"op": "equals", "path": ["reviewed"], "value": true},
 	},
-}
+}}
 
 both_ok := {"items": [{"id": "a", "signed": true, "reviewed": true}]}
 
@@ -734,24 +725,24 @@ test_every_satisfied_when_all_subjects_pass if {
 		{"id": "a", "signed": true, "reviewed": true},
 		{"id": "b", "signed": true, "reviewed": true},
 	]}
-	evidence.report(doc, [quantified_set("every")]).sets[0].satisfied == true
+	evidence.report(doc, require_req("every")).requirements.s.satisfied == true
 }
 
 test_every_unsatisfied_when_one_subject_fails if {
-	evidence.report(split_across_subjects, [quantified_set("every")]).sets[0].satisfied == false
+	evidence.report(split_across_subjects, require_req("every")).requirements.s.satisfied == false
 }
 
-test_some_satisfied_when_one_subject_passes_every_clause if {
-	evidence.report(both_ok, [quantified_set("some")]).sets[0].satisfied == true
+test_some_satisfied_when_one_subject_passes_every_check if {
+	evidence.report(both_ok, require_req("some")).requirements.s.satisfied == true
 }
 
-# The reason `some` exists: requirements may not be split across subjects.
-test_some_unsatisfied_when_requirements_are_split_across_subjects if {
-	evidence.report(split_across_subjects, [quantified_set("some")]).sets[0].satisfied == false
+# The reason `some` exists: checks may not be split across subjects.
+test_some_unsatisfied_when_checks_are_split_across_subjects if {
+	evidence.report(split_across_subjects, require_req("some")).requirements.s.satisfied == false
 }
 
 test_some_unsatisfied_without_subjects if {
-	evidence.report({"items": []}, [quantified_set("some")]).sets[0].satisfied == false
+	evidence.report({"items": []}, require_req("some")).requirements.s.satisfied == false
 }
 
 test_some_still_records_rows_for_the_failing_subjects if {
@@ -760,86 +751,96 @@ test_some_still_records_rows_for_the_failing_subjects if {
 			{"id": "a", "signed": true, "reviewed": true},
 			{"id": "b", "signed": false, "reviewed": true},
 		]},
-		[quantified_set("some")],
+		require_req("some"),
 	)
-	rep.sets[0].satisfied == true
+	rep.requirements.s.satisfied == true
 	count([r | some r in rep.results; r.passed == false]) == 1
 }
 
-test_quantifier_defaults_to_every if {
-	rep := evidence.report(split_across_subjects, [quantified_set("every")])
-	defaulted := evidence.report(split_across_subjects, [{
-		"name": "s",
-		"type": "thing",
-		"path": ["items"],
+test_require_defaults_to_every if {
+	rep := evidence.report(split_across_subjects, require_req("every"))
+	defaulted := evidence.report(split_across_subjects, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
 		"id": ["id"],
-		"clauses": quantified_set("every").clauses,
-	}])
-	defaulted.sets[0].quantifier == "every"
-	defaulted.sets[0].satisfied == rep.sets[0].satisfied
+		"checks": require_req("every").s.checks,
+	}})
+	defaulted.requirements.s.require == "every"
+	defaulted.requirements.s.satisfied == rep.requirements.s.satisfied
 }
 
-test_unknown_quantifier_is_unsatisfied if {
-	evidence.report(both_ok, [quantified_set("most")]).sets[0].satisfied == false
+test_unknown_require_value_is_unsatisfied if {
+	evidence.report(both_ok, require_req("most")).requirements.s.satisfied == false
 }
 
 # ---------- report-level verdict ----------
 
-test_compliant_when_every_set_is_satisfied if {
+test_compliant_when_every_requirement_is_satisfied if {
 	doc := {"a": [{"id": "1"}], "b": [{"id": "2"}]}
-	sets := [
-		{"name": "first", "type": "t", "path": ["a"], "id": ["id"], "min_count": 1, "clauses": {"c": {"op": "present", "path": ["id"]}}},
-		{"name": "second", "type": "t", "path": ["b"], "id": ["id"], "min_count": 1, "clauses": {"c": {"op": "present", "path": ["id"]}}},
-	]
-	evidence.report(doc, sets).compliant == true
+	policy := {
+		"first": {"subject_type": "t", "from": ["a"], "id": ["id"], "min_subjects": 1, "checks": {"c": {"op": "present", "path": ["id"]}}},
+		"second": {"subject_type": "t", "from": ["b"], "id": ["id"], "min_subjects": 1, "checks": {"c": {"op": "present", "path": ["id"]}}},
+	}
+	evidence.report(doc, policy).compliant == true
 }
 
-test_not_compliant_when_any_set_is_unsatisfied if {
+test_not_compliant_when_any_requirement_is_unsatisfied if {
 	doc := {"a": [{"id": "1"}], "b": [{"no_id": true}]}
-	sets := [
-		{"name": "first", "type": "t", "path": ["a"], "id": ["id"], "clauses": {"c": {"op": "present", "path": ["id"]}}},
-		{"name": "second", "type": "t", "path": ["b"], "id": ["id"], "clauses": {"c": {"op": "present", "path": ["id"]}}},
-	]
-	evidence.report(doc, sets).compliant == false
+	policy := {
+		"first": {"subject_type": "t", "from": ["a"], "id": ["id"], "checks": {"c": {"op": "present", "path": ["id"]}}},
+		"second": {"subject_type": "t", "from": ["b"], "id": ["id"], "checks": {"c": {"op": "present", "path": ["id"]}}},
+	}
+	evidence.report(doc, policy).compliant == false
 }
 
-test_report_has_one_entry_per_declared_set if {
+test_report_has_one_entry_per_declared_requirement if {
 	doc := {"a": [{"id": "1"}], "b": [{"id": "2"}]}
-	sets := [
-		{"name": "first", "type": "t", "path": ["a"], "id": ["id"], "clauses": {"c": {"op": "present", "path": ["id"]}}},
-		{"name": "second", "type": "t", "path": ["b"], "id": ["id"], "clauses": {"c": {"op": "present", "path": ["id"]}}},
-	]
-	rep := evidence.report(doc, sets)
-	[s.name | some s in rep.sets] == ["first", "second"]
+	policy := {
+		"first": {"subject_type": "t", "from": ["a"], "id": ["id"], "checks": {"c": {"op": "present", "path": ["id"]}}},
+		"second": {"subject_type": "t", "from": ["b"], "id": ["id"], "checks": {"c": {"op": "present", "path": ["id"]}}},
+	}
+	object.keys(evidence.report(doc, policy).requirements) == {"first", "second"}
 }
 
-test_set_entry_carries_exactly_the_documented_keys if {
+test_requirement_entry_carries_exactly_the_documented_keys if {
 	rep := solo({"state": "MERGED"}, is_merged)
-	object.keys(rep.sets[0]) == {"name", "quantifier", "satisfied", "subjects", "clauses"}
+	object.keys(rep.requirements.s) == {"require", "satisfied", "subjects", "checks"}
 }
 
 test_report_carries_exactly_the_documented_keys if {
-	object.keys(solo({}, is_merged)) == {"compliant", "sets", "results"}
+	object.keys(solo({}, is_merged)) == {"compliant", "requirements", "results"}
 }
 
 # Two evaluations of the same policy against the same input must be byte-equal,
 # since the report is meant to be hashed and attested.
 test_report_is_deterministic if {
 	doc := {"items": [{"id": "b", "state": "MERGED"}, {"id": "a", "state": "CLOSED"}]}
-	rep := evidence.report(doc, [two_clause_set])
-	json.marshal(rep) == json.marshal(evidence.report(doc, [two_clause_set]))
+	rep := evidence.report(doc, two_check_req)
+	json.marshal(rep) == json.marshal(evidence.report(doc, two_check_req))
 }
 
-# Every row must resolve to exactly one clause definition, which is the
-# contract that lets a consumer read a row without the .rego source.
-test_every_row_resolves_to_one_clause_definition if {
-	rep := evidence.report(two_states, [object.union(min_count_set(1), {"where": merged_only})])
+# Row order must not depend on how the policy object was written, or two
+# consumers building the same policy in a different key order would hash to
+# different reports.
+test_row_order_is_independent_of_policy_key_order if {
+	doc := {"a": [{"id": "1"}], "b": [{"id": "2"}]}
+	first := {"subject_type": "t", "from": ["a"], "id": ["id"], "checks": {"c": {"op": "present", "path": ["id"]}}}
+	second := {"subject_type": "t", "from": ["b"], "id": ["id"], "checks": {"c": {"op": "present", "path": ["id"]}}}
+
+	json.marshal(evidence.report(doc, {"first": first, "second": second})) == json.marshal(evidence.report(doc, {"second": second, "first": first}))
+}
+
+# Every row must resolve to exactly one check definition, which is the contract
+# that lets a consumer read a row without the .rego source.
+test_every_row_resolves_to_one_check_definition if {
+	scoped := {"s": object.union(min_subjects_req(1).s, {"applies_to": merged_only})}
+	rep := evidence.report(two_states, scoped)
 	every row in rep.results {
 		count([def |
-			some s in rep.sets
-			s.name == row.set
-			some name, def in s.clauses
-			name == row.predicate
+			some name, req in rep.requirements
+			name == row.requirement
+			some check_name, def in req.checks
+			check_name == row.check
 		]) == 1
 	}
 }
@@ -874,111 +875,103 @@ test_compare_fails_across_mismatched_types if {
 	verdict({"a": "10", "b": 5}, compare_ab("gt")) == false
 }
 
-# Issue 3: a set whose collection resolves to nothing — a typo in `path`, a
-# renamed field — satisfies an "every" quantifier vacuously, so the report
-# reads compliant. min_count guards this but is opt-in.
+# Issue 3: a requirement whose collection resolves to nothing — a typo in "from",
+# a renamed field — satisfies an "every" requirement vacuously, so the report
+# reads compliant. min_subjects guards this but is opt-in.
 test_every_over_no_subjects_is_not_satisfied if {
-	evidence.report({"items": []}, [quantified_set("every")]).sets[0].satisfied == false
+	evidence.report({"items": []}, require_req("every")).requirements.s.satisfied == false
 }
 
-test_a_typo_in_the_subject_path_is_not_compliant if {
-	evidence.report({"items": [{"id": "a"}]}, [id_set(["itmes"])]).compliant == false
+test_a_typo_in_the_subject_from_path_is_not_compliant if {
+	evidence.report({"items": [{"id": "a"}]}, id_req(["itmes"])).compliant == false
 }
 
-test_a_report_with_no_sets_is_not_compliant if {
-	evidence.report({"items": []}, []).compliant == false
+test_a_policy_with_no_requirements_is_not_compliant if {
+	evidence.report({"items": []}, {}).compliant == false
 }
 
 # Issue 4: the row labels itself count(<raw path>) but reports the count of
-# subjects surviving `where` — here 1 of 2 — so the evidence row makes a false
+# subjects surviving the filter — here 1 of 2 — so the evidence row makes a false
 # statement about the input it echoes.
-test_min_count_row_labels_the_count_it_actually_reports if {
-	set_with_both := object.union(min_count_set(1), {"where": merged_only})
-	rep := evidence.report(two_states, [set_with_both])
-	row := rows_for(rep, "s", "$min_count")[0]
+test_min_subjects_row_labels_the_count_it_actually_reports if {
+	scoped := {"s": object.union(min_subjects_req(1).s, {"applies_to": merged_only})}
+	rep := evidence.report(two_states, scoped)
+	row := rows_for(rep, "s", "$min_subjects")[0]
 	row.inputs[0].value == 1
 	row.inputs[0].name != "count(items)"
 }
 
-# Issue 5: a subject dropped by `where` leaves no trace beyond the
+# Issue 5: a subject dropped by the filter leaves no trace beyond the
 # total/matching delta — you cannot tell which subject was excluded, or why.
-test_where_excluded_subject_is_recorded_as_evidence if {
-	rep := evidence.report(two_states, [where_set(merged_only)])
+test_out_of_scope_subject_is_recorded_as_evidence if {
+	rep := evidence.report(two_states, scoped_req(merged_only))
 	some row in rep.results
 	row.subject.id == "b"
 }
 
-# Issue 6: nothing enforces unique set names, so a row's (set, predicate) can
-# resolve to two conflicting definitions.
-test_rows_resolve_to_one_definition_even_with_duplicate_set_names if {
+# Issue 6: nothing enforced unique requirement names, so a row's
+# (requirement, check) pair could resolve to two conflicting definitions. Naming
+# requirements by object key makes duplicates unrepresentable — this asserts the
+# property the old `name` field needed suffixing logic to keep.
+test_requirement_names_are_unique_by_construction if {
 	doc := {"a": [{"id": "A", "v": 1}], "b": [{"id": "B", "v": 9}]}
-	sets := [
-		{"name": "thing", "type": "thing", "path": ["a"], "id": ["id"], "clauses": {"chk": {"op": "equals", "path": ["v"], "value": 1}}},
-		{"name": "thing", "type": "thing", "path": ["b"], "id": ["id"], "clauses": {"chk": {"op": "equals", "path": ["v"], "value": 2}}},
-	]
-	rep := evidence.report(doc, sets)
+	policy := {
+		"thing": {"subject_type": "thing", "from": ["a"], "id": ["id"], "checks": {"chk": {"op": "equals", "path": ["v"], "value": 1}}},
+		"other_thing": {"subject_type": "thing", "from": ["b"], "id": ["id"], "checks": {"chk": {"op": "equals", "path": ["v"], "value": 2}}},
+	}
+	rep := evidence.report(doc, policy)
 	every row in rep.results {
 		count([def |
-			some s in rep.sets
-			s.name == row.set
-			some name, def in s.clauses
-			name == row.predicate
+			some name, req in rep.requirements
+			name == row.requirement
+			some check_name, def in req.checks
+			check_name == row.check
 		]) == 1
 	}
 }
 
-test_duplicate_set_names_are_suffixed_with_their_position if {
-	doc := {"a": [{"id": "A", "v": 1}], "b": [{"id": "B", "v": 9}]}
-	dup := {"name": "thing", "type": "thing", "path": ["a"], "id": ["id"], "clauses": {"chk": {"op": "equals", "path": ["v"], "value": 1}}}
-	rep := evidence.report(doc, [dup, object.union(dup, {"path": ["b"]})])
-
-	[s.name | some s in rep.sets] == ["thing", "thing#1"]
-	{r.set | some r in rep.results} == {"thing", "thing#1"}
-}
-
-# Issue 7: synthetic predicates are "$"-prefixed, so a policy is free to name a
-# clause min_count without its definition being overlaid by the library's or its
-# rows colliding with them.
-test_a_user_clause_named_min_count_is_not_clobbered if {
-	set_with_collision := {
-		"name": "s",
-		"type": "thing",
-		"path": ["items"],
+# Issue 7: synthetic checks are "$"-prefixed, so a policy is free to name a check
+# min_subjects without its definition being overlaid by the library's or its rows
+# colliding with them.
+test_a_user_check_named_min_subjects_is_not_clobbered if {
+	colliding := {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
 		"id": ["id"],
-		"min_count": 1,
-		"clauses": {"min_count": {"description": "user clause", "op": "equals", "path": ["id"], "value": "zzz"}},
-	}
-	rep := evidence.report({"items": [{"id": "a"}]}, [set_with_collision])
+		"min_subjects": 1,
+		"checks": {"min_subjects": {"description": "user check", "op": "equals", "path": ["id"], "value": "zzz"}},
+	}}
+	rep := evidence.report({"items": [{"id": "a"}]}, colliding)
 
-	rep.sets[0].clauses.min_count == {
-		"description": "user clause",
+	rep.requirements.s.checks.min_subjects == {
+		"description": "user check",
 		"op": "equals",
 		"path": ["id"],
 		"value": "zzz",
 		"expression": "id == zzz",
 	}
-	rep.sets[0].clauses["$min_count"].description == "at least 1 matching thing subject(s) required"
+	rep.requirements.s.checks["$min_subjects"].description == "at least 1 matching thing subject(s) required"
 
-	count(rows_for(rep, "s", "min_count")) == 1
-	rows_for(rep, "s", "min_count")[0].passed == false
-	count(rows_for(rep, "s", "$min_count")) == 1
-	rows_for(rep, "s", "$min_count")[0].passed == true
+	count(rows_for(rep, "s", "min_subjects")) == 1
+	rows_for(rep, "s", "min_subjects")[0].passed == false
+	count(rows_for(rep, "s", "$min_subjects")) == 1
+	rows_for(rep, "s", "$min_subjects")[0].passed == true
 }
 
-# Issue 10: set.clauses is read directly rather than via object.get, so a set
-# with no clauses yields an unsatisfied verdict and zero rows explaining it.
-test_a_set_without_clauses_explains_itself if {
-	rep := evidence.report({"items": [{"id": "a"}]}, [{
-		"name": "s",
-		"type": "thing",
-		"path": ["items"],
+# Issue 10: req.checks is read directly rather than via object.get, so a
+# requirement with no checks yields an unsatisfied verdict and zero rows
+# explaining it.
+test_a_requirement_without_checks_explains_itself if {
+	rep := evidence.report({"items": [{"id": "a"}]}, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
 		"id": ["id"],
-	}])
-	rep.sets[0].satisfied == false
+	}})
+	rep.requirements.s.satisfied == false
 	count(rep.results) > 0
 }
 
-# Issue 11: a clause declaring "value": null cannot distinguish an absent field
+# Issue 11: a check declaring "value": null cannot distinguish an absent field
 # from one explicitly set to null.
 test_equals_null_does_not_pass_on_a_missing_field if {
 	verdict({}, {"op": "equals", "path": ["x"], "value": null}) == false

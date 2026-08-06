@@ -1,5 +1,5 @@
-# Tests for the example consumer policy: SDLC-CTRL-0007 expressed as
-# kosli.evidence subject sets, plus its custom `peer_approved` op.
+# Tests for the example consumer policy: SDLC-CTRL-0007 expressed as a
+# kosli.evidence policy, plus its custom `peer_approved` op.
 #
 #   opa test src examples --ignore '*.json'
 #
@@ -18,7 +18,7 @@ import rego.v1
 
 fingerprint := "3f1a9c2e8b7d6f4a5c0e1d2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f"
 
-# A merged PR that satisfies every clause: signed commits, on main, approved by
+# A merged PR that satisfies every check: signed commits, on main, approved by
 # someone other than the author, after the last commit.
 compliant_pr := {
 	"url": "https://github.com/kosli-dev/app/pull/42",
@@ -75,20 +75,17 @@ out(doc) := result if {
 	result := data.policy.output with input as doc
 }
 
-row(doc, predicate) := r if {
+row(doc, check_name) := r if {
 	some r in out(doc).report.results
-	r.predicate == predicate
+	r.check == check_name
 }
 
-rows(doc, predicate) := [r |
+rows(doc, check_name) := [r |
 	some r in out(doc).report.results
-	r.predicate == predicate
+	r.check == check_name
 ]
 
-set_verdict(doc, name) := s.satisfied if {
-	some s in out(doc).report.sets
-	s.name == name
-}
+requirement_verdict(doc, name) := out(doc).report.requirements[name].satisfied
 
 # ---------- the two README scenarios ----------
 
@@ -104,12 +101,12 @@ test_split_requirements_deny if {
 	count(result.violations) == 2
 }
 
-test_split_requirements_name_both_failing_predicates if {
+test_split_requirements_name_both_failing_checks if {
 	result := out(trail(split_prs))
-	failed := {sprintf("%v/%v", [r.subject.id, r.predicate]) |
+	failed := {sprintf("%v/%v", [r.subject.id, r.check]) |
 		some r in result.report.results
 		r.passed == false
-		not startswith(r.predicate, "$")
+		not startswith(r.check, "$")
 	}
 	failed == {
 		"https://github.com/kosli-dev/app/pull/42/commits_signed",
@@ -126,9 +123,9 @@ test_violation_message_format if {
 	msg in result.violations
 }
 
-# The point of quantifier "some": a satisfied set's failing rows are evidence,
-# not violations, because another PR met every requirement on its own.
-test_failing_rows_in_a_satisfied_set_are_not_violations if {
+# The point of "require": "some" — a satisfied requirement's failing rows are
+# evidence, not violations, because another PR met every check on its own.
+test_failing_rows_in_a_satisfied_requirement_are_not_violations if {
 	result := out(trail(array.concat([compliant_pr], [pr({
 		"url": "https://github.com/kosli-dev/app/pull/99",
 		"commits": [{"sha1": "dddd", "verified": false, "timestamp": 1753600000}],
@@ -143,12 +140,12 @@ test_output_embeds_the_report if {
 	result.report.compliant == result.allow
 }
 
-# ---------- artifact set ----------
+# ---------- artifact requirement ----------
 
 test_missing_artifact_denies if {
 	result := out(doc_with({"some-other-artifact": artifact({})}))
 	result.allow == false
-	set_verdict(doc_with({"some-other-artifact": artifact({})}), "artifact") == false
+	requirement_verdict(doc_with({"some-other-artifact": artifact({})}), "artifact") == false
 }
 
 test_empty_fingerprint_denies if {
@@ -179,33 +176,33 @@ test_empty_trail_denies if {
 	out({}).allow == false
 }
 
-test_empty_trail_still_reports_a_min_count_row if {
-	count(rows({}, "$min_count")) == 2
-	every r in rows({}, "$min_count") {
+test_empty_trail_still_reports_a_min_subjects_row if {
+	count(rows({}, "$min_subjects")) == 2
+	every r in rows({}, "$min_subjects") {
 		r.passed == false
 	}
 }
 
-# ---------- merged_pr set ----------
+# ---------- merged_pr requirement ----------
 
 test_unmerged_pr_is_not_a_subject if {
 	doc := trail([pr({"state": "OPEN"})])
 	out(doc).allow == false
 	count(rows(doc, "protected_branch")) == 0
-	out(doc).report.sets[1].subjects == {"total": 1, "matching": 0}
+	out(doc).report.requirements.merged_pr.subjects == {"total": 1, "matching": 0}
 }
 
 # The CLOSED PR is out of scope: recorded as a subject that did not match the
-# filter, evaluated against none of the clauses, and not a violation.
+# filter, evaluated against none of the checks, and not a violation.
 test_closed_pr_is_recorded_but_not_evaluated if {
 	doc := trail(split_prs)
 	closed := "https://github.com/kosli-dev/app/pull/44"
 
-	predicates := {r.predicate |
+	checks := {r.check |
 		some r in out(doc).report.results
 		r.subject.id == closed
 	}
-	predicates == {"$matches_filter"}
+	checks == {"$applies"}
 
 	some r in out(doc).report.results
 	r.subject.id == closed
@@ -325,9 +322,7 @@ test_pr_without_commits_denies if {
 }
 
 test_peer_approved_uses_its_declared_expression if {
-	some s in out(trail([compliant_pr])).report.sets
-	s.name == "merged_pr"
-	s.clauses.peer_approved.expression == "some approver: state == APPROVED and username != author and timestamp > max(commits[].timestamp)"
+	out(trail([compliant_pr])).report.requirements.merged_pr.checks.peer_approved.expression == "some approver: state == APPROVED and username != author and timestamp > max(commits[].timestamp)"
 }
 
 # ---------- data.params configurability ----------

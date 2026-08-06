@@ -1,115 +1,106 @@
-# kosli.evidence v4
+# kosli.evidence v5
 #
-# A policy is a list of subject sets:
+# A policy declares an object mapping requirement names to requirements, and
+# passes it to report():
 #   {
-#     "name": "merged_pr",          # row linkage + set verdict key (default: type)
-#     "type": "pull_request",       # subject type label
-#     "path": [...],                # collection location in input (array or single object)
-#     "id": [...],                  # identity path within a subject
-#     "quantifier": "every"|"some", # every subject passes / some subject passes ALL clauses
-#     "where": {name: clause},      # filter: only subjects passing these become subjects
-#     "min_count": 1,               # matching subjects required (default 1; 0 opts into a vacuous pass)
-#     "clauses": {name: clause}
+#     "merged_pr": {
+#       "subject_type": "pull_request",  # subject type label (default: "subject")
+#       "from": [...],                   # collection location in input (array or single object)
+#       "id": [...],                     # identity path within a subject
+#       "require": "every"|"some",       # every subject passes / some subject passes ALL checks
+#       "applies_to": {name: check},     # scope filter: only matching subjects are evaluated
+#       "min_subjects": 1,               # matching subjects required (default 1; 0 opts into a vacuous pass)
+#       "checks": {name: check}
+#     }
 #   }
 #
-# Leaf clause ops: range, excludes, includes, equals, present,
+# The requirement name is the object key, so names are unique by construction and
+# a row's (requirement, check) pair always resolves to exactly one definition.
+#
+# Leaf check ops: range, excludes, includes, equals, present,
 # non_empty_string, compare, compare_time.
-# Collection ops: {"op": "all"|"any", "path": [...], "clause": <leaf clause>}
+# Collection ops: {"op": "all"|"any", "path": [...], "check": <leaf check>}
 # (one nesting level: Rego forbids recursion). Both require a non-empty array:
 # zero recorded elements is absence of evidence, not evidence of compliance.
-# Custom ops: contribute op_passed(clause, subj) bodies to this package from
-# another file; give the clause "expression" and "echo" for report rendering.
+# Custom ops: contribute op_passed(check, subj) bodies to this package from
+# another file; give the check "expression" and "inputs" for report rendering.
 #
-# Report shape: report.sets[].clauses is the definition table — one entry per
-# predicate name, holding the raw clause spec plus its rendered "expression".
-# report.results[] rows carry only {set, subject, predicate, inputs, passed} —
-# look up report.sets[<set>].clauses[<predicate>] for the description and
+# Note that "from" locates a collection in the input document, while a check's
+# "path" locates a field within one subject. Two different roots, two different
+# keywords.
+#
+# Report shape: report.requirements[<name>].checks is the definition table — one
+# entry per check name, holding the raw check spec plus its rendered
+# "expression". report.results[] rows carry only
+# {requirement, subject, check, inputs, passed} — look up
+# report.requirements[<requirement>].checks[<check>] for the description and
 # expression instead of repeating them on every row.
 #
-# Predicates the library synthesises are "$"-prefixed, so they can never
-# collide with a policy's own clause names:
-#   $min_count      — enough matching subjects (one row per set)
-#   $matches_filter — subject satisfied "where" (one row per raw subject,
-#                     only for sets that declare a filter)
+# Checks the library synthesises are "$"-prefixed, so they can never collide
+# with a policy's own check names:
+#   $min_subjects — enough matching subjects (one row per requirement)
+#   $applies      — subject is in scope under "applies_to" (one row per raw
+#                   subject, only for requirements that declare a filter)
 #
-# Fail-closed throughout: a missing, null or wrong-typed input makes a clause
-# fail rather than vanish, and a set that asserts nothing (no clauses) or has
-# nothing to assert against (no matching subjects) is not satisfied.
+# Fail-closed throughout: a missing, null or wrong-typed input makes a check
+# fail rather than vanish, and a requirement that asserts nothing (no checks) or
+# has nothing to assert against (no matching subjects) is not satisfied.
 package kosli.evidence
 
 import rego.v1
 
-# ---------- set accessors ----------
+# ---------- requirement accessors ----------
 
-clauses_of(set) := object.get(set, "clauses", {})
+checks_of(req) := object.get(req, "checks", {})
 
-where_of(set) := object.get(set, "where", {})
+applies_to_of(req) := object.get(req, "applies_to", {})
 
-path_of(set) := object.get(set, "path", [])
+from_of(req) := object.get(req, "from", [])
 
-type_of(set) := object.get(set, "type", "subject")
+subject_type_of(req) := object.get(req, "subject_type", "subject")
 
 # Guards the vacuous pass an empty collection would otherwise get. Explicit
-# "min_count": 0 opts back into it.
-min_count_of(set) := object.get(set, "min_count", 1)
+# "min_subjects": 0 opts back into it.
+min_subjects_of(req) := object.get(req, "min_subjects", 1)
 
-quantifier(set) := object.get(set, "quantifier", "every")
-
-set_name(set) := object.get(set, "name", type_of(set))
-
-# Rows and set entries are linked by name, so names have to be unique: a
-# duplicate is suffixed with its position rather than silently shadowing the
-# first set's clause definitions.
-set_key(sets, i) := set_name(sets[i]) if {
-	count(earlier_with_same_name(sets, i)) == 0
-}
-
-set_key(sets, i) := sprintf("%s#%d", [set_name(sets[i]), i]) if {
-	count(earlier_with_same_name(sets, i)) > 0
-}
-
-earlier_with_same_name(sets, i) := [j |
-	some j, s in sets
-	j < i
-	set_name(s) == set_name(sets[i])
-]
+require_of(req) := object.get(req, "require", "every")
 
 # ---------- subject resolution ----------
 
-raw_subjects(doc, set) := coll if {
-	coll := object.get(doc, path_of(set), null)
+raw_subjects(doc, req) := coll if {
+	coll := object.get(doc, from_of(req), null)
 	is_array(coll)
 }
 
-raw_subjects(doc, set) := [coll] if {
-	coll := object.get(doc, path_of(set), null)
+raw_subjects(doc, req) := [coll] if {
+	coll := object.get(doc, from_of(req), null)
 	is_object(coll)
 }
 
-raw_subjects(doc, set) := [] if {
-	not is_array(object.get(doc, path_of(set), null))
-	not is_object(object.get(doc, path_of(set), null))
+raw_subjects(doc, req) := [] if {
+	not is_array(object.get(doc, from_of(req), null))
+	not is_object(object.get(doc, from_of(req), null))
 }
 
-matching_subjects(doc, set) := [subj |
-	some subj in raw_subjects(doc, set)
-	subject_matches(subj, set)
+matching_subjects(doc, req) := [subj |
+	some subj in raw_subjects(doc, req)
+	subject_matches(subj, req)
 ]
 
-# Total, not partial: $matches_filter rows carry this as a value, and an
-# undefined verdict would drop the row for exactly the excluded subjects the
-# rows exist to record.
+# Total, not partial: $applies rows carry this as a value, and an undefined
+# verdict would drop the row for exactly the out-of-scope subjects the rows
+# exist to record.
 default subject_matches(_, _) := false
 
-subject_matches(subj, set) if {
-	every _, clause in where_of(set) {
-		op_passed(clause, subj)
+subject_matches(subj, req) if {
+	every _, check in applies_to_of(req) {
+		op_passed(check, subj)
 	}
 }
 
-subject_ref(subj, set) := {
-	"type": type_of(set),
-	"id": object.get(subj, object.get(set, "id", []), null),
+subject_ref(subj, req) := {
+	"type": subject_type_of(req),
+	"id": object.get(subj, object.get(req, "id", []), null),
 }
 
 # ---------- value helpers ----------
@@ -117,7 +108,7 @@ subject_ref(subj, set) := {
 value_at(subj, path) := object.get(subj, path, null)
 
 # Sentinel telling "field absent" apart from "field present and null", so a
-# clause comparing against null cannot be satisfied by a missing field.
+# check comparing against null cannot be satisfied by a missing field.
 absent := {"kosli.evidence/absent": true}
 
 field(subj, path) := v if {
@@ -131,60 +122,60 @@ path_name(path) := concat(".", [sprintf("%v", [p]) | some p in path])
 
 default leaf_passed(_, _) := false
 
-leaf_passed(clause, subj) if {
-	clause.op == "range"
-	v := value_at(subj, clause.path)
+leaf_passed(check, subj) if {
+	check.op == "range"
+	v := value_at(subj, check.path)
 	is_number(v)
-	v >= clause.min
-	v <= clause.max
+	v >= check.min
+	v <= check.max
 }
 
-leaf_passed(clause, subj) if {
-	clause.op == "excludes"
-	v := value_at(subj, clause.path)
+leaf_passed(check, subj) if {
+	check.op == "excludes"
+	v := value_at(subj, check.path)
 	is_array(v)
-	not clause.value in v
+	not check.value in v
 }
 
-leaf_passed(clause, subj) if {
-	clause.op == "includes"
-	v := value_at(subj, clause.path)
+leaf_passed(check, subj) if {
+	check.op == "includes"
+	v := value_at(subj, check.path)
 	is_array(v)
-	clause.value in v
+	check.value in v
 }
 
-leaf_passed(clause, subj) if {
-	clause.op == "equals"
-	field(subj, clause.path) == clause.value
+leaf_passed(check, subj) if {
+	check.op == "equals"
+	field(subj, check.path) == check.value
 }
 
-leaf_passed(clause, subj) if {
-	clause.op == "present"
-	value_at(subj, clause.path) != null
+leaf_passed(check, subj) if {
+	check.op == "present"
+	value_at(subj, check.path) != null
 }
 
-leaf_passed(clause, subj) if {
-	clause.op == "non_empty_string"
-	v := value_at(subj, clause.path)
+leaf_passed(check, subj) if {
+	check.op == "non_empty_string"
+	v := value_at(subj, check.path)
 	is_string(v)
 	v != ""
 }
 
-leaf_passed(clause, subj) if {
-	clause.op == "compare"
-	l := value_at(subj, clause.left)
-	r := value_at(subj, clause.right)
+leaf_passed(check, subj) if {
+	check.op == "compare"
+	l := value_at(subj, check.left)
+	r := value_at(subj, check.right)
 	comparable(l, r)
-	cmp(clause.cmp, l, r)
+	cmp(check.cmp, l, r)
 }
 
-leaf_passed(clause, subj) if {
-	clause.op == "compare_time"
-	l := value_at(subj, clause.left)
-	r := value_at(subj, clause.right)
+leaf_passed(check, subj) if {
+	check.op == "compare_time"
+	l := value_at(subj, check.left)
+	r := value_at(subj, check.right)
 	rfc3339_shaped(l)
 	rfc3339_shaped(r)
-	cmp(clause.cmp, time.parse_rfc3339_ns(l), time.parse_rfc3339_ns(r))
+	cmp(check.cmp, time.parse_rfc3339_ns(l), time.parse_rfc3339_ns(r))
 }
 
 # Rego's comparison operators are total across types — null sorts below every
@@ -221,84 +212,84 @@ cmp("lte", l, r) if l <= r
 
 # ---------- subject-level operators ----------
 
-quantified(clause) if clause.op in {"all", "any"}
+quantified(check) if check.op in {"all", "any"}
 
 default op_passed(_, _) := false
 
-op_passed(clause, subj) if {
-	not quantified(clause)
-	leaf_passed(clause, subj)
+op_passed(check, subj) if {
+	not quantified(check)
+	leaf_passed(check, subj)
 }
 
-op_passed(clause, subj) if {
-	clause.op == "all"
-	coll := value_at(subj, clause.path)
+op_passed(check, subj) if {
+	check.op == "all"
+	coll := value_at(subj, check.path)
 	is_array(coll)
 	count(coll) > 0
 	every elem in coll {
-		leaf_passed(clause.clause, elem)
+		leaf_passed(check.check, elem)
 	}
 }
 
-op_passed(clause, subj) if {
-	clause.op == "any"
-	coll := value_at(subj, clause.path)
+op_passed(check, subj) if {
+	check.op == "any"
+	coll := value_at(subj, check.path)
 	is_array(coll)
 	some elem in coll
-	leaf_passed(clause.clause, elem)
+	leaf_passed(check.check, elem)
 }
 
 # ---------- human-readable expressions ----------
 
 default leaf_describe(_) := ""
 
-leaf_describe(clause) := sprintf("%s >= %v and %s <= %v", [n, clause.min, n, clause.max]) if {
-	clause.op == "range"
-	n := path_name(clause.path)
+leaf_describe(check) := sprintf("%s >= %v and %s <= %v", [n, check.min, n, check.max]) if {
+	check.op == "range"
+	n := path_name(check.path)
 }
 
-leaf_describe(clause) := sprintf("not contains(%s, %v)", [path_name(clause.path), clause.value]) if clause.op == "excludes"
+leaf_describe(check) := sprintf("not contains(%s, %v)", [path_name(check.path), check.value]) if check.op == "excludes"
 
-leaf_describe(clause) := sprintf("contains(%s, %v)", [path_name(clause.path), clause.value]) if clause.op == "includes"
+leaf_describe(check) := sprintf("contains(%s, %v)", [path_name(check.path), check.value]) if check.op == "includes"
 
-leaf_describe(clause) := sprintf("%s == %v", [path_name(clause.path), clause.value]) if clause.op == "equals"
+leaf_describe(check) := sprintf("%s == %v", [path_name(check.path), check.value]) if check.op == "equals"
 
-leaf_describe(clause) := sprintf("%s is present", [path_name(clause.path)]) if clause.op == "present"
+leaf_describe(check) := sprintf("%s is present", [path_name(check.path)]) if check.op == "present"
 
-leaf_describe(clause) := sprintf("%s is a non-empty string", [path_name(clause.path)]) if clause.op == "non_empty_string"
+leaf_describe(check) := sprintf("%s is a non-empty string", [path_name(check.path)]) if check.op == "non_empty_string"
 
-leaf_describe(clause) := sprintf("%s %s %s", [path_name(clause.left), clause.cmp, path_name(clause.right)]) if clause.op in {"compare", "compare_time"}
+leaf_describe(check) := sprintf("%s %s %s", [path_name(check.left), check.cmp, path_name(check.right)]) if check.op in {"compare", "compare_time"}
 
 default expression_of(_) := ""
 
-expression_of(clause) := clause.expression
+expression_of(check) := check.expression
 
-expression_of(clause) := leaf_describe(clause) if {
-	not clause.expression
-	not quantified(clause)
+expression_of(check) := leaf_describe(check) if {
+	not check.expression
+	not quantified(check)
 }
 
-expression_of(clause) := sprintf("every %s: %s", [path_name(clause.path), leaf_describe(clause.clause)]) if {
-	not clause.expression
-	clause.op == "all"
+expression_of(check) := sprintf("every %s: %s", [path_name(check.path), leaf_describe(check.check)]) if {
+	not check.expression
+	check.op == "all"
 }
 
-expression_of(clause) := sprintf("some %s: %s", [path_name(clause.path), leaf_describe(clause.clause)]) if {
-	not clause.expression
-	clause.op == "any"
+expression_of(check) := sprintf("some %s: %s", [path_name(check.path), leaf_describe(check.check)]) if {
+	not check.expression
+	check.op == "any"
 }
 
-# ---------- inputs echoed per clause ----------
+# ---------- inputs echoed per check ----------
 
-two_sided(clause) if clause.op in {"compare", "compare_time"}
+two_sided(check) if check.op in {"compare", "compare_time"}
 
-default clause_inputs(_, _) := []
+default check_inputs(_, _) := []
 
-# Explicit echo list wins (needed by custom ops). An entry is either a path, or
-# {"path": [...], "each": [...]} to project a field across a collection the way
-# the "all"/"any" ops echo theirs.
-clause_inputs(subj, clause) := [echoed(subj, spec) | some spec in clause.echo] if {
-	clause.echo
+# An explicit "inputs" list wins (needed by custom ops). An entry is either a
+# path, or {"path": [...], "each": [...]} to project a field across a collection
+# the way the "all"/"any" ops project theirs.
+check_inputs(subj, check) := [echoed(subj, spec) | some spec in check.inputs] if {
+	check.inputs
 }
 
 echoed(subj, spec) := {"name": path_name(spec), "value": value_at(subj, spec)} if is_array(spec)
@@ -308,158 +299,160 @@ echoed(subj, spec) := {
 	"value": [value_at(elem, object.get(spec, "each", [])) | some elem in value_at(subj, object.get(spec, "path", []))],
 } if is_object(spec)
 
-clause_inputs(subj, clause) := [
-	{"name": path_name(clause.left), "value": value_at(subj, clause.left)},
-	{"name": path_name(clause.right), "value": value_at(subj, clause.right)},
+check_inputs(subj, check) := [
+	{"name": path_name(check.left), "value": value_at(subj, check.left)},
+	{"name": path_name(check.right), "value": value_at(subj, check.right)},
 ] if {
-	not clause.echo
-	two_sided(clause)
+	not check.inputs
+	two_sided(check)
 }
 
-clause_inputs(subj, clause) := [{"name": nm, "value": vals}] if {
-	not clause.echo
-	quantified(clause)
-	vals := [value_at(elem, object.get(clause.clause, "path", [])) | some elem in value_at(subj, clause.path)]
-	nm := sprintf("%s[].%s", [path_name(clause.path), path_name(object.get(clause.clause, "path", []))])
+check_inputs(subj, check) := [{"name": nm, "value": vals}] if {
+	not check.inputs
+	quantified(check)
+	vals := [value_at(elem, object.get(check.check, "path", [])) | some elem in value_at(subj, check.path)]
+	nm := sprintf("%s[].%s", [path_name(check.path), path_name(object.get(check.check, "path", []))])
 }
 
-clause_inputs(subj, clause) := [{"name": path_name(clause.path), "value": value_at(subj, clause.path)}] if {
-	not clause.echo
-	not two_sided(clause)
-	not quantified(clause)
-	clause.path
+check_inputs(subj, check) := [{"name": path_name(check.path), "value": value_at(subj, check.path)}] if {
+	not check.inputs
+	not two_sided(check)
+	not quantified(check)
+	check.path
 }
 
-# ---------- clause definitions (looked up once per set, not per row) ----------
+# ---------- check definitions (looked up once per requirement, not per row) ----------
 
-# The raw clause spec plus its rendered human-readable expression, keyed by
-# predicate name so rows can reference {set, predicate} instead of repeating
-# this on every row.
-clause_def(clause) := object.union(clause, {"expression": expression_of(clause)})
+# The raw check spec plus its rendered human-readable expression, keyed by check
+# name so rows can reference {requirement, check} instead of repeating this on
+# every row.
+check_def(check) := object.union(check, {"expression": expression_of(check)})
 
-matching_count_name(set) := sprintf("count(matching(%s))", [path_name(path_of(set))])
+matching_count_name(req) := sprintf("count(matching(%s))", [path_name(from_of(req))])
 
-min_count_def(set) := {"$min_count": {
-	"description": sprintf("at least %d matching %s subject(s) required", [min_count_of(set), type_of(set)]),
-	"expression": sprintf("%s >= %d", [matching_count_name(set), min_count_of(set)]),
+min_subjects_def(req) := {"$min_subjects": {
+	"description": sprintf("at least %d matching %s subject(s) required", [min_subjects_of(req), subject_type_of(req)]),
+	"expression": sprintf("%s >= %d", [matching_count_name(req), min_subjects_of(req)]),
 }}
 
-filter_def(set) := {"$matches_filter": {
-	"description": sprintf("subject qualifies as a %s under this set's filter; non-matching subjects are recorded but not evaluated", [type_of(set)]),
-	"expression": concat(" and ", [expression_of(where_of(set)[name]) | some name in where_names(set)]),
-}} if count(where_of(set)) > 0
+applies_def(req) := {"$applies": {
+	"description": sprintf("subject is in scope as a %s under this requirement's applies_to filter; out-of-scope subjects are recorded but not evaluated", [subject_type_of(req)]),
+	"expression": concat(" and ", [expression_of(applies_to_of(req)[name]) | some name in applies_to_names(req)]),
+}} if count(applies_to_of(req)) > 0
 
-filter_def(set) := {} if count(where_of(set)) == 0
+applies_def(req) := {} if count(applies_to_of(req)) == 0
 
 # Sorted so that rendered expressions and echoed inputs are deterministic.
-where_names(set) := sort(object.keys(where_of(set)))
+applies_to_names(req) := sort(object.keys(applies_to_of(req)))
 
-set_clause_defs(set) := object.union(
+requirement_check_defs(req) := object.union(
 	object.union(
-		{name: clause_def(clause) | some name, clause in clauses_of(set)},
-		min_count_def(set),
+		{name: check_def(check) | some name, check in checks_of(req)},
+		min_subjects_def(req),
 	),
-	filter_def(set),
+	applies_def(req),
 )
 
 # ---------- rows ----------
 
-subject_passed(set, subj) if {
-	every _, clause in clauses_of(set) {
-		op_passed(clause, subj)
+subject_passed(req, subj) if {
+	every _, check in checks_of(req) {
+		op_passed(check, subj)
 	}
 }
 
-subject_rows(doc, sets, i) := [row |
-	some subj in matching_subjects(doc, sets[i])
-	some name, clause in clauses_of(sets[i])
+subject_rows(doc, policy, req_name) := [row |
+	some subj in matching_subjects(doc, policy[req_name])
+	some check_name, check in checks_of(policy[req_name])
 	row := {
-		"set": set_key(sets, i),
-		"subject": subject_ref(subj, sets[i]),
-		"predicate": name,
-		"inputs": clause_inputs(subj, clause),
-		"passed": op_passed(clause, subj),
+		"requirement": req_name,
+		"subject": subject_ref(subj, policy[req_name]),
+		"check": check_name,
+		"inputs": check_inputs(subj, check),
+		"passed": op_passed(check, subj),
 	}
 ]
 
-min_count_row(doc, sets, i) := {
-	"set": set_key(sets, i),
-	"subject": {"type": type_of(sets[i]), "id": null},
-	"predicate": "$min_count",
-	"inputs": [{"name": matching_count_name(sets[i]), "value": count(matching_subjects(doc, sets[i]))}],
-	"passed": count(matching_subjects(doc, sets[i])) >= min_count_of(sets[i]),
+min_subjects_row(doc, policy, req_name) := {
+	"requirement": req_name,
+	"subject": {"type": subject_type_of(policy[req_name]), "id": null},
+	"check": "$min_subjects",
+	"inputs": [{"name": matching_count_name(policy[req_name]), "value": count(matching_subjects(doc, policy[req_name]))}],
+	"passed": count(matching_subjects(doc, policy[req_name])) >= min_subjects_of(policy[req_name]),
 }
 
-# One row per raw subject, so a subject dropped by "where" is still named in the
-# evidence instead of surviving only as a total/matching discrepancy.
-filter_rows(doc, sets, i) := [{
-	"set": set_key(sets, i),
-	"subject": subject_ref(subj, sets[i]),
-	"predicate": "$matches_filter",
-	"inputs": filter_inputs(subj, sets[i]),
-	"passed": subject_matches(subj, sets[i]),
+# One row per raw subject, so a subject dropped by "applies_to" is still named in
+# the evidence instead of surviving only as a total/matching discrepancy.
+applies_rows(doc, policy, req_name) := [{
+	"requirement": req_name,
+	"subject": subject_ref(subj, policy[req_name]),
+	"check": "$applies",
+	"inputs": applies_inputs(subj, policy[req_name]),
+	"passed": subject_matches(subj, policy[req_name]),
 } |
-	some subj in raw_subjects(doc, sets[i])
+	some subj in raw_subjects(doc, policy[req_name])
 ] if {
-	count(where_of(sets[i])) > 0
+	count(applies_to_of(policy[req_name])) > 0
 }
 
-filter_rows(_, sets, i) := [] if count(where_of(sets[i])) == 0
+applies_rows(_, policy, req_name) := [] if count(applies_to_of(policy[req_name])) == 0
 
-filter_inputs(subj, set) := [inp |
-	some name in where_names(set)
-	some inp in clause_inputs(subj, where_of(set)[name])
+applies_inputs(subj, req) := [inp |
+	some name in applies_to_names(req)
+	some inp in check_inputs(subj, applies_to_of(req)[name])
 ]
 
-# ---------- set verdicts ----------
+# ---------- requirement verdicts ----------
 
-default set_satisfied(_, _) := false
+default requirement_satisfied(_, _) := false
 
-set_satisfied(doc, set) if {
-	count(clauses_of(set)) > 0
-	quantifier(set) == "every"
-	count(matching_subjects(doc, set)) >= min_count_of(set)
-	every subj in matching_subjects(doc, set) {
-		subject_passed(set, subj)
+requirement_satisfied(doc, req) if {
+	count(checks_of(req)) > 0
+	require_of(req) == "every"
+	count(matching_subjects(doc, req)) >= min_subjects_of(req)
+	every subj in matching_subjects(doc, req) {
+		subject_passed(req, subj)
 	}
 }
 
-set_satisfied(doc, set) if {
-	count(clauses_of(set)) > 0
-	quantifier(set) == "some"
-	count(matching_subjects(doc, set)) >= min_count_of(set)
-	some subj in matching_subjects(doc, set)
-	subject_passed(set, subj)
+requirement_satisfied(doc, req) if {
+	count(checks_of(req)) > 0
+	require_of(req) == "some"
+	count(matching_subjects(doc, req)) >= min_subjects_of(req)
+	some subj in matching_subjects(doc, req)
+	subject_passed(req, subj)
 }
 
 # ---------- report ----------
 
 default all_satisfied(_, _) := false
 
-# A policy declaring no sets asserts nothing, so it cannot be compliant.
-all_satisfied(doc, sets) if {
-	count(sets) > 0
-	count([s | some s in sets; not set_satisfied(doc, s)]) == 0
+# A policy declaring no requirements asserts nothing, so it cannot be compliant.
+all_satisfied(doc, policy) if {
+	count(policy) > 0
+	count([name |
+		some name, req in policy
+		not requirement_satisfied(doc, req)
+	]) == 0
 }
 
-results(doc, sets) := array.concat(
+results(doc, policy) := array.concat(
 	array.concat(
-		[min_count_row(doc, sets, i) | some i, _ in sets],
-		[row | some i, _ in sets; some row in filter_rows(doc, sets, i)],
+		[min_subjects_row(doc, policy, name) | some name, _ in policy],
+		[row | some name, _ in policy; some row in applies_rows(doc, policy, name)],
 	),
-	[row | some i, _ in sets; some row in subject_rows(doc, sets, i)],
+	[row | some name, _ in policy; some row in subject_rows(doc, policy, name)],
 )
 
-report(doc, sets) := {
-	"compliant": all_satisfied(doc, sets),
-	"sets": [{
-		"name": set_key(sets, i),
-		"quantifier": quantifier(sets[i]),
-		"satisfied": set_satisfied(doc, sets[i]),
-		"subjects": {"total": count(raw_subjects(doc, sets[i])), "matching": count(matching_subjects(doc, sets[i]))},
-		"clauses": set_clause_defs(sets[i]),
+report(doc, policy) := {
+	"compliant": all_satisfied(doc, policy),
+	"requirements": {name: {
+		"require": require_of(req),
+		"satisfied": requirement_satisfied(doc, req),
+		"subjects": {"total": count(raw_subjects(doc, req)), "matching": count(matching_subjects(doc, req))},
+		"checks": requirement_check_defs(req),
 	} |
-		some i, _ in sets
-	],
-	"results": results(doc, sets),
+		some name, req in policy
+	},
+	"results": results(doc, policy),
 }
