@@ -913,6 +913,43 @@ test_row_order_is_independent_of_policy_key_order if {
 	json.marshal(evidence.report(doc, {"first": first, "second": second})) == json.marshal(evidence.report(doc, {"second": second, "first": first}))
 }
 
+# The exact sequence the README documents under "Report shape": grouped by kind
+# of check from the most general question to the most specific, then requirement
+# name, then input order of subjects, then check name. Groups interleave across
+# requirements — both $well_formed rows precede either $min_subjects row — which
+# is the part prose most easily gets wrong.
+test_row_order_groups_by_check_kind_then_requirement if {
+	req := {
+		"subject_type": "t",
+		"from": ["items"],
+		"id": ["id"],
+		"applies_to": {"live": {"op": "equals", "path": ["live"], "value": true}},
+		"checks": {
+			"zeta": {"op": "present", "path": ["id"]},
+			"alpha": {"op": "present", "path": ["id"]},
+		},
+	}
+	doc := {"items": [{"id": "s2", "live": true}, {"id": "s1", "live": false}]}
+
+	sequence := [sprintf("%s/%s/%v", [r.requirement, r.check, r.subject.id]) |
+		some r in evidence.report(doc, {"zzz": req, "aaa": req}).results
+	]
+	sequence == [
+		"aaa/$well_formed/null",
+		"zzz/$well_formed/null",
+		"aaa/$min_subjects/null",
+		"zzz/$min_subjects/null",
+		"aaa/$applies/s2",
+		"aaa/$applies/s1",
+		"zzz/$applies/s2",
+		"zzz/$applies/s1",
+		"aaa/alpha/s2",
+		"aaa/zeta/s2",
+		"zzz/alpha/s2",
+		"zzz/zeta/s2",
+	]
+}
+
 # Every row must resolve to exactly one check definition, which is the contract
 # that lets a consumer read a row without the .rego source.
 test_every_row_resolves_to_one_check_definition if {

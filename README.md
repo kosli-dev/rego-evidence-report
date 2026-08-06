@@ -696,6 +696,10 @@ guarantee for the cases where nothing else would.
           "description": "Every commit ... signed ...",
           "expression": "every commits: verified == true"
         },
+        "$well_formed": {
+          "description": "the requirement declares at least one check and a recognised \"require\" value; ...",
+          "expression": "count(checks) >= 1 and require in {every, some}"
+        },
         "$min_subjects": {
           "description": "at least 1 matching pull_request subject(s) required",
           "expression": "count(matching(trail...pull_requests)) >= 1"
@@ -726,6 +730,11 @@ guarantee for the cases where nothing else would.
 }
 ```
 
+Abbreviated: two representative rows, where a real `results` also holds this
+requirement's `$well_formed` and `$min_subjects` rows and a row per remaining
+(subject, check) pair. [The report, in full](#the-report-in-full) shows a
+complete one, verbatim.
+
 The check **definition** — its raw spec, description, and rendered `expression`
 string — is declared once per `(requirement, check)` pair, in
 `requirements[<name>].checks`. Rows in `results` carry only what's actually
@@ -738,11 +747,17 @@ because a requirement's name is the policy object's own key: duplicates are
 unrepresentable rather than something the library has to detect and
 disambiguate.
 
-Row order is deterministic and independent of how the policy object was
-written — requirements are visited in name order, and within that,
-`$min_subjects` rows come first, then `$applies` rows, then check rows. Two
-consumers building the same policy with its keys in a different order produce
-byte-identical reports, which is what makes the report safe to hash and attest.
+Row order is deterministic and independent of how the policy object was written.
+Rows are grouped by kind of check, running from the most general question to the
+most specific — every requirement's `$well_formed` row, then every
+`$min_subjects` row, then all `$applies` rows, then all check rows. Within a
+group, requirements come in name order; within one requirement's `$applies` or
+check rows, subjects come in the order the input listed them, and a subject's
+check rows in check-name order. So with more than one requirement the groups
+interleave: both requirements' `$well_formed` rows precede either one's
+`$min_subjects` row. Two consumers building the same policy with its keys in a
+different order produce byte-identical reports, which is what makes the report
+safe to hash and attest.
 
 This makes the report:
 
