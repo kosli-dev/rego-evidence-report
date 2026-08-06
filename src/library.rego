@@ -44,9 +44,15 @@
 #
 # Checks the library synthesises are "$"-prefixed, so they can never collide
 # with a policy's own check names:
+#   $well_formed  — the requirement asserts something satisfiable at all (one
+#                   row per requirement; static, computed from the declaration)
 #   $min_subjects — enough matching subjects (one row per requirement)
 #   $applies      — subject is in scope under "applies_to" (one row per raw
 #                   subject, only for requirements that declare a filter)
+#
+# Between them these keep the invariant that an unsatisfied requirement always
+# produces at least one failing row to explain itself, so a denial is never
+# silent.
 #
 # Fail-closed throughout: a missing, null or wrong-typed input makes a check
 # fail rather than vanish, and a requirement that asserts nothing (no checks) or
@@ -341,6 +347,23 @@ min_subjects_def(req) := {"$min_subjects": {
 	"expression": sprintf("%s >= %d", [matching_count_name(req), min_subjects_of(req)]),
 }}
 
+# A requirement declaring no checks, or an unrecognised "require", is
+# unsatisfiable — the two verdict bodies below both test exactly these. Without
+# a row saying so, such a requirement is denied while producing nothing that
+# failed, which reads as "denied, no reason given". The condition is static: it
+# depends on the declaration, never on the input document.
+well_formed_def(_) := {"$well_formed": {
+	"description": "the requirement declares at least one check and a recognised \"require\" value; lacking either, it asserts nothing that could ever be satisfied",
+	"expression": "count(checks) >= 1 and require in {every, some}",
+}}
+
+default well_formed(_) := false
+
+well_formed(req) if {
+	count(checks_of(req)) > 0
+	require_of(req) in {"every", "some"}
+}
+
 applies_def(req) := {"$applies": {
 	"description": sprintf("subject is in scope as a %s under this requirement's applies_to filter; out-of-scope subjects are recorded but not evaluated", [subject_type_of(req)]),
 	"expression": concat(" and ", [expression_of(applies_to_of(req)[name]) | some name in applies_to_names(req)]),
@@ -356,7 +379,7 @@ requirement_check_defs(req) := object.union(
 		{name: check_def(check) | some name, check in checks_of(req)},
 		min_subjects_def(req),
 	),
-	applies_def(req),
+	object.union(applies_def(req), well_formed_def(req)),
 )
 
 # ---------- rows ----------
@@ -378,6 +401,19 @@ subject_rows(doc, policy, req_name) := [row |
 		"passed": op_passed(check, subj),
 	}
 ]
+
+# Takes no doc: the declaration is either well formed or it isn't, whatever the
+# input happens to contain.
+well_formed_row(policy, req_name) := {
+	"requirement": req_name,
+	"subject": {"type": subject_type_of(policy[req_name]), "id": null},
+	"check": "$well_formed",
+	"inputs": [
+		{"name": "count(checks)", "value": count(checks_of(policy[req_name]))},
+		{"name": "require", "value": require_of(policy[req_name])},
+	],
+	"passed": well_formed(policy[req_name]),
+}
 
 min_subjects_row(doc, policy, req_name) := {
 	"requirement": req_name,
@@ -429,6 +465,19 @@ requirement_satisfied(doc, req) if {
 	subject_passed(req, subj)
 }
 
+# "some" over nothing, where min_subjects: 0 explicitly opted into a vacuous
+# pass. Without this, min_subjects: 0 would mean one thing under "every" (an
+# empty collection is fine) and the opposite under "some" (an empty collection
+# can never be satisfied, since no subject is there to pass) — and the "some"
+# reading left the requirement denied with no failing row to explain it. The
+# vacuous pass stays opt-in: the default min_subjects of 1 still denies.
+requirement_satisfied(doc, req) if {
+	count(checks_of(req)) > 0
+	require_of(req) == "some"
+	min_subjects_of(req) == 0
+	count(matching_subjects(doc, req)) == 0
+}
+
 # ---------- report ----------
 
 default all_satisfied(_, _) := false
@@ -442,12 +491,18 @@ all_satisfied(doc, policy) if {
 	]) == 0
 }
 
+# Ordered from the most general question to the most specific: is this
+# requirement meaningful at all, were there enough subjects, was this subject in
+# scope, did its checks pass.
 results(doc, policy) := array.concat(
 	array.concat(
+		[well_formed_row(policy, name) | some name, _ in policy],
 		[min_subjects_row(doc, policy, name) | some name, _ in policy],
-		[row | some name, _ in policy; some row in applies_rows(doc, policy, name)],
 	),
-	[row | some name, _ in policy; some row in subject_rows(doc, policy, name)],
+	array.concat(
+		[row | some name, _ in policy; some row in applies_rows(doc, policy, name)],
+		[row | some name, _ in policy; some row in subject_rows(doc, policy, name)],
+	),
 )
 
 report(doc, policy) := {

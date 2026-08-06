@@ -8,9 +8,8 @@
 #
 # Convention for a known-open issue: prefix its rule `todo_test_` and `opa test`
 # skips it, so the suite stays green while the assertion states the behaviour we
-# want; closing the issue is the change that renames it to `test_`. Two are
-# skipped: see the pair at the end of the violations section, where an
-# unsatisfied requirement can currently yield no violation to explain itself.
+# want; closing the issue is the change that renames it to `test_`. Nothing is
+# skipped at the moment.
 #
 # The final section holds the regression tests for the fail-open and
 # evidence-integrity bugs this library shipped with — the cases most worth not
@@ -588,8 +587,8 @@ test_one_row_per_subject_and_check if {
 	rep := evidence.report(doc, two_check_req)
 	count([r | some r in rep.results; not startswith(r.check, "$")]) == 4
 
-	# ...plus the requirement's own $min_subjects row.
-	count(rep.results) == 5
+	# ...plus the requirement's own $well_formed and $min_subjects rows.
+	count(rep.results) == 6
 }
 
 test_row_carries_exactly_the_documented_keys if {
@@ -701,6 +700,56 @@ test_min_subjects_guards_a_missing_collection if {
 	rep.compliant == false
 }
 
+# ---------- $well_formed ----------
+
+test_well_formed_passes_for_an_ordinary_requirement if {
+	rep := evidence.report({"items": [{"id": "a"}]}, id_req(["items"]))
+	rows_for(rep, "s", "$well_formed")[0].passed == true
+}
+
+test_well_formed_fails_when_no_checks_are_declared if {
+	rep := evidence.report({"items": [{"id": "a"}]}, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
+		"id": ["id"],
+	}})
+	rows_for(rep, "s", "$well_formed")[0].passed == false
+	rep.requirements.s.satisfied == false
+}
+
+test_well_formed_fails_on_an_unrecognised_require_value if {
+	rep := evidence.report(both_ok, require_req("most"))
+	rows_for(rep, "s", "$well_formed")[0].passed == false
+	rep.requirements.s.satisfied == false
+}
+
+test_well_formed_row_is_about_the_requirement_not_a_subject if {
+	rep := evidence.report({"items": [{"id": "a"}, {"id": "b"}]}, id_req(["items"]))
+	count(rows_for(rep, "s", "$well_formed")) == 1
+	rows_for(rep, "s", "$well_formed")[0].subject == {"type": "thing", "id": null}
+}
+
+# Static: the same declaration is well formed or not regardless of the document,
+# so an empty input must not change the verdict on it.
+test_well_formed_does_not_depend_on_the_input if {
+	with_items := evidence.report({"items": [{"id": "a"}]}, id_req(["items"]))
+	without := evidence.report({}, id_req(["items"]))
+	rows_for(with_items, "s", "$well_formed")[0] == rows_for(without, "s", "$well_formed")[0]
+}
+
+test_well_formed_echoes_the_declaration_it_read if {
+	rep := evidence.report(both_ok, require_req("most"))
+	rows_for(rep, "s", "$well_formed")[0].inputs == [
+		{"name": "count(checks)", "value": 2},
+		{"name": "require", "value": "most"},
+	]
+}
+
+test_well_formed_definition_is_in_the_check_table if {
+	rep := evidence.report({"items": [{"id": "a"}]}, id_req(["items"]))
+	rep.requirements.s.checks["$well_formed"].expression == "count(checks) >= 1 and require in {every, some}"
+}
+
 # ---------- require ----------
 
 require_req(q) := {"s": {
@@ -744,6 +793,39 @@ test_some_unsatisfied_when_checks_are_split_across_subjects if {
 
 test_some_unsatisfied_without_subjects if {
 	evidence.report({"items": []}, require_req("some")).requirements.s.satisfied == false
+}
+
+# min_subjects: 0 means the same thing under both require modes — "if there are
+# any, the rule applies; if there are none, that's fine". It used to mean the
+# opposite under "some", where an empty collection could never be satisfied
+# because no subject was there to pass, leaving the requirement denied with no
+# failing row to explain it.
+some_req_zero := {"s": object.union(require_req("some").s, {"min_subjects": 0})}
+
+test_some_with_min_subjects_zero_is_vacuously_satisfied_when_empty if {
+	rep := evidence.report({"items": []}, some_req_zero)
+	rep.requirements.s.satisfied == true
+	rep.compliant == true
+}
+
+# The vacuous pass stays opt-in — the default of 1 still denies an empty
+# collection under "some".
+test_some_without_min_subjects_zero_still_denies_an_empty_collection if {
+	evidence.report({"items": []}, require_req("some")).requirements.s.satisfied == false
+}
+
+# ...and it is only about emptiness. Subjects that exist must still produce a
+# passer.
+test_some_with_min_subjects_zero_still_denies_when_no_subject_passes if {
+	rep := evidence.report(split_across_subjects, some_req_zero)
+	rep.requirements.s.satisfied == false
+	count(evidence.violations(rep)) > 0
+}
+
+# Emptiness after the filter counts as emptiness.
+test_some_with_min_subjects_zero_is_satisfied_when_the_filter_empties_the_scope if {
+	scoped := {"s": object.union(some_req_zero.s, {"applies_to": merged_only})}
+	evidence.report({"items": [{"id": "a", "state": "CLOSED"}]}, scoped).requirements.s.satisfied == true
 }
 
 test_some_still_records_rows_for_the_failing_subjects if {
@@ -978,26 +1060,63 @@ test_violations_follow_results_order if {
 	[[v.requirement, v.check, v.subject.id] | some v in evidence.violations(rep)] == from_rows
 }
 
-# Known gap: "unsatisfied" and "produces a violation" are not yet equivalent.
-# Both cases below are policy authoring errors that fail closed on the verdict —
-# allow is false — but contribute no failing row, so violations() comes back
-# empty: denial with no stated reason, which is precisely the silence this
-# library exists to remove. Closing this means synthesising an entry for an
-# unsatisfied requirement that produced none.
-todo_test_a_requirement_without_checks_yields_a_violation if {
+test_a_requirement_without_checks_yields_a_violation if {
 	rep := evidence.report({"items": [{"id": "a"}]}, {"s": {
 		"subject_type": "thing",
 		"from": ["items"],
 		"id": ["id"],
 	}})
 	rep.compliant == false
-	count(evidence.violations(rep)) > 0
+	[v.check | some v in evidence.violations(rep)] == ["$well_formed"]
 }
 
-todo_test_an_unknown_require_value_yields_a_violation if {
+test_an_unknown_require_value_yields_a_violation if {
 	rep := evidence.report(both_ok, require_req("most"))
 	rep.compliant == false
-	count(evidence.violations(rep)) > 0
+	[v.check | some v in evidence.violations(rep)] == ["$well_formed"]
+}
+
+# The invariant the above two restore, swept across the declaration and input
+# shapes that used to break it. 180 combinations; 69 of them once returned
+# "denied, and nothing failed to say why".
+scan_requires := ["every", "some", "most"]
+
+scan_mins := [0, 1, 2]
+
+scan_checksets := [{}, {"c": {"op": "present", "path": ["id"]}}]
+
+scan_filters := [{}, {"m": {"op": "equals", "path": ["state"], "value": "MERGED"}}]
+
+scan_docs := [
+	{"items": []},
+	{"items": [{"id": "a", "state": "MERGED"}]},
+	{"items": [{"no_id": 1, "state": "MERGED"}]},
+	{"items": [{"id": "a", "state": "MERGED"}, {"no_id": 1, "state": "MERGED"}]},
+	{"items": [{"id": "a", "state": "CLOSED"}]},
+]
+
+scan_policy(rq, mn, cs, fl) := {"s": {
+	"subject_type": "thing",
+	"from": ["items"],
+	"id": ["id"],
+	"require": rq,
+	"min_subjects": mn,
+	"applies_to": fl,
+	"checks": cs,
+}}
+
+test_an_unsatisfied_report_always_explains_itself if {
+	unexplained := [rep |
+		some rq in scan_requires
+		some mn in scan_mins
+		some cs in scan_checksets
+		some fl in scan_filters
+		some d in scan_docs
+		rep := evidence.report(d, scan_policy(rq, mn, cs, fl))
+		rep.compliant == false
+		count(evidence.violations(rep)) == 0
+	]
+	count(unexplained) == 0
 }
 
 # ---------- regressions ----------

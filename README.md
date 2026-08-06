@@ -162,6 +162,10 @@ can read the shape without running anything. Key order is `opa eval`'s
           "description": "at least 1 matching deployment subject(s) required",
           "expression": "count(matching(deployments)) >= 1"
         },
+        "$well_formed": {
+          "description": "the requirement declares at least one check and a recognised \"require\" value; lacking either, it asserts nothing that could ever be satisfied",
+          "expression": "count(checks) >= 1 and require in {every, some}"
+        },
         "approved": {
           "description": "A named approver signed off on the deployment",
           "expression": "approved_by is a non-empty string",
@@ -180,6 +184,25 @@ can read the shape without running anything. Key order is `opa eval`'s
     }
   },
   "results": [
+    {
+      "check": "$well_formed",
+      "inputs": [
+        {
+          "name": "count(checks)",
+          "value": 1
+        },
+        {
+          "name": "require",
+          "value": "every"
+        }
+      ],
+      "passed": true,
+      "requirement": "prod_deploy",
+      "subject": {
+        "id": null,
+        "type": "deployment"
+      }
+    },
     {
       "check": "$min_subjects",
       "inputs": [
@@ -286,11 +309,13 @@ yourself for custom ops, where the library can't derive it.
 
 ### Reading the rows
 
-The same six rows, condensed. Row order is deterministic: `$min_subjects` rows
-first, then `$applies` rows, then check rows.
+The same seven rows, condensed. Row order is deterministic, and runs from the
+most general question to the most specific: `$well_formed`, then
+`$min_subjects`, then `$applies`, then check rows.
 
 | requirement | subject.id | check | inputs | passed |
 | --- | --- | --- | --- | --- |
+| prod_deploy | `null` *(requirement-level)* | `$well_formed` | `count(checks) = 1`, `require = "every"` | ✅ |
 | prod_deploy | `null` *(requirement-level)* | `$min_subjects` | `count(matching(deployments)) = 2` | ✅ |
 | prod_deploy | `"d-1"` | `$applies` | `environment = "prod"` | ✅ |
 | prod_deploy | `"d-2"` | `$applies` | `environment = "prod"` | ✅ |
@@ -305,9 +330,14 @@ Three things to take from that table:
    row.
 2. **The failure produced a row at all.** This is the thing plain Rego makes
    hard: an undefined check leaves no trace. Here `d-2` is named.
-3. **Two checks you didn't declare showed up**, prefixed with `$`. The library
+3. **Three checks you didn't declare showed up**, prefixed with `$`. The library
    synthesises those, and `$` guarantees they can never collide with your own
    check names:
+   - **`$well_formed`** — one row per requirement: does this requirement assert
+     anything satisfiable at all. It is computed from the declaration alone, so
+     it reads the same whatever the input contains. It passes for any sane
+     policy; it exists so that a requirement which declares no checks, or an
+     unrecognised `require`, is *denied out loud* instead of silently.
    - **`$min_subjects`** — one row per requirement: were there enough in-scope
      subjects. A typo in `from` finds nothing and fails here, rather than a
      requirement with zero subjects quietly passing.
@@ -325,13 +355,14 @@ rows *are* the list, and that's deliberate: a passing row and a failing row
 carry exactly the same fields, so a consumer never has to handle two shapes.
 
 The one thing to get right is that not every failing row means "this subject
-breached the policy". Three kinds of row, three meanings:
+breached the policy". Four kinds of row, four meanings:
 
 | Failing row | `subject.id` | What it means | A violation? |
 | --- | --- | --- | --- |
 | one of your own checks (`approved`) | the subject that failed | this subject breached this check | **yes** |
 | `$applies` | the subject that didn't qualify | out of scope, never evaluated | **no** |
 | `$min_subjects` | `null` — the row is about the requirement, not a subject | too few in-scope subjects existed | **yes** |
+| `$well_formed` | `null` — likewise | the requirement itself is malformed | **yes** (and it's a bug in the policy, not in the thing being judged) |
 
 So `d-3` above is not a problem; `d-2` is. And `subject.id` is `null` on
 `$min_subjects` rows because there is no single subject to blame — "no
@@ -422,13 +453,17 @@ the hashable, attestable artifact and `violations` isn't: the report is a claim
 about what was observed, violations are an interpretation of it, and
 interpretations can be revised without invalidating the evidence.
 
-> **Known gap.** "Unsatisfied" and "produces a violation" are not yet
-> equivalent. A requirement that declares no checks, or carries an unrecognised
-> `require` value, is unsatisfied — so `allow` is `false`, failing closed — but
-> contributes no failing row, so `violations` comes back *empty*: a denial with
-> no stated reason. Both are policy authoring errors, and both are pinned by
-> `todo_test_` rules at the end of the violations section in
-> `src/library_test.rego`.
+**A denial is never silent.** An unsatisfied requirement always produces at
+least one failing row, so `violations` is never empty while `compliant` is
+`false`. That holds because every way a requirement can fail is reported by
+something: too few subjects by `$min_subjects`, a subject failing its checks by
+that check's own row, and a requirement that asserts nothing satisfiable by
+`$well_formed`. `test_an_unsatisfied_report_always_explains_itself` sweeps all
+180 combinations of `require` × `min_subjects` × checks-declared × filter ×
+input shape to keep it that way.
+
+Gate on `compliant` regardless — `violations` is the explanation, not the
+verdict.
 
 From outside Rego, the same projection over the report JSON:
 
@@ -545,9 +580,10 @@ requirements** asserts nothing and is never compliant.
   collection ops included. All of them must pass for a subject to be in scope.
 - **`min_subjects`** defaults to 1, so a typo in `from` fails the requirement
   instead of vacuously satisfying it. Set it to `0` to opt back into a vacuous
-  pass.
-- A requirement that declares **no checks** is never satisfied — it asserts
-  nothing.
+  pass — "if there are any, the rule applies; if there are none, that's fine".
+  It means the same under both `require` modes.
+- A requirement that declares **no checks**, or an unrecognised `require`,
+  asserts nothing satisfiable and is never satisfied. `$well_formed` reports it.
 
 ### Operators
 
@@ -614,6 +650,10 @@ Rego's defaults point the other way:
   instead of vacuously satisfying it. Set it to `0` to opt back into a vacuous
   pass; a policy with no requirements at all is never compliant, and neither is
   a requirement that declares no checks.
+
+And a denial always says why: an unsatisfied requirement is guaranteed to
+produce at least one failing row, which is what `$well_formed` exists to
+guarantee for the cases where nothing else would.
 
 `equals` distinguishes a field that is absent from one explicitly set to
 `null`: only the latter satisfies `"value": null`.
@@ -717,7 +757,7 @@ array, each entry being a failing row joined to its check definition:
 - A **pure function of the report** — it takes no input document and no policy,
   which is what makes the selection generic rather than per-consumer.
 - Drops passing rows, rows of a **satisfied** requirement, and `$applies` rows.
-  Keeps `$min_subjects` failures. See
+  Keeps `$min_subjects` and `$well_formed` failures. See
   [Evidence vs. violations](#evidence-vs-violations) for why each.
 - `description` and `expression` fall back to `""` when the check didn't declare
   them; every other field comes from the row.
@@ -726,9 +766,9 @@ array, each entry being a failing row joined to its check definition:
 - Returns **structured entries, never formatted strings** — wording is the
   policy's call.
 
-Empty violations do not currently guarantee compliance: see the known gap noted
-in [Evidence vs. violations](#evidence-vs-violations). Gate on `compliant`, and
-treat violations as the explanation rather than the verdict.
+Empty violations while `compliant` is `false` cannot happen — see
+[Evidence vs. violations](#evidence-vs-violations). Gate on `compliant` anyway,
+and treat violations as the explanation rather than the verdict.
 
 ---
 
@@ -758,10 +798,10 @@ build their fixtures inline instead.
 - **`src/library_test.rego`** — the engine: subject resolution, `applies_to`
   filters, every leaf and collection operator (including what each one does
   with missing, null, and wrong-typed input), echoed inputs, rendered
-  expressions, row shape and totality, `min_subjects`, both `require` modes,
-  the `violations` projection, and the report-level invariants (determinism,
-  order-independence of policy keys, and every row resolving to exactly one
-  check definition).
+  expressions, row shape and totality, `min_subjects`, `$well_formed`, both
+  `require` modes, the `violations` projection, and the report-level invariants
+  (determinism, order-independence of policy keys, every row resolving to
+  exactly one check definition, and every unsatisfied report explaining itself).
 - **`examples/code_review_test.rego`** — the consumer policy: both README
   scenarios, the violation projection, the `peer_approved` custom op, and
   `data.params` configurability.
@@ -776,17 +816,16 @@ opa eval --strict-builtin-errors -d src/library.rego -d examples/code_review.reg
 
 A `todo_test_` prefix marks a known-open issue: `opa test` skips the rule, so
 the suite stays green while the assertion states the behaviour we want, and
-closing the issue is the change that renames it to `test_`. Two are skipped at
-the moment, both stating the same wanted invariant — that an unsatisfied
-requirement always yields at least one violation to explain itself. See the
-known gap in [Evidence vs. violations](#evidence-vs-violations).
+closing the issue is the change that renames it to `test_`. Nothing is skipped
+at the moment.
 
 The `regressions` section at the end of each file covers the fail-open and
 evidence-integrity bugs the library shipped with — `compare` passing on a
 missing field, `peer_approved` ignoring commits with no timestamp, a vacuous
 pass over an empty collection, a `$min_subjects` row labelling a count it
-wasn't reporting, out-of-scope subjects leaving no trace, and colliding
-requirement and check names. Those are the cases most worth not reintroducing.
+wasn't reporting, out-of-scope subjects leaving no trace, colliding requirement
+and check names, and an unsatisfied requirement denying with nothing to explain
+itself. Those are the cases most worth not reintroducing.
 
 One residual: `compare_time` screens its inputs with a shape regex before
 parsing, so malformed timestamps produce a failing row even under
