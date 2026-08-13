@@ -189,7 +189,7 @@ def brief_id(ident, limit=30):
 
 def cmd_run(args):
     package = package_of(args.policy)
-    files = [args.library, args.policy] + list(args.ops or [])
+    files = [args.library, args.policy] + list(args.ops or []) + list(args.data or [])
     for path in files:
         if not os.path.exists(path):
             raise SystemExit("no such file: %s" % path)
@@ -268,6 +268,9 @@ def main():
     run.add_argument("policy")
     run.add_argument("input")
     run.add_argument("--ops", nargs="*", help="extra .rego files (custom operators)")
+    run.add_argument("--data", nargs="*",
+                     help="JSON data files, e.g. {\"params\": {...}} for a "
+                          "policy configured through data.params")
     run.add_argument("--library", default=DEFAULT_LIBRARY)
     run.add_argument("--json", action="store_true", help="print the raw report JSON")
     run.set_defaults(func=cmd_run)

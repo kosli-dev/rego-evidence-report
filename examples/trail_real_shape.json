@@ -1,0 +1,425 @@
+{
+  "trail": {
+    "name": "ff928e778db75893d7fead29a824a39af0adf5af",
+    "description": "",
+    "git_commit_info": {
+      "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+      "message": "commit message",
+      "author": "Test User <test.user@example.com>",
+      "branch": "",
+      "timestamp": 1762876584.0,
+      "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
+    },
+    "origin_url": "https://github.com/acme/demo-app-service/actions/runs/50408204782",
+    "user_data": {},
+    "last_modified_at": 1762882255.515908,
+    "created_at": 1762880188.1431668,
+    "compliance_status": {
+      "status": "NON-COMPLIANT",
+      "is_compliant": false,
+      "attestations_statuses": [
+        {
+          "attestation_name": "SOURCE_CODE_REVIEW_COMPLETED",
+          "attestation_type": "generic",
+          "attestation_id": "01761fa0-abe4-60e7-c493-2d711d7b",
+          "overridden_attestation_id": null,
+          "status": "COMPLETE",
+          "is_compliant": false,
+          "unexpected": false
+        },
+        {
+          "attestation_name": "SDLC_REQUIREMENTS_FOR_RELEASE_COMPLETED",
+          "attestation_type": "generic",
+          "attestation_id": "9dc01895-d666-c1d8-010a-b3aa67c0",
+          "overridden_attestation_id": null,
+          "status": "COMPLETE",
+          "is_compliant": true,
+          "unexpected": true
+        },
+        {
+          "attestation_name": "UNIT_TEST_REPORT_COMPLETED",
+          "attestation_type": "generic",
+          "attestation_id": "b79d20e9-5573-084c-8887-0a7c7ce8",
+          "overridden_attestation_id": null,
+          "status": "COMPLETE",
+          "is_compliant": true,
+          "unexpected": true
+        },
+        {
+          "attestation_name": "TEST_CASES_TRACEABILITY_COMPLETED",
+          "attestation_type": "generic",
+          "attestation_id": "d69343bf-615d-13b6-a5b6-c2a3dcfd",
+          "overridden_attestation_id": null,
+          "status": "COMPLETE",
+          "is_compliant": true,
+          "unexpected": true
+        },
+        {
+          "attestation_name": "NO_HARD_CODED_CREDENTIALS_VERIFICATION_COMPLETED",
+          "attestation_type": "generic",
+          "attestation_id": "b595a148-8e4f-6062-5242-bd958c6a",
+          "overridden_attestation_id": null,
+          "status": "COMPLETE",
+          "is_compliant": false,
+          "unexpected": true
+        }
+      ],
+      "artifacts_statuses": {
+        "app": {
+          "artifact_fingerprint": "8751250dff9aa560c05db673bc2613877f615eadadea3db6790532defdc083fd",
+          "artifact_id": "3744a826-9542-5d93-d84a-88759e77",
+          "status": "NON-COMPLIANT",
+          "is_compliant": false,
+          "attestations_statuses": [],
+          "unexpected": false,
+          "evaluated_at": 1762880895.778764,
+          "flow_template_id": "d15286ee-accc-13de-20e0-370e223e"
+        }
+      },
+      "evaluated_at": 1762881957.4735441,
+      "flow_template_id": "d15286ee-accc-13de-20e0-370e223e"
+    },
+    "template": {
+      "version": 1,
+      "trail": {
+        "attestations": [
+          {
+            "name": "SOURCE_CODE_REVIEW_COMPLETED",
+            "type": "generic"
+          }
+        ],
+        "artifacts": [
+          {
+            "name": "app",
+            "attestations": []
+          }
+        ]
+      },
+      "content": "\nversion: 1\ntrail:\n  artifacts:\n    - name: app\n  attestations:\n    - name: SOURCE_CODE_REVIEW_COMPLETED\n      type: generic\n"
+    },
+    "compliance_state": "NON-COMPLIANT",
+    "is_compliant": false,
+    "events": [
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762880188.1431668,
+        "type": "trail_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "setting_user_id": "d0310abc-7df2-4496-598b-0b62596e",
+        "trail_data_json": {
+          "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+          "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+          "name": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "creating_user_id": "d0310abc-7df2-4496-598b-0b62596e",
+          "description": "",
+          "git_commit_info": {
+            "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+            "message": "commit message",
+            "author": "Test User <test.user@example.com>",
+            "branch": "",
+            "timestamp": 1762876584.0,
+            "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
+          },
+          "template_id": "d15286ee-accc-13de-20e0-370e223e",
+          "origin_url": "https://github.com/acme/demo-app-service/actions/runs/15307540247",
+          "user_data": "{}"
+        }
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762880188.3983605,
+        "type": "trail_updated",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "setting_user_id": "d0310abc-7df2-4496-598b-0b62596e",
+        "trail_data_json": {
+          "description": "",
+          "git_commit_info": {
+            "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+            "message": "commit message",
+            "author": "Test User <test.user@example.com>",
+            "branch": "",
+            "timestamp": 1762876584.0,
+            "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
+          },
+          "user_data": "{}",
+          "origin_url": "https://github.com/acme/demo-app-service/actions/runs/32683266520"
+        },
+        "changes": [
+          "git_commit_info",
+          "origin_url"
+        ]
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762880189.0211425,
+        "type": "artifact_creation_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "artifact_fingerprint": "53104a0e353b0694d1e11f6724ea6863d1c7e6f2df2c17cd3c0a09ebef6813d2",
+        "artifact_name": "registry.example.com/demo/demo-app-service:1.2.43",
+        "artifact_id": "5f661fa1-5912-793c-64ba-66848075",
+        "template_reference_name": "app",
+        "git_commit": "ff928e778db75893d7fead29a824a39af0adf5af"
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762880189.2271764,
+        "type": "artifact_creation_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "artifact_fingerprint": "97d0308ad8d59102d0185f965b703e144e92beb1d76c2d6f7ecfa83e5dd048df",
+        "artifact_name": "registry.example.com/demo/demo-app-service:1.2.43",
+        "artifact_id": "cdb73ada-43e1-0f65-c91e-7349731f",
+        "template_reference_name": "app",
+        "git_commit": "ff928e778db75893d7fead29a824a39af0adf5af"
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762880894.9999604,
+        "type": "trail_updated",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "setting_user_id": "d0310abc-7df2-4496-598b-0b62596e",
+        "trail_data_json": {
+          "description": "",
+          "git_commit_info": {
+            "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+            "message": "commit message",
+            "author": "Test User <test.user@example.com>",
+            "branch": "",
+            "timestamp": 1762876584.0,
+            "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
+          },
+          "user_data": "{}",
+          "origin_url": "https://github.com/acme/demo-app-service/actions/runs/25011890184"
+        },
+        "changes": [
+          "git_commit_info",
+          "origin_url"
+        ]
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762880895.778764,
+        "type": "artifact_creation_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "artifact_fingerprint": "8751250dff9aa560c05db673bc2613877f615eadadea3db6790532defdc083fd",
+        "artifact_name": "registry.example.com/demo/demo-app-service:1.2.97",
+        "artifact_id": "3744a826-9542-5d93-d84a-88759e77",
+        "template_reference_name": "app",
+        "git_commit": "ff928e778db75893d7fead29a824a39af0adf5af"
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762881849.182371,
+        "type": "trail_updated",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "setting_user_id": "d0310abc-7df2-4496-598b-0b62596e",
+        "trail_data_json": {
+          "description": "",
+          "git_commit_info": {
+            "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+            "message": "commit message",
+            "author": "Test User <test.user@example.com>",
+            "branch": "",
+            "timestamp": 1762876584.0,
+            "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
+          },
+          "user_data": "{}",
+          "origin_url": "https://github.com/acme/demo-app-service/actions/runs/50408204782"
+        },
+        "changes": [
+          "git_commit_info",
+          "origin_url"
+        ]
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762881906.963351,
+        "type": "trail_attestation_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "attestation_type": "generic",
+        "is_compliant": true,
+        "attestation_id": "9dc01895-d666-c1d8-010a-b3aa67c0",
+        "template_reference_name": "SDLC_REQUIREMENTS_FOR_RELEASE_COMPLETED"
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762881912.744899,
+        "type": "trail_attestation_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "attestation_type": "generic",
+        "is_compliant": true,
+        "attestation_id": "b79d20e9-5573-084c-8887-0a7c7ce8",
+        "template_reference_name": "UNIT_TEST_REPORT_COMPLETED"
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762881937.300916,
+        "type": "trail_attestation_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "attestation_type": "generic",
+        "is_compliant": true,
+        "attestation_id": "d69343bf-615d-13b6-a5b6-c2a3dcfd",
+        "template_reference_name": "TEST_CASES_TRACEABILITY_COMPLETED"
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762881957.4735441,
+        "type": "trail_attestation_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "attestation_type": "generic",
+        "is_compliant": false,
+        "attestation_id": "b595a148-8e4f-6062-5242-bd958c6a",
+        "template_reference_name": "NO_HARD_CODED_CREDENTIALS_VERIFICATION_COMPLETED"
+      },
+      {
+        "org_id": "91c9f6f8-7085-effd-7d8b-353d5066",
+        "flow_id": "9cfa7837-9088-30f0-da31-f566bc64",
+        "trail_id": "b6461c0c-b135-dfa4-4096-dd540650",
+        "timestamp": 1762882255.515908,
+        "type": "trail_attestation_reported",
+        "git_commit_info": {
+          "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
+          "message": "commit message",
+          "author": "Test User <test.user@example.com>",
+          "author_username": null,
+          "branch": "",
+          "timestamp": 1762876584.0,
+          "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af",
+          "parents": null
+        },
+        "attestation_type": "generic",
+        "is_compliant": false,
+        "attestation_id": "01761fa0-abe4-60e7-c493-2d711d7b",
+        "template_reference_name": "SOURCE_CODE_REVIEW_COMPLETED"
+      }
+    ],
+    "created_by": "ci-bot",
+    "flow": {
+      "name": "demo-flow",
+      "tags": {
+        "env": "dev",
+        "version": "1.0"
+      }
+    }
+  }
+}

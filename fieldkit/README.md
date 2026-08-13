@@ -10,14 +10,18 @@ The repo is INTERNAL, not private, so any org member can clone it. It is ~30KB o
 text, so this completes well inside a short-lived proxy credential:
 
 ```sh
-git clone --depth 1 https://github.com/kosli-dev/rego-evidence-report.git
+git clone --depth 1 --branch integration \
+  https://github.com/kosli-dev/rego-evidence-report.git
 cd rego-evidence-report
 ```
+
+**The branch matters.** This work lives on `integration`; a default clone lands on
+`main`, which has no `fieldkit/` at all.
 
 To pick up later fixes, since nothing local needs preserving in tracked files:
 
 ```sh
-git fetch --depth 1 origin main && git reset --hard FETCH_HEAD
+git fetch --depth 1 origin integration && git reset --hard FETCH_HEAD
 ```
 
 If git auth is the sticking point but HTTPS works, a single file is enough to
@@ -25,7 +29,7 @@ evaluate — the library has no dependencies:
 
 ```sh
 curl -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github.raw" \
-  https://api.github.com/repos/kosli-dev/rego-evidence-report/contents/src/library.rego \
+  'https://api.github.com/repos/kosli-dev/rego-evidence-report/contents/src/library.rego?ref=integration' \
   -o library.rego
 ```
 
