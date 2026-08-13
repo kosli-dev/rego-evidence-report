@@ -396,8 +396,33 @@ test_rfc3339_gate_rejects_everything_else if {
 	}
 }
 
-test_compare_time_rejects_epoch_seconds if {
-	verdict({"start": 1753600000, "end": 1753603600}, compare_time_span("lt")) == false
+# Epoch numbers compare numerically. rfc3339_shaped still rejects a number (the
+# loop above), because that predicate answers "is this an RFC3339 string" — the
+# operator accepts two formats, the format check itself did not change.
+test_compare_time_accepts_epoch_seconds if {
+	verdict({"start": 1753600000, "end": 1753603600}, compare_time_span("lt")) == true
+}
+
+test_compare_time_orders_epoch_seconds if {
+	verdict({"start": 1753603600, "end": 1753600000}, compare_time_span("lt")) == false
+	verdict({"start": 1753603600, "end": 1753600000}, compare_time_span("gt")) == true
+}
+
+test_compare_time_compares_equal_epochs if {
+	verdict({"start": 1753600000, "end": 1753600000}, compare_time_span("eq")) == true
+}
+
+# Accepting a second format must not open a coercion path between them: whichever
+# way round, a number against a string satisfies neither rule body.
+test_compare_time_rejects_mixed_formats if {
+	verdict({"start": 1753600000, "end": "2024-01-01T00:00:00Z"}, compare_time_span("lt")) == false
+	verdict({"start": "2024-01-01T00:00:00Z", "end": 1753600000}, compare_time_span("lt")) == false
+}
+
+# A boolean is not a timestamp, and Rego would happily order it against a number.
+test_compare_time_rejects_non_numeric_scalars if {
+	verdict({"start": true, "end": 1753600000}, compare_time_span("lt")) == false
+	verdict({"start": 1753600000, "end": null}, compare_time_span("lt")) == false
 }
 
 # Unlike `compare` (issue 1), compare_time is already fail-closed on a missing

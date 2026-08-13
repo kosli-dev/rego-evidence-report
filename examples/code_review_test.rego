@@ -66,7 +66,24 @@ artifact(overrides) := object.union(
 	overrides,
 )
 
-doc_with(artifacts) := {"trail": {"compliance_status": {"artifacts_statuses": artifacts}}}
+# Trail-level attestations, an array, as a real `kosli get trail` returns them.
+# One in-scope element by default, so no test sees an out-of-scope $applies row it
+# didn't ask for.
+code_review_attestation(overrides) := object.union(
+	{
+		"attestation_name": "SOURCE_CODE_REVIEW_COMPLETED",
+		"status": "COMPLETE",
+		"is_compliant": true,
+	},
+	overrides,
+)
+
+doc_with(artifacts) := with_attestations(artifacts, [code_review_attestation({})])
+
+with_attestations(artifacts, attestations) := {"trail": {"compliance_status": {
+	"artifacts_statuses": artifacts,
+	"attestations_statuses": attestations,
+}}}
 
 # The default-shaped trail carrying the given pull requests.
 trail(prs) := doc_with({"artifact": artifact({"attestations_statuses": {"pull-request": attestation({"pull_requests": prs})}})})
@@ -160,16 +177,63 @@ test_missing_fingerprint_denies if {
 	row(doc, "fingerprint_recorded").passed == false
 }
 
+# ---------- code review attestation requirement ----------
+
 test_incomplete_attestation_denies if {
-	doc := doc_with({"artifact": artifact({"attestations_statuses": {"pull-request": attestation({"status": "INCOMPLETE"})}})})
+	doc := with_attestations(
+		{"artifact": artifact({})},
+		[code_review_attestation({"status": "INCOMPLETE"})],
+	)
 	out(doc).allow == false
-	row(doc, "pr_attestation_complete").passed == false
+	row(doc, "attestation_reported").passed == false
 }
 
-test_missing_attestation_denies if {
-	doc := doc_with({"artifact": {"artifact_fingerprint": fingerprint, "attestations_statuses": {}}})
+# The fail-open this requirement exists to close: reported and passed are
+# different questions, and a real trail carries exactly this combination.
+test_reported_but_non_compliant_attestation_denies if {
+	doc := with_attestations(
+		{"artifact": artifact({})},
+		[code_review_attestation({"status": "COMPLETE", "is_compliant": false})],
+	)
 	out(doc).allow == false
-	row(doc, "pr_attestation_complete").passed == false
+	row(doc, "attestation_reported").passed == true
+	row(doc, "attestation_compliant").passed == false
+}
+
+# Absent is not false. A missing is_compliant must fail rather than be read as
+# permission, since "equals true" against nothing is exactly where a check would
+# vanish in plain Rego.
+test_attestation_without_a_compliance_flag_denies if {
+	doc := with_attestations(
+		{"artifact": artifact({})},
+		[{"attestation_name": "SOURCE_CODE_REVIEW_COMPLETED", "status": "COMPLETE"}],
+	)
+	out(doc).allow == false
+	row(doc, "attestation_compliant").passed == false
+}
+
+# No attestation of the named kind at all: every element is filtered out by
+# applies_to, so the requirement fails on having no subjects rather than silently
+# passing over an empty scope.
+test_missing_attestation_denies if {
+	doc := with_attestations(
+		{"artifact": artifact({})},
+		[code_review_attestation({"attestation_name": "SOMETHING_ELSE_COMPLETED"})],
+	)
+	out(doc).allow == false
+	requirement_verdict(doc, "code_review_attestation") == false
+	out(doc).report.requirements.code_review_attestation.subjects == {"total": 1, "matching": 0}
+}
+
+# The array-vs-map trap that made the old artifact-level check misreport: a real
+# trail's attestations are an array, and a map here must not resolve to subjects.
+test_map_shaped_attestations_yield_no_subjects if {
+	doc := with_attestations(
+		{"artifact": artifact({})},
+		{"SOURCE_CODE_REVIEW_COMPLETED": code_review_attestation({})},
+	)
+	out(doc).allow == false
+	out(doc).report.requirements.code_review_attestation.subjects.total == 1
 }
 
 test_empty_trail_denies if {
@@ -177,7 +241,7 @@ test_empty_trail_denies if {
 }
 
 test_empty_trail_still_reports_a_min_subjects_row if {
-	count(rows({}, "$min_subjects")) == 2
+	count(rows({}, "$min_subjects")) == 3
 	every r in rows({}, "$min_subjects") {
 		r.passed == false
 	}

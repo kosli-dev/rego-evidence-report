@@ -345,8 +345,18 @@ evidence, not violations, and `evidence.violations` drops them.
 ### Next step
 
 Read `examples/code_review.rego`. It's Kosli's SDLC-CTRL-0007 code review
-control expressed as two requirements — an artifact and a merged PR — and it
-uses every concept above plus one custom op, in roughly 100 lines.
+control expressed as three requirements — an artifact, a code review attestation,
+and a merged PR — and it uses every concept above plus one custom op, in roughly
+140 lines.
+
+The attestation requirement is worth reading twice. It shows `applies_to` used as
+a **selector**: attestations arrive as an array, and narrowing it to the one
+element named `SOURCE_CODE_REVIEW_COMPLETED` is the same operation as scoping a
+requirement, so picking an element out of an array needs no new vocabulary. It
+also asserts two things that sound like one — `status == "COMPLETE"` and
+`is_compliant == true` — because the first only says the evidence was *reported*.
+Asserting completeness alone is a fail-open, and real trails contain exactly that
+case.
 
 ---
 
@@ -415,7 +425,7 @@ single element):
 | `includes` | `path`, `value` | field is an array containing `value` |
 | `excludes` | `path`, `value` | field is an array not containing `value` |
 | `compare` | `left`, `right`, `cmp` | both fields present, same type, and `left cmp right` holds |
-| `compare_time` | `left`, `right`, `cmp` | both fields are RFC3339 timestamps and compare that way |
+| `compare_time` | `left`, `right`, `cmp` | both fields are timestamps of the *same* format — either two RFC3339 strings or two epoch numbers — and compare that way |
 
 `cmp` is one of `eq`, `ne`, `gt`, `gte`, `lt`, `lte`.
 
@@ -454,7 +464,10 @@ Rego's defaults point the other way:
 
 - `compare`/`compare_time` require both sides to be present and of the same
   type. Rego's `<` is total across types — `null < 5` is *true* — so an
-  unguarded `lt` against a missing field would report success.
+  unguarded `lt` against a missing field would report success. `compare_time`
+  accepts two timestamp formats but never mixes them: a number against an
+  RFC3339 string fails rather than coercing, and two epoch numbers are assumed
+  to share a unit, which no value can reveal.
 - `all`/`any` require a non-empty array.
 - `min_subjects` defaults to 1, so a typo in `from` fails the requirement
   instead of vacuously satisfying it. A policy with no requirements at all is
@@ -569,9 +582,13 @@ each suite covers, the invariants they pin, and the test conventions.
   `trail_real_shape.json` is different in kind: a **redacted capture of a real
   `kosli get trail` response**, structurally faithful (same keys, types,
   array-vs-map choices, presence gaps) with every identifying value replaced by
-  `fieldkit/sanitize.py`. `code_review.rego` is **inert against it** — the fields
-  its `merged_pr` requirement reads do not exist in a real trail, so it reports
-  non-compliant for the wrong reasons. That gap is the point of keeping the file.
+  `fieldkit/sanitize.py`. Against it, `code_review.rego` correctly reports the
+  one real breach — the code review attestation is `COMPLETE` but not compliant —
+  while its **`merged_pr` requirement stays inert**: the per-commit fields it
+  reads (`pull_requests`, `commits`, `approvers`, `verified`) exist nowhere in a
+  real trail, which carries no PR detail at all. That remaining gap is the point
+  of keeping the file, and it needs an input document composed from more than one
+  API call rather than a change to any policy.
 - **`fieldkit/`** — tools for pointing the library at a real input document:
   `kit.py shape` describes a document's structure without printing any values,
   `kit.py run` evaluates a policy and tabulates the failing rows, and

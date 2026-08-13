@@ -14,18 +14,38 @@
                   "base_ref": "main",
                   "author": "alice",
                   "commits": [
-                    {"sha1": "aaaa111122223333", "verified": true, "timestamp": 1753600000},
-                    {"sha1": "bbbb444455556666", "verified": true, "timestamp": 1753603600}
+                    {
+                      "sha1": "aaaa111122223333",
+                      "verified": true,
+                      "timestamp": 1753600000
+                    },
+                    {
+                      "sha1": "bbbb444455556666",
+                      "verified": true,
+                      "timestamp": 1753603600
+                    }
                   ],
                   "approvers": [
-                    {"username": "bob", "state": "APPROVED", "timestamp": 1753607200}
+                    {
+                      "username": "bob",
+                      "state": "APPROVED",
+                      "timestamp": 1753607200
+                    }
                   ]
                 }
               ]
             }
           }
         }
-      }
+      },
+      "attestations_statuses": [
+        {
+          "attestation_name": "SOURCE_CODE_REVIEW_COMPLETED",
+          "attestation_type": "generic",
+          "status": "COMPLETE",
+          "is_compliant": true
+        }
+      ]
     }
   }
 }

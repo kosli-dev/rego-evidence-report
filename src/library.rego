@@ -190,6 +190,21 @@ leaf_passed(check, subj) if {
 	cmp(check.cmp, time.parse_rfc3339_ns(l), time.parse_rfc3339_ns(r))
 }
 
+# Epoch numbers are as common as RFC3339 strings in practice — Kosli's own trails
+# timestamp everything numerically — and rejecting them made a format mismatch
+# indistinguishable from a stale timestamp. Only like compares with like: a number
+# against a string satisfies neither body, so it stays fail-closed rather than
+# coercing. Both sides must share a unit, which no value can reveal; seconds
+# against milliseconds compares cleanly and means nothing.
+leaf_passed(check, subj) if {
+	check.op == "compare_time"
+	l := value_at(subj, check.left)
+	r := value_at(subj, check.right)
+	is_number(l)
+	is_number(r)
+	cmp(check.cmp, l, r)
+}
+
 # Rego's comparison operators are total across types — null sorts below every
 # number and string — so an unguarded "lt" against a missing field would pass.
 # Both sides must be present and of the same type to be compared at all.
