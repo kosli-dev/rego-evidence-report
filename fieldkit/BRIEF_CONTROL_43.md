@@ -214,3 +214,54 @@ blocked:      <what you could not run or read, and why>
 
 Investigations 1 and 2 are the reason for this round. If you only get those two,
 it was worth it.
+
+---
+
+## Round 2 outcome, and the one thing round 3 needs
+
+Round 2 came back answered. What it established, so nobody re-derives it:
+
+- **Rule 3 is per-author**, not per-PR and not per-commit: for every author in
+  `pr.commits[].author_username ∪ {pr.author}` there must exist some approver
+  (`state == "APPROVED"`, `timestamp` after the latest commit) who is not *that*
+  author. Mutual review therefore passes, `SCENARIOS.md` is right, and the
+  control-43 `README.md` prose is the wrong document.
+- **Map-vs-array is moot.** The policy iterates values (`some attest in …`) and
+  selects on `attestation_type == "pull_request"`, which works for both shapes.
+  Two rounds of worry about this was wasted effort.
+- **Identities need no normalisation** — `approver.username` and
+  `commit.author_username` are both GitHub logins. `"Name <email>"` appears only in
+  `git_commit_info.author`, used solely for service-account and web-flow regexes.
+- **The output contract is fixed** by `four-eyes-result-schema.json`:
+  `violations` is `string[]`, one entry per failing commit. A format change is a
+  schema break.
+- **The production policy already distinguishes "identity unverifiable" from "no
+  independent approval"** — independently arriving at the same distinction as this
+  library's proposed row-level cause discriminator.
+- **Control 43 has two generations**, and the Rego one is new: the legacy
+  TypeScript did its own evaluation and emitted an xlsx report, while
+  `…-source-code-review-kosli` is a thin collector with the rule pushed into Rego.
+- **`four-eyes.rego` is the only `.rego` policy in all of `sdlc-workflows`.** Every
+  other control (136, 1033, 1063, 1068, 1691, 2230, and legacy 43) is still
+  workflow wiring. This POC is not standardising an existing family of policies —
+  it is generalising a pattern with **N=1**.
+
+### The ask
+
+**Hand over `four-eyes.rego` and `four-eyes_test.rego`** (from
+`sdlc-workflows/.github/actions/Kosli_RCTLDEF0000043/`), plus the collector's
+TypeScript types if they're cheap to include.
+
+These are **safe by construction**: the tests use `alice`/`bob`/`sami`/`faye` and
+`example.com`, and policy logic is field names and rules, not values. Real
+identities, hostnames, tenant ids and SHAs stay behind — those are values, and none
+are needed.
+
+With those two files the `kosli.evidence` version can be designed against real
+paths and checked for behaviour parity against 37 known-good cases **entirely
+offline, with no real data involved** — which is what rounds 1 and 2 were groping
+toward and couldn't reach. Two rounds asked for data; the missing thing was
+architecture.
+
+A live `kosli evaluate --show-input` capture is no longer needed for design. It
+would only confirm the wire shape, which the policy and its tests already settle.
