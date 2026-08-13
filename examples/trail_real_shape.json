@@ -5,7 +5,7 @@
     "git_commit_info": {
       "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
       "message": "commit message",
-      "author": "Test User <test.user@example.com>",
+      "author": "User 749cd8 <749cd8@example.com>",
       "branch": "",
       "timestamp": 1762876584.0,
       "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
@@ -109,7 +109,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -126,7 +126,7 @@
           "git_commit_info": {
             "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
             "message": "commit message",
-            "author": "Test User <test.user@example.com>",
+            "author": "User 749cd8 <749cd8@example.com>",
             "branch": "",
             "timestamp": 1762876584.0,
             "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
@@ -145,7 +145,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -158,7 +158,7 @@
           "git_commit_info": {
             "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
             "message": "commit message",
-            "author": "Test User <test.user@example.com>",
+            "author": "User 749cd8 <749cd8@example.com>",
             "branch": "",
             "timestamp": 1762876584.0,
             "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
@@ -180,7 +180,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -202,7 +202,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -224,7 +224,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -237,7 +237,7 @@
           "git_commit_info": {
             "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
             "message": "commit message",
-            "author": "Test User <test.user@example.com>",
+            "author": "User 749cd8 <749cd8@example.com>",
             "branch": "",
             "timestamp": 1762876584.0,
             "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
@@ -259,7 +259,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -281,7 +281,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -294,7 +294,7 @@
           "git_commit_info": {
             "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
             "message": "commit message",
-            "author": "Test User <test.user@example.com>",
+            "author": "User 749cd8 <749cd8@example.com>",
             "branch": "",
             "timestamp": 1762876584.0,
             "url": "https://github.com/acme/demo-app-service/commit/ff928e778db75893d7fead29a824a39af0adf5af"
@@ -316,7 +316,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -337,7 +337,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -358,7 +358,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -379,7 +379,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,
@@ -400,7 +400,7 @@
         "git_commit_info": {
           "sha1": "ff928e778db75893d7fead29a824a39af0adf5af",
           "message": "commit message",
-          "author": "Test User <test.user@example.com>",
+          "author": "User 749cd8 <749cd8@example.com>",
           "author_username": null,
           "branch": "",
           "timestamp": 1762876584.0,

@@ -98,8 +98,13 @@ def sanitize_string(key, value):
             return json.dumps(sanitize(json.loads(value)))
         except ValueError:
             pass
+    # People must stay distinct people. A four-eyes control asks whether the
+    # approver differs from the author, so mapping every identity onto one name
+    # would turn every review into a self-approval and quietly invert the verdict.
+    # One stable pseudonym per original keeps every equality and inequality intact.
     if "@" in value:
-        return "Test User <test.user@example.com>"
+        who = digest("who", value)[:6]
+        return "User %s <%s@example.com>" % (who, who)
     # A flow template: rebuilt rather than kept, since nothing in the library
     # reads it and a real one may name internal systems.
     if key == "content" and "version:" in value:
