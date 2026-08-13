@@ -421,6 +421,8 @@ single element):
 | `equals` | `path`, `value` | field equals `value`. Absent ≠ `null`: only an explicitly-null field satisfies `"value": null` |
 | `present` | `path` | field is present and not `null` |
 | `non_empty_string` | `path` | field is a string and not `""` |
+| `matches_any` | `path`, `patterns` | field is a string matching at least one of the (unanchored) regexes |
+| `not_matches_any` | `path`, `patterns` | field is a string matching none of them |
 | `range` | `path`, `min`, `max` | field is a number, inclusive of both bounds |
 | `includes` | `path`, `value` | field is an array containing `value` |
 | `excludes` | `path`, `value` | field is an array not containing `value` |
@@ -431,6 +433,21 @@ single element):
 
 `compare` compares **two fields of the same subject** — both `left` and `right`
 are paths, not constants. To bound a field against a literal, use `range`.
+
+`matches_any`/`not_matches_any` exist for exemption lists — "this author is a
+service account, so human review doesn't apply". Both require the field to be a
+present string, so neither can be satisfied by input it couldn't read, and a
+non-string entry in `patterns` fails the check rather than being skipped. A
+pattern that is a string but not valid regex is the one input they cannot screen
+out. `patterns` renders sorted, so writing the set in a different order does not
+change the report.
+
+**Using either as a scope filter deserves care.** A failing `applies_to` check
+puts a subject *out of scope*, so fail-closed behaviour inside a filter is
+permissive about the subject rather than strict: a commit whose author field is
+missing would be excluded from a four-eyes requirement rather than denied by it.
+Where that matters, assert the field as a `check` too, so unreadable input has to
+surface somewhere as a failure.
 
 **Collection operators** apply a nested check across a nested array, one nesting
 level deep (Rego forbids recursion):

@@ -322,6 +322,74 @@ test_compare_rejects_missing_cmp if {
 	verdict({"a": 1, "b": 1}, {"op": "compare", "left": ["a"], "right": ["b"]}) == false
 }
 
+# ---------- leaf operators: matches_any / not_matches_any ----------
+
+# The service-account patterns from control 43, which is what these exist for.
+service_accounts := {"svc_.*", `.*\[bot\]`, `noreply@github\.com`}
+
+matches(op) := {"op": op, "path": ["author"], "patterns": service_accounts}
+
+test_matches_any_matches_a_prefix_pattern if {
+	verdict({"author": "svc_release <svc_release@example.com>"}, matches("matches_any")) == true
+}
+
+test_matches_any_matches_a_bracketed_bot if {
+	verdict({"author": "dependabot[bot]"}, matches("matches_any")) == true
+}
+
+test_matches_any_is_unanchored if {
+	verdict({"author": "GitHub <noreply@github.com>"}, matches("matches_any")) == true
+}
+
+test_matches_any_rejects_a_human if {
+	verdict({"author": "Alice <alice@example.com>"}, matches("matches_any")) == false
+}
+
+test_not_matches_any_is_the_complement if {
+	verdict({"author": "Alice <alice@example.com>"}, matches("not_matches_any")) == true
+	verdict({"author": "dependabot[bot]"}, matches("not_matches_any")) == false
+}
+
+# Both directions fail closed on unreadable input: a missing or non-string author
+# cannot be shown to be a service account, nor shown not to be one.
+test_matching_fails_closed_on_a_missing_field if {
+	verdict({}, matches("matches_any")) == false
+	verdict({}, matches("not_matches_any")) == false
+}
+
+test_matching_fails_closed_on_a_non_string_field if {
+	verdict({"author": 42}, matches("matches_any")) == false
+	verdict({"author": ["Alice"]}, matches("not_matches_any")) == false
+}
+
+# A non-string pattern must not be silently skipped. `not regex.match(...)` on an
+# erroring call is true, so without the guard a single bad entry in the exemption
+# list would exempt every author.
+test_not_matches_any_fails_closed_on_a_non_string_pattern if {
+	check := {"op": "not_matches_any", "path": ["author"], "patterns": {"svc_.*", 42}}
+	verdict({"author": "Alice <alice@example.com>"}, check) == false
+}
+
+test_matches_any_ignores_a_non_string_pattern_but_still_matches if {
+	check := {"op": "matches_any", "path": ["author"], "patterns": {"svc_.*", 42}}
+	verdict({"author": "svc_bot"}, check) == true
+	verdict({"author": "Alice"}, check) == false
+}
+
+# Empty pattern lists: nothing is exempt, everything is in scope. Each direction
+# defaults the safe way round.
+test_matching_with_no_patterns if {
+	verdict({"author": "Alice"}, {"op": "matches_any", "path": ["author"], "patterns": set()}) == false
+	verdict({"author": "Alice"}, {"op": "not_matches_any", "path": ["author"], "patterns": set()}) == true
+}
+
+test_expression_for_matching_sorts_patterns if {
+	rendered({"author": "Alice"}, matches("not_matches_any")) == sprintf(
+		"author matches none of [%s]",
+		[`.*\[bot\], noreply@github\.com, svc_.*`],
+	)
+}
+
 # ---------- leaf operator: compare_time ----------
 
 compare_time_span(op) := {"op": "compare_time", "cmp": op, "left": ["start"], "right": ["end"]}

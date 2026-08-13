@@ -174,6 +174,33 @@ leaf_passed(check, subj) if {
 }
 
 leaf_passed(check, subj) if {
+	check.op == "matches_any"
+	v := value_at(subj, check.path)
+	is_string(v)
+	some pattern in check.patterns
+	is_string(pattern)
+	regex.match(pattern, v)
+}
+
+# Every pattern is type-checked inside the `every`, so a non-string pattern fails
+# the check rather than being skipped: `not regex.match(...)` on an erroring call
+# is *true*, which would otherwise let a malformed exemption list wave everything
+# through. A pattern that is a string but not valid regex remains the one input
+# this cannot screen out, the same gap `rfc3339_shaped` documents.
+#
+# An empty pattern list makes this pass — nothing was excluded — while
+# `matches_any` fails on one, which is the safe direction for each.
+leaf_passed(check, subj) if {
+	check.op == "not_matches_any"
+	v := value_at(subj, check.path)
+	is_string(v)
+	every pattern in check.patterns {
+		is_string(pattern)
+		not regex.match(pattern, v)
+	}
+}
+
+leaf_passed(check, subj) if {
 	check.op == "compare"
 	l := value_at(subj, check.left)
 	r := value_at(subj, check.right)
@@ -284,6 +311,14 @@ leaf_describe(check) := sprintf("%s == %v", [path_name(check.path), check.value]
 leaf_describe(check) := sprintf("%s is present", [path_name(check.path)]) if check.op == "present"
 
 leaf_describe(check) := sprintf("%s is a non-empty string", [path_name(check.path)]) if check.op == "non_empty_string"
+
+leaf_describe(check) := sprintf("%s matches one of [%s]", [path_name(check.path), pattern_list(check)]) if check.op == "matches_any"
+
+leaf_describe(check) := sprintf("%s matches none of [%s]", [path_name(check.path), pattern_list(check)]) if check.op == "not_matches_any"
+
+# Sorted, so a pattern set written in any order renders identically — the report
+# has to stay byte-identical to be worth hashing.
+pattern_list(check) := concat(", ", sort([sprintf("%v", [p]) | some p in check.patterns]))
 
 leaf_describe(check) := sprintf("%s %s %s", [path_name(check.left), check.cmp, path_name(check.right)]) if check.op in {"compare", "compare_time"}
 
