@@ -4,6 +4,16 @@ For running `kosli.evidence` against a real input document on a machine that can
 **pull but not push** — no commits go home, so the trip has to produce findings
 you can carry out in a few lines of text.
 
+## Briefs
+
+The task documents are addressed to Claude Code on the restricted machine, not to
+a human reader. Point it at the relevant one:
+
+| Brief | Question it answers |
+| --- | --- |
+| [BRIEF.md](BRIEF.md) | Does the library survive a real `kosli get trail`? *(done — see the findings folded into the README and `examples/trail_real_shape.json`)* |
+| [BRIEF_CONTROL_43.md](BRIEF_CONTROL_43.md) | Can the library express control 43 (four-eyes)? Which reading of its approval rule is real, and what does `kosli evaluate` actually pass to a policy? |
+
 ## Get it there
 
 The repo is INTERNAL, not private, so any org member can clone it. It is ~30KB of

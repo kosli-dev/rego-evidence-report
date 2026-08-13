@@ -40,7 +40,17 @@ KEEP = {
     "artifact_creation_reported",
     # `changes` entries are field names, not free text.
     "git_commit_info", "origin_url",
+    # Control-43 / GitHub PR vocabulary. Enum values decide verdicts, so replacing
+    # them would leave a fixture with the right shape and the wrong meaning: a
+    # policy asserting state == "MERGED" would stop matching anything.
+    "source-code-review", "pull-request", "four-eyes-result",
+    "MERGED", "OPEN", "CLOSED", "DRAFT",
+    "APPROVED", "COMMENTED", "CHANGES_REQUESTED", "DISMISSED", "PENDING",
 }
+
+# Anything not in KEEP is replaced. When a new document type introduces its own
+# vocabulary, add it here and say so in the findings — that decision is part of
+# the audit trail, not a detail.
 
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -124,9 +134,31 @@ def sanitize_string(key, value):
     }.get(key, "redacted-%s" % digest("other", value)[:4])
 
 
+def sanitize_key(key):
+    """Keys are usually field names, which must survive verbatim or the document
+    stops being the document. But a map can be keyed by *data* — a fingerprint, an
+    artifact coordinate, an email — and that key is as identifying as any value. So
+    only the shape-based classifiers apply here, never the free-text fallback:
+    anything recognisably an identifier is replaced (through the same deterministic
+    mapping, so a fingerprint used as both key and value maps consistently), and a
+    plain field name is left alone."""
+    if not isinstance(key, str) or key in KEEP:
+        return key
+    identifying = (
+        HEX64.match(key) or HEX40.match(key) or UUIDISH.match(key)
+        or key.startswith(("http://", "https://")) or "@" in key
+        or ("/" in key and ":" in key)
+    )
+    if not identifying:
+        return key
+    clean = sanitize_string(None, key)
+    replacements.setdefault(("<key>", key), clean)
+    return clean
+
+
 def sanitize(node, key=None):
     if isinstance(node, dict):
-        return {k: sanitize(v, k) for k, v in node.items()}
+        return {sanitize_key(k): sanitize(v, k) for k, v in node.items()}
     if isinstance(node, list):
         return [sanitize(v, key) for v in node]
     if isinstance(node, str):
