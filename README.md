@@ -566,3 +566,8 @@ each suite covers, the invariants they pin, and the test conventions.
   `kosli.evidence` package from the policy side; `trail_compliant.json` and
   `trail_split.json` are input documents to evaluate it against;
   `code_review_test.rego` tests the policy and its custom op.
+- **`fieldkit/`** — tools for pointing the library at a real input document:
+  `kit.py shape` describes a document's structure without printing any values,
+  `kit.py run` evaluates a policy and tabulates the failing rows, and
+  `policy_template.rego` is a scaffold carrying the whole operator vocabulary in
+  comments. See [fieldkit/README.md](fieldkit/README.md).

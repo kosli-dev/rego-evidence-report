@@ -1,2 +1,7 @@
 .DS_Store
 .claude/
+
+# Real input documents and the scratch policies written against them. Untracked
+# so that `git reset --hard` (the refresh on a pull-only machine) can't destroy
+# them, and so confidential input can't be committed by accident.
+fieldkit/scratch/
