@@ -1,15 +1,37 @@
 # Brief 3: control 1068 (business requirements) against kosli.evidence
 
 **You are Claude Code on the restricted machine with access to real Deutsche Bank
-systems and the control 1068 source. This is the third round.** Read `BRIEF.md`
-for the hard rules and `BRIEF_CONTROL_43.md` for what rounds 1–2 settled; don't
-re-derive either. Work the investigations in order.
+systems and the control 1068 source. This is the third round.** Work the
+investigations in order.
 
-First, get the current code — this work lives on a branch:
+This file may have reached you on its own. That's fine — investigations 1 to 7 are
+reading source code and answering questions, and need nothing but this document.
+Everything you must not re-derive is restated below.
+
+Two things do need the repo: the **sanitizer**, for any real data coming home, and
+`kit.py`, for the stretch draft in investigation 8. If the round-2 clone is still
+on this machine:
 
 ```sh
 git fetch --depth 1 origin integration && git reset --hard FETCH_HEAD
 ```
+
+If it isn't, or the fetch fails:
+
+```sh
+git clone --depth 1 --branch integration \
+  https://github.com/kosli-dev/rego-evidence-report.git
+```
+
+**The branch matters** — a default clone lands on `main`, which has no `fieldkit/`
+at all. `BRIEF.md` and `BRIEF_CONTROL_43.md` are in there too if you want the
+earlier rounds in full.
+
+**If you cannot get the repo, then no JSON travels home.** Report findings as prose
+and leave every real document on this machine. The sanitizer is the only thing that
+makes a fixture safe to carry, and round 1 moved a file without it and shipped a
+real employee's email, an internal hostname and live tenant ids. Prose findings
+with no fixture is a good outcome; a fixture nobody sanitized is not.
 
 ## The lesson from round 2, applied up front
 
