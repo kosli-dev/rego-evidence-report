@@ -179,12 +179,75 @@ swap a working policy for a different one with better evidence rows. The
 measurement that matters is the marginal cost of control #2, which argues for
 expressing a second, simpler control alongside 43 even roughly.
 
+## Four defects in the current policy
+
+`four-eyes.rego` and its 37-test suite were obtained and run locally: **37/37
+pass.** Four behaviours the suite does not cover were then probed directly. All
+four are reproduced, not inferred. The policy files themselves are not committed
+here — they belong to `sdlc-workflows` — so these are descriptions, not diffs.
+
+**1. An approval whose timestamp is a string always counts as after the cutoff.**
+`approved_approvers_after_cutoff` guards `is_string(a.username)` but never checks
+`a.timestamp`, and Rego's `>` is total across types with numbers sorting below
+strings. So `"1000005" > 1000010` is **true**. An approval that is semantically
+*before* the latest commit satisfies the check, which is exactly scenario 8's
+failure silently reversed. Probed with one commit at `1000010` and an approval at
+`"1000005"`: `allow` is true, zero violations.
+
+**2. A commit with no timestamp cannot raise the cutoff.**
+`latest_commit_ts` is `max({c.timestamp | some c in pr.commits})`, and a
+comprehension skips elements whose body is undefined — so a commit missing
+`timestamp` is silently dropped from the maximum. Push an untimestamped commit
+after an approval and the approval still counts. Probed: commits at `1000000` and
+one with no timestamp, approval at `1000001` → `allow` true, zero violations. (If
+*every* commit lacks a timestamp, `max` of an empty set is undefined and the trail
+fails closed, so this is a partial-data hazard only.)
+
+Both of these are the class of bug this library removes by construction:
+`comparable()` requires both sides present and of the same type before comparing,
+and `compare_time` accepts two RFC3339 strings or two epoch numbers but never a
+mixed pair.
+
+**3. Two `pull_request` attestations on one trail crash evaluation.**
+`pr_attest(trail)` is a function whose body is `some attest in …` selecting on
+`attestation_type == "pull_request"`. Two matching attestations mean two return
+values, and OPA raises `eval_conflict_error: functions must not produce multiple
+outputs for same inputs`. Not a bypass — a hard stop — but reachable in normal
+operation: the collector's attestation name is configurable via
+`KOSLI_ATTESTATION_NAME`, so changing it and re-running leaves a trail carrying two
+attestations of the same type.
+
+This also settles a design question for any port. A path selector that requires
+**exactly one** match and otherwise fails closed is strictly better behaved than
+the current existential lookup, which errors.
+
+**4. One commit can already produce two violation strings.**
+The "one violation per failing commit" property is the *intent*, not a guarantee.
+An unresolved `author_username` makes `all_authors_resolved` fail, which also makes
+`any_pr_fully_approved` false, so the identity rule and the missing-approval rule
+both fire. Verified on a single-commit trail with `author_username: null`:
+
+```
+Commit abc1234: no independent approval after latest code commit
+PR …/pull/42: commit s1abcde has no linked GitHub account — identity unverifiable
+```
+
+Two strings, one commit. So this library emitting a row per (subject, check) is not
+the departure it appeared to be — the existing policy already emits more than one
+entry per commit, and consumers of `four-eyes-result-schema.json` already receive
+that.
+
+These four are worth passing to whoever owns `sdlc-workflows` regardless of what
+happens to this library.
+
 ## Status of these claims
 
 Sourced from control 43's `README.md` and `SCENARIOS.md`, and from a round of
 investigation that read `four-eyes.rego`, its 37-test suite and the collector's
 TypeScript on a machine with access to them.
 
+- **Confirmed by running the policy locally:** 37/37 tests pass, and all four
+  defects above were reproduced with probe cases rather than reasoned about.
 - **Confirmed by reading source or running tests:** the per-author rule; the field
   names; epoch timestamps; identities being GitHub logins on both sides; the four
   mutually exclusive reasons; the five undocumented behaviours; 37 tests passing;
