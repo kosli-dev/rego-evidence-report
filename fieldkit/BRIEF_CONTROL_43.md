@@ -243,8 +243,10 @@ Round 2 came back answered. What it established, so nobody re-derives it:
   `…-source-code-review-kosli` is a thin collector with the rule pushed into Rego.
 - **`four-eyes.rego` is the only `.rego` policy in all of `sdlc-workflows`.** Every
   other control (136, 1033, 1063, 1068, 1691, 2230, and legacy 43) is still
-  workflow wiring. This POC is not standardising an existing family of policies —
-  it is generalising a pattern with **N=1**.
+  workflow wiring. So this is not standardising an existing family of policies —
+  there is exactly **one** policy to generalise from, which means nothing yet
+  distinguishes "this abstraction is general" from "this abstraction restates the
+  single case we looked at". Only a second control can tell those apart.
 
 ### The ask
 
