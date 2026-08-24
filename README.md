@@ -606,6 +606,10 @@ each suite covers, the invariants they pin, and the test conventions.
   real trail, which carries no PR detail at all. That remaining gap is the point
   of keeping the file, and it needs an input document composed from more than one
   API call rather than a change to any policy.
+- **[`INTEGRATION.md`](INTEGRATION.md)** — how a Kosli control's pipeline fits
+  together (collector → Kosli → `kosli evaluate` → policy → schema), which stage
+  owns what, and the three constraints at the seam where this library would plug
+  in. Read it before designing a policy meant to run under `kosli evaluate`.
 - **`fieldkit/`** — tools for pointing the library at a real input document:
   `kit.py shape` describes a document's structure without printing any values,
   `kit.py run` evaluates a policy and tabulates the failing rows, and
