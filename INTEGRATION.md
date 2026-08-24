@@ -240,6 +240,48 @@ that.
 These four are worth passing to whoever owns `sdlc-workflows` regardless of what
 happens to this library.
 
+## The port, and what parity measured
+
+`examples/control_43.rego` expresses the control as a `kosli.evidence` policy,
+with `examples/control_43_ops.rego` supplying two custom operators and
+`examples/control_43_test.rego` mirroring all 37 of the original's cases.
+
+Parity was measured rather than asserted: both policies were loaded together and
+run over the same 27 input documents, comparing `allow` and violation counts.
+
+**24 of 24 ordinary cases agree.** The three that differ are the three defects
+above — in each, the original allows or crashes and the port denies:
+
+| case | `four-eyes.rego` | port |
+| --- | --- | --- |
+| approver timestamp is a string | `allow: true` | denied |
+| a commit carries no timestamp | `allow: true` | denied |
+| two `pull_request` attestations | `eval_conflict_error` | denied, with a row naming the check |
+
+One further difference is a shape improvement rather than a verdict change. On an
+unresolved identity the original emits **two** violation strings for one commit;
+the port emits **one**, because precedence between failure reasons is declared as
+data and the rows are collapsed through it. The port is closer to what
+`four-eyes-result-schema.json` describes than the policy the schema was written
+for.
+
+What the port needed that the vocabulary didn't have: a **path selector**
+(`{"where": {"attestation_type": "pull_request"}}`), added to the library, which
+resolves identically whether attestations arrive as an array or a map, and
+`not_matches_any` for the service-account exemption. What still needs a custom op
+is the four-eyes condition itself — approvers compared against commit authors
+across two nested collections — which no operator over a single path can express.
+That is the escape hatch working as intended.
+
+The exemption is expressed as **scope**, not as a passing check: a service-account
+commit produces a `$applies` row and no check rows, because it is not in breach of
+four-eyes, it is not a subject of it.
+
+One honest divergence: `identities_resolved` is a gating check here, while in the
+original an unresolved identity in one pull request cannot deny a commit that a
+*different* pull request fully covers. The port is stricter in that corner. No test
+in either suite exercises it.
+
 ## Status of these claims
 
 Sourced from control 43's `README.md` and `SCENARIOS.md`, and from a round of

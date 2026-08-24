@@ -117,18 +117,74 @@ subject_ref(subj, req) := {
 
 # ---------- value helpers ----------
 
-value_at(subj, path) := object.get(subj, path, null)
-
 # Sentinel telling "field absent" apart from "field present and null", so a
 # check comparing against null cannot be satisfied by a missing field.
 absent := {"kosli.evidence/absent": true}
 
-field(subj, path) := v if {
-	v := object.get(subj, path, absent)
+default value_at(_, _) := null
+
+value_at(subj, path) := v if {
+	v := resolved(subj, path)
 	v != absent
 }
 
-path_name(path) := concat(".", [sprintf("%v", [p]) | some p in path])
+field(subj, path) := v if {
+	v := resolved(subj, path)
+	v != absent
+}
+
+# A path is normally a list of keys. One segment may instead be a **selector** —
+# `{"where": {field: value, ...}}` — which picks a single element out of the
+# collection reached so far. That covers the common shape where the thing you need
+# is identified by a field rather than by position: one attestation among many,
+# named by its type.
+#
+# Selection iterates with `some`, which walks the values of an object as readily as
+# the elements of an array, so a selector works whether the collection arrived as a
+# list or as a map keyed by something you don't want to depend on.
+#
+# Only one selector per path. Rego forbids recursion, so resolution is a bounded
+# three-step walk — keys before the selector, the selection, keys after it — rather
+# than a general tree descent. That is the same limit that keeps `all`/`any` to one
+# level of nesting.
+resolved(subj, path) := object.get(subj, path, absent) if not selector_index(path)
+
+resolved(subj, path) := v if {
+	i := selector_index(path)
+	base := object.get(subj, array.slice(path, 0, i), absent)
+	base != absent
+	elem := selected(base, path[i])
+	v := object.get(elem, array.slice(path, i + 1, count(path)), absent)
+}
+
+selector_index(path) := min([i | some i, seg in path; is_object(seg)])
+
+# Exactly one match, or nothing. A path that could resolve to two values is not a
+# path, and picking one of them would make the report depend on iteration order —
+# so an ambiguous selector fails closed, like every other unreadable input.
+selected(base, sel) := candidates[0] if {
+	candidates := [v |
+		some v in base
+		selector_matches(v, sel)
+	]
+	count(candidates) == 1
+}
+
+selector_matches(v, sel) if {
+	is_object(v)
+	count(sel.where) > 0
+	every k, want in sel.where {
+		object.get(v, [k], absent) == want
+	}
+}
+
+path_name(path) := concat(".", [segment_name(p) | some p in path])
+
+segment_name(p) := sprintf("%v", [p]) if not is_object(p)
+
+# Rendered sorted, so a selector written with its keys in a different order still
+# produces a byte-identical report.
+segment_name(p) := sprintf("[%s]", [concat(" and ", sort([sprintf("%v==%v", [k, v]) | some k, v in p.where]))]) if is_object(p)
 
 # ---------- leaf operators (element-level, non-recursive) ----------
 

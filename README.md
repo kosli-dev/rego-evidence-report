@@ -596,6 +596,12 @@ each suite covers, the invariants they pin, and the test conventions.
   `kosli.evidence` package from the policy side; `trail_compliant.json` and
   `trail_split.json` are input documents to evaluate it against;
   `code_review_test.rego` tests the policy and its custom op.
+  `control_43.rego` is the more interesting one: a port of a **real production
+  policy** (Kosli's four-eyes source-code-review control), with
+  `control_43_ops.rego` for the two things the vocabulary can't express and
+  `control_43_test.rego` mirroring all 37 cases of the original's test suite. It
+  agrees with the original on every case except three, where the original passes
+  input it cannot verify — see [INTEGRATION.md](INTEGRATION.md).
   `trail_real_shape.json` is different in kind: a **redacted capture of a real
   `kosli get trail` response**, structurally faithful (same keys, types,
   array-vs-map choices, presence gaps) with every identifying value replaced by

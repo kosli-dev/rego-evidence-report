@@ -322,6 +322,126 @@ test_compare_rejects_missing_cmp if {
 	verdict({"a": 1, "b": 1}, {"op": "compare", "left": ["a"], "right": ["b"]}) == false
 }
 
+# ---------- path selectors ----------
+
+# The shape that motivated selectors: attestations identified by a type field
+# rather than by position, arriving as an array from one API and a map from
+# another.
+attestations_array := {"attestations": [
+	{"attestation_type": "unit_test", "payload": "wrong"},
+	{"attestation_type": "pull_request", "payload": "right"},
+]}
+
+attestations_map := {"attestations": {
+	"a-unit": {"attestation_type": "unit_test", "payload": "wrong"},
+	"a-pr": {"attestation_type": "pull_request", "payload": "right"},
+}}
+
+pr_payload := {
+	"op": "equals",
+	"path": ["attestations", {"where": {"attestation_type": "pull_request"}}, "payload"],
+	"value": "right",
+}
+
+test_selector_picks_from_an_array if verdict(attestations_array, pr_payload) == true
+
+# The same check, unchanged, against a map. This is the whole point: a policy
+# should not have to know which container the producer chose.
+test_selector_picks_from_a_map if verdict(attestations_map, pr_payload) == true
+
+test_selector_reads_the_selected_element_not_a_sibling if {
+	check := object.union(pr_payload, {"value": "wrong"})
+	verdict(attestations_array, check) == false
+	verdict(attestations_map, check) == false
+}
+
+test_selector_fails_closed_when_nothing_matches if {
+	doc := {"attestations": [{"attestation_type": "unit_test", "payload": "right"}]}
+	verdict(doc, pr_payload) == false
+}
+
+# Ambiguity fails rather than picking one: a path resolving to two values would
+# make the report depend on iteration order. The production policy this mirrors
+# raises eval_conflict_error here, so failing closed is the gentler behaviour.
+test_selector_fails_closed_when_two_elements_match if {
+	doc := {"attestations": [
+		{"attestation_type": "pull_request", "payload": "right"},
+		{"attestation_type": "pull_request", "payload": "right"},
+	]}
+	verdict(doc, pr_payload) == false
+}
+
+test_selector_fails_closed_on_a_missing_collection if verdict({}, pr_payload) == false
+
+test_selector_fails_closed_on_a_scalar_collection if {
+	verdict({"attestations": "not-a-collection"}, pr_payload) == false
+}
+
+# An empty `where` would match everything, so it matches nothing instead.
+test_selector_fails_closed_on_an_empty_where if {
+	check := object.union(pr_payload, {"path": ["attestations", {"where": {}}, "payload"]})
+	verdict(attestations_array, check) == false
+}
+
+# Selecting on several fields at once: all must match.
+test_selector_matches_on_every_named_field if {
+	doc := {"attestations": [
+		{"attestation_type": "pull_request", "status": "COMPLETE", "payload": "right"},
+		{"attestation_type": "pull_request", "status": "PENDING", "payload": "wrong"},
+	]}
+	check := {
+		"op": "equals",
+		"path": ["attestations", {"where": {"attestation_type": "pull_request", "status": "COMPLETE"}}, "payload"],
+		"value": "right",
+	}
+	verdict(doc, check) == true
+}
+
+# A selector as the final segment resolves to the element itself.
+test_selector_can_end_a_path if {
+	check := {"op": "present", "path": ["attestations", {"where": {"attestation_type": "pull_request"}}]}
+	verdict(attestations_array, check) == true
+	verdict(attestations_map, check) == true
+}
+
+# Absent distinguished from present-and-null through a selector, the same as
+# through a plain path.
+test_selector_preserves_the_absent_distinction if {
+	explicit := {"attestations": [{"attestation_type": "pull_request", "payload": null}]}
+	missing := {"attestations": [{"attestation_type": "pull_request"}]}
+	null_check := object.union(pr_payload, {"value": null})
+	verdict(explicit, null_check) == true
+	verdict(missing, null_check) == false
+}
+
+# Rendering has to be stable whichever order the selector's keys were written in,
+# or two policies that mean the same thing produce different reports.
+test_selector_expression_is_order_independent if {
+	one := {
+		"op": "equals",
+		"path": ["attestations", {"where": {"attestation_type": "pull_request", "status": "COMPLETE"}}, "payload"],
+		"value": "right",
+	}
+	two := {
+		"op": "equals",
+		"path": ["attestations", {"where": {"status": "COMPLETE", "attestation_type": "pull_request"}}, "payload"],
+		"value": "right",
+	}
+	rendered(attestations_array, one) == rendered(attestations_array, two)
+	rendered(attestations_array, one) == "attestations.[attestation_type==pull_request and status==COMPLETE].payload == right"
+}
+
+# The row still echoes what it read, so a selector-resolved value is evidence too.
+test_selector_value_is_echoed_in_the_row if {
+	report := solo(attestations_array, pr_payload)
+	some r in report.results
+	r.check == "c"
+	r.inputs == [{
+		"name": "attestations.[attestation_type==pull_request].payload",
+		"value": "right",
+	}]
+}
+
 # ---------- leaf operators: matches_any / not_matches_any ----------
 
 # The service-account patterns from control 43, which is what these exist for.
