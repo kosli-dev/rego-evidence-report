@@ -2,6 +2,18 @@
 # policy. A port of `four-eyes.rego` from sdlc-workflows, written against the same
 # input and checked against the same behaviours — see control_43_test.rego.
 #
+# Two identifiers, two schemes, one control:
+#
+#   SDLC-CTRL-0007   Kosli's published control catalogue — the *requirement*.
+#                    https://sdlc.kosli.com/controls/release/code_review/
+#   RCTLDEF0000043   a customer's own control register — an *implementation* of
+#                    that requirement, which is what this file ports.
+#
+# So this and examples/code_review.rego are the same control at two levels of
+# fidelity. This one matches the published subject — a code change, with *every*
+# change requiring review — while code_review.rego covers the artefact-linkage
+# requirement that this one cannot, since a commit trail carries no artifact.
+#
 # Deployed for real this would declare `package policy`, which is what
 # `kosli evaluate` queries. It uses its own package here only because
 # code_review.rego already occupies `package policy` in this directory.

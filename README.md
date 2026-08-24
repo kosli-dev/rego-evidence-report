@@ -344,10 +344,20 @@ evidence, not violations, and `evidence.violations` drops them.
 
 ### Next step
 
-Read `examples/code_review.rego`. It's Kosli's SDLC-CTRL-0007 code review
-control expressed as three requirements — an artifact, a code review attestation,
-and a merged PR — and it uses every concept above plus one custom op, in roughly
-140 lines.
+Read `examples/code_review.rego`. It expresses
+[SDLC-CTRL-0007](https://sdlc.kosli.com/controls/release/code_review/), Kosli's
+published code review control, as three requirements — an artifact, a code review
+attestation, and a merged PR — using every concept above plus one custom op, in
+roughly 140 lines.
+
+Read it as a **teaching example rather than a faithful implementation**. The
+control's subject is a *code change*, and its first requirement is that all of
+them are reviewed; this policy's subject is an artifact and one pull request, so
+`require: "some"` establishes that a compliant pull request exists and not that
+every commit was reviewed. `examples/control_43.rego` is the same control done
+properly — one subject per commit, `require: "every"` — and the two files together
+are worth more than either alone, because they show the same requirement modelled
+at two levels of fidelity. Its header lists the gaps explicitly.
 
 The attestation requirement is worth reading twice. It shows `applies_to` used as
 a **selector**: attestations arrive as an array, and narrowing it to the one
@@ -597,7 +607,8 @@ each suite covers, the invariants they pin, and the test conventions.
   `trail_split.json` are input documents to evaluate it against;
   `code_review_test.rego` tests the policy and its custom op.
   `control_43.rego` is the more interesting one: a port of a **real production
-  policy** (Kosli's four-eyes source-code-review control), with
+  policy** — a customer's four-eyes implementation (`RCTLDEF0000043`) of that same
+  SDLC-CTRL-0007 requirement, modelled per commit rather than per artifact. With
   `control_43_ops.rego` for the two things the vocabulary can't express and
   `control_43_test.rego` mirroring all 37 cases of the original's test suite. It
   agrees with the original on every case except three, where the original passes

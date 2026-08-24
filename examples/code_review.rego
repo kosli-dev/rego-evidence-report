@@ -1,4 +1,21 @@
 # Code Review (SDLC-CTRL-0007), expressed as a kosli.evidence policy.
+#
+# The control: https://sdlc.kosli.com/controls/release/code_review/
+#
+# Read this file as a teaching example, not as a faithful implementation. Two
+# known gaps against the published control, both deliberate and both instructive:
+#
+#   - The control's subject is a **code change**, and requirement 1 is that *all*
+#     of them are reviewed. This policy makes the subject an artifact and one
+#     pull request, and `require: "some"` asks only whether a compliant pull
+#     request exists — which says nothing about a commit pushed straight to the
+#     protected branch alongside it. examples/control_43.rego is the shape the
+#     control actually calls for: one subject per commit, `require: "every"`.
+#   - `commits_signed` is not a requirement of SDLC-CTRL-0007. It is here because
+#     it demonstrates the `all` operator over a nested collection.
+#
+# What it does cover well is requirement 4 — evidence recorded and linked to the
+# artefact — which control_43.rego drops entirely, having no artifact at all.
 # Same configurability via data.params; same input shape (input.trail).
 package policy
 

@@ -5,6 +5,16 @@ describes that pipeline as it actually works for control 43 (`RCTLDEF0000043`,
 source code review / four-eyes), what each stage owns, and the three constraints
 at the seam where `kosli.evidence` would plug in.
 
+Two identifiers appear throughout and they belong to different schemes.
+**SDLC-CTRL-0007** is Kosli's [published control
+catalogue](https://sdlc.kosli.com/controls/release/code_review/) — the
+requirement: *all code changes reviewed by a peer who is not the author, before
+merging to a protected branch, with evidence linked to the artefact*.
+**RCTLDEF0000043** is a customer's own control register — an implementation of
+that requirement. Control 43 is therefore not a different control from 0007; it is
+0007 realised, which is why its subject is a code change and why every commit must
+pass.
+
 Control 43 is the worked example because it is, today, **the only Rego policy in
 `sdlc-workflows`** — every other control is still workflow wiring. That fact
 shapes the conclusion, so it's stated up front rather than buried.
