@@ -674,6 +674,207 @@ test_any_without_a_nested_check_fails if {
 	verdict({"approvers": [{"state": "APPROVED"}]}, {"op": "any", "path": ["approvers"]}) == false
 }
 
+# ---------- combinator: any_of ----------
+
+# The shape that motivated the operator, from control 1068: a ticket is permitted
+# only if its type and its state come from the SAME flavour table. Checking the two
+# fields independently accepts the union of both tables per field, which passes
+# combinations neither table permits.
+flavoured := {
+	"op": "any_of",
+	"options": {
+		"standard": [
+			{"op": "matches_any", "path": ["type"], "patterns": ["^Story$"]},
+			{"op": "matches_any", "path": ["state"], "patterns": ["^CLOSED$"]},
+		],
+		"safe": [
+			{"op": "matches_any", "path": ["type"], "patterns": ["^SAFe Story$"]},
+			{"op": "matches_any", "path": ["state"], "patterns": ["^DONE$"]},
+		],
+	},
+}
+
+test_any_of_passes_when_one_option_is_wholly_satisfied if {
+	verdict({"type": "Story", "state": "CLOSED"}, flavoured) == true
+}
+
+test_any_of_passes_on_any_of_the_options_not_just_the_first if {
+	verdict({"type": "SAFe Story", "state": "DONE"}, flavoured) == true
+}
+
+# The whole point. Both fields are individually recognised — "Story" by standard,
+# "DONE" by safe — and no single option holds both, so the subject fails. Two
+# independent matches_any checks would pass this, which is the silent over-pass
+# any_of exists to close.
+test_any_of_rejects_a_cross_product_of_two_options if {
+	verdict({"type": "Story", "state": "DONE"}, flavoured) == false
+}
+
+test_any_of_rejects_when_no_option_matches_either_field if {
+	verdict({"type": "Chore", "state": "OPEN"}, flavoured) == false
+}
+
+test_any_of_rejects_a_subject_missing_one_of_the_fields if {
+	verdict({"type": "Story"}, flavoured) == false
+}
+
+# No alternative to satisfy, so nothing is satisfied — the same direction
+# matches_any takes on an empty pattern list.
+test_any_of_fails_closed_on_empty_options if {
+	verdict({"type": "Story"}, {"op": "any_of", "options": {}}) == false
+}
+
+# `every leaf in []` is vacuously true, which would make an empty group pass and
+# take the whole disjunction with it. Guarded, for the same reason `all` rejects an
+# empty collection.
+test_any_of_fails_closed_on_an_empty_option_group if {
+	verdict({"type": "Story"}, {"op": "any_of", "options": {"empty": []}}) == false
+}
+
+test_any_of_fails_closed_on_a_group_that_is_not_an_array if {
+	verdict(
+		{"type": "Story"},
+		{"op": "any_of", "options": {"bad": {"op": "matches_any", "path": ["type"], "patterns": ["^Story$"]}}},
+	) == false
+}
+
+# The case the is_array guard is actually for. `every leaf in group` over an
+# object iterates its VALUES, so a group written as an object of named checks
+# would evaluate as a conjunction and pass — silently accepting a shape the
+# operator does not define. This is Issue 12 in a new place: `any` had the same
+# hole for collections, and the same answer.
+test_any_of_rejects_an_option_group_written_as_an_object_of_checks if {
+	verdict({"type": "Story", "state": "CLOSED"}, {"op": "any_of", "options": {"standard": {
+		"by_type": {"op": "matches_any", "path": ["type"], "patterns": ["^Story$"]},
+		"by_state": {"op": "matches_any", "path": ["state"], "patterns": ["^CLOSED$"]},
+	}}}) == false
+}
+
+test_any_of_fails_closed_on_an_unknown_leaf_op_inside_an_option if {
+	verdict(
+		{"type": "Story"},
+		{"op": "any_of", "options": {"standard": [{"op": "no_such_op", "path": ["type"]}]}},
+	) == false
+}
+
+# A group whose other leaves pass does not carry an unknown one through.
+test_any_of_one_bad_leaf_sinks_its_whole_option if {
+	verdict(
+		{"type": "Story", "state": "CLOSED"},
+		{"op": "any_of", "options": {"standard": [
+			{"op": "matches_any", "path": ["type"], "patterns": ["^Story$"]},
+			{"op": "no_such_op", "path": ["state"]},
+		]}},
+	) == false
+}
+
+test_any_of_accepts_options_as_an_array if {
+	verdict({"type": "Story", "state": "CLOSED"}, {"op": "any_of", "options": [[
+		{"op": "matches_any", "path": ["type"], "patterns": ["^Story$"]},
+		{"op": "matches_any", "path": ["state"], "patterns": ["^CLOSED$"]},
+	]]}) == true
+}
+
+# One leaf per option degenerates to a plain OR over fields, which is the other
+# thing the vocabulary could not say.
+test_any_of_with_single_leaf_options_is_a_plain_disjunction if {
+	single := {"op": "any_of", "options": {
+		"by_type": [{"op": "equals", "path": ["type"], "value": "Story"}],
+		"by_state": [{"op": "equals", "path": ["state"], "value": "DONE"}],
+	}}
+	verdict({"type": "Story", "state": "OPEN"}, single) == true
+	verdict({"type": "Chore", "state": "DONE"}, single) == true
+	verdict({"type": "Chore", "state": "OPEN"}, single) == false
+}
+
+# op_passed backs applies_to as well as checks, so a disjunction can scope a
+# requirement, not only judge one.
+test_any_of_can_scope_a_requirement if {
+	rep := evidence.report(
+		{"items": [
+			{"id": "a", "type": "Story", "state": "CLOSED"},
+			{"id": "b", "type": "Story", "state": "DONE"},
+		]},
+		{"s": {
+			"subject_type": "thing",
+			"from": ["items"],
+			"id": ["id"],
+			"applies_to": {"in_a_flavour": flavoured},
+			"checks": {"c": {"op": "present", "path": ["id"]}},
+		}},
+	)
+	rep.requirements.s.subjects == {"total": 2, "matching": 1}
+}
+
+# ---------- any_of: rendering and evidence ----------
+
+test_any_of_renders_each_option_named if {
+	rendered({"type": "Story"}, flavoured) == concat("", [
+		"one of: ",
+		"safe(type matches one of [^SAFe Story$] and state matches one of [^DONE$])",
+		" | ",
+		"standard(type matches one of [^Story$] and state matches one of [^CLOSED$])",
+	])
+}
+
+# Options are sorted, so the same disjunction written in a different order hashes
+# identically — the report is only worth attesting if it is byte-stable.
+test_any_of_rendering_is_order_independent if {
+	reordered := {"op": "any_of", "options": {
+		"safe": [
+			{"op": "matches_any", "path": ["type"], "patterns": ["^SAFe Story$"]},
+			{"op": "matches_any", "path": ["state"], "patterns": ["^DONE$"]},
+		],
+		"standard": [
+			{"op": "matches_any", "path": ["type"], "patterns": ["^Story$"]},
+			{"op": "matches_any", "path": ["state"], "patterns": ["^CLOSED$"]},
+		],
+	}}
+	rendered({"type": "Story"}, reordered) == rendered({"type": "Story"}, flavoured)
+}
+
+# The verdict depends on the whole set of fields the disjunction consulted, so the
+# row echoes all of them — and deduplicates, since both options read both fields.
+test_any_of_echoes_every_field_it_read_once_each if {
+	inputs_of({"type": "Story", "state": "DONE"}, flavoured) == [
+		{"name": "state", "value": "DONE"},
+		{"name": "type", "value": "Story"},
+	]
+}
+
+test_any_of_echoes_a_field_only_one_option_reads if {
+	check := {"op": "any_of", "options": {
+		"a": [{"op": "equals", "path": ["type"], "value": "Story"}],
+		"b": [{"op": "equals", "path": ["project"], "value": "PA"}],
+	}}
+	inputs_of({"type": "Chore", "project": "PA"}, check) == [
+		{"name": "project", "value": "PA"},
+		{"name": "type", "value": "Chore"},
+	]
+}
+
+test_any_of_echoes_both_sides_of_a_two_sided_leaf if {
+	check := {"op": "any_of", "options": {"a": [{
+		"op": "compare",
+		"cmp": "gt",
+		"left": ["approved_at"],
+		"right": ["committed_at"],
+	}]}}
+	inputs_of({"approved_at": 200, "committed_at": 100}, check) == [
+		{"name": "approved_at", "value": 200},
+		{"name": "committed_at", "value": 100},
+	]
+}
+
+# An absent field echoes as null rather than dropping out, so a row that failed for
+# want of data is distinguishable from one that failed on a value.
+test_any_of_echoes_an_absent_field_as_null if {
+	inputs_of({"type": "Story"}, flavoured) == [
+		{"name": "state", "value": null},
+		{"name": "type", "value": "Story"},
+	]
+}
+
 # ---------- echoed inputs ----------
 
 test_inputs_echo_the_read_path if {

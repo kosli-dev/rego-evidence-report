@@ -324,10 +324,15 @@ cmp("lte", l, r) if l <= r
 
 quantified(check) if check.op in {"all", "any"}
 
+# `any_of` combines leaf checks rather than reading a path of its own, so it takes
+# neither the leaf route nor the quantified one.
+combinator(check) if check.op == "any_of"
+
 default op_passed(_, _) := false
 
 op_passed(check, subj) if {
 	not quantified(check)
+	not combinator(check)
 	leaf_passed(check, subj)
 }
 
@@ -347,6 +352,43 @@ op_passed(check, subj) if {
 	is_array(coll)
 	some elem in coll
 	leaf_passed(check.check, elem)
+}
+
+# Every other operator asks one question of one field. `any_of` is the only way to
+# say that two fields of a subject must agree with *each other*, and it exists
+# because without it the closest expressible policy silently over-passes: a control
+# whose real rule is "type and state both come from the same table" degrades to
+# "type is in the union of tables AND state is in the union of tables", which
+# accepts cross-products no table permits. Independent checks cannot express a
+# joint condition, and a library that fails closed everywhere else must not fail
+# open here.
+#
+# `options` is a set of alternatives, each an array of leaf checks that must ALL
+# hold — a disjunction of conjunctions, which is disjunctive normal form. Every
+# or-of-ands over the leaf vocabulary is therefore expressible; what is still not
+# available is general negation of an arbitrary leaf, only the negations the leaf
+# operators offer themselves (`not_matches_any`, `excludes`, `ne`).
+#
+# Options are leaf checks only — no `all`/`any`/`any_of` nested inside one. That is
+# not a simplification, it is Rego: a combinator that could contain another
+# combinator would make `op_passed` recursive, which the compiler rejects. DNF
+# needs exactly two levels, so the restriction costs nothing.
+#
+# Key `options` by variant name. The name is evidence — "no flavour table matched"
+# is a usable finding, an unnamed disjunct is not — and it is what the rendered
+# expression shows. An array works too, and renders by index.
+#
+# Fail-closed in both directions: an empty `options` passes nothing (there is no
+# alternative to satisfy), and an empty option group is rejected rather than
+# vacuously satisfied the way a bare `every` over an empty array would be.
+op_passed(check, subj) if {
+	check.op == "any_of"
+	some group in check.options
+	is_array(group)
+	count(group) > 0
+	every leaf in group {
+		leaf_passed(leaf, subj)
+	}
 }
 
 # ---------- human-readable expressions ----------
@@ -385,6 +427,7 @@ expression_of(check) := check.expression
 expression_of(check) := leaf_describe(check) if {
 	not check.expression
 	not quantified(check)
+	not combinator(check)
 }
 
 expression_of(check) := sprintf("every %s: %s", [path_name(check.path), leaf_describe(check.check)]) if {
@@ -396,6 +439,17 @@ expression_of(check) := sprintf("some %s: %s", [path_name(check.path), leaf_desc
 	not check.expression
 	check.op == "any"
 }
+
+expression_of(check) := sprintf("one of: %s", [concat(" | ", sort([variant_describe(nm, group) | some nm, group in check.options]))]) if {
+	not check.expression
+	check.op == "any_of"
+}
+
+# Variants are sorted so the rendering is order-independent, and the leaves within
+# one variant are not, because an array's order is already fixed. A malformed group
+# renders as an empty conjunction — `standard()` — which reads as wrong rather than
+# vanishing from the expression while the check quietly fails.
+variant_describe(nm, group) := sprintf("%v(%s)", [nm, concat(" and ", [leaf_describe(leaf) | some leaf in group])])
 
 # ---------- inputs echoed per check ----------
 
@@ -437,6 +491,30 @@ check_inputs(subj, check) := [{"name": path_name(check.path), "value": value_at(
 	not two_sided(check)
 	not quantified(check)
 	check.path
+}
+
+# Every field any option reads, once each, sorted by name. A disjunction's verdict
+# depends on the whole set — which variant matched is not recoverable from one
+# field — so echoing less than all of them would leave a row that cannot be
+# recomputed. Two leaves reading the same path collapse to one entry rather than
+# colliding: same subject and same path means the same value.
+check_inputs(subj, check) := [{"name": nm, "value": reads[nm]} | some nm in sort(object.keys(reads))] if {
+	not check.inputs
+	check.op == "any_of"
+	reads := any_of_reads(subj, check)
+}
+
+any_of_reads(subj, check) := {path_name(p): value_at(subj, p) |
+	some group in check.options
+	some leaf in group
+	some p in leaf_paths(leaf)
+}
+
+leaf_paths(leaf) := [leaf.left, leaf.right] if two_sided(leaf)
+
+leaf_paths(leaf) := [leaf.path] if {
+	not two_sided(leaf)
+	leaf.path
 }
 
 # ---------- check definitions (looked up once per requirement, not per row) ----------

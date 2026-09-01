@@ -44,6 +44,8 @@ report := evidence.report(input, requirements)
 #   {"op": "equals",           "path": [...], "value": X}
 #   {"op": "present",          "path": [...]}
 #   {"op": "non_empty_string", "path": [...]}
+#   {"op": "matches_any",      "path": [...], "patterns": ["^svc_"]}   # unanchored regex
+#   {"op": "not_matches_any",  "path": [...], "patterns": ["^svc_"]}
 #   {"op": "range",            "path": [...], "min": 0, "max": 10}
 #   {"op": "includes",         "path": [...], "value": X}   # array contains X
 #   {"op": "excludes",         "path": [...], "value": X}
@@ -58,6 +60,21 @@ report := evidence.report(input, requirements)
 #
 #   {"op": "all", "path": ["commits"], "check": {"op": "equals", "path": ["verified"], "value": true}}
 #   {"op": "any", "path": ["approvers"], "check": {"op": "equals", "path": ["state"], "value": "APPROVED"}}
+#
+# Combinator — the ONLY way to make two fields of a subject agree with each
+# other. Each option is a non-empty ARRAY of leaf checks that must all hold;
+# the check passes if some option does. Reach for it the moment a rule says
+# "both of these, or both of those" — writing the two fields as independent
+# checks accepts every cross-product and silently over-passes:
+#
+#   {"op": "any_of", "options": {
+#       "standard": [{"op": "matches_any", "path": ["type"],  "patterns": [...]},
+#                    {"op": "matches_any", "path": ["state"], "patterns": [...]}],
+#       "safe":     [{"op": "matches_any", "path": ["type"],  "patterns": [...]},
+#                    {"op": "matches_any", "path": ["state"], "patterns": [...]}]}}
+#
+# Leaf checks only inside an option — no all/any/any_of nested (recursion).
+# Name the options: the name is what the rendered expression shows.
 #
 # Custom op — when the vocabulary can't express it. Add an
 # op_passed(check, subject) rule in a separate file declaring

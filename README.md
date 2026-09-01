@@ -467,6 +467,57 @@ level deep (Rego forbids recursion):
 | `all` | `path`, `check` | `path` is a non-empty array and *every* element passes the nested `check` |
 | `any` | `path`, `check` | `path` is a non-empty array and *some* element passes the nested `check` |
 
+**The combinator** is the only operator that relates two fields of a subject to
+*each other*:
+
+| `op` | Parameters | Passes when |
+| --- | --- | --- |
+| `any_of` | `options` | some option holds — an option being a non-empty **array** of leaf checks that must *all* pass |
+
+```rego
+"permitted": {
+	"op": "any_of",
+	"options": {
+		"standard": [
+			{"op": "matches_any", "path": ["type"], "patterns": standard_types},
+			{"op": "matches_any", "path": ["state"], "patterns": standard_states},
+		],
+		"safe": [...],
+	},
+}
+```
+
+It exists because without it a joint condition degrades into a pair of
+independent ones, and that degradation is a **silent over-pass**. A control whose
+real rule is "type and state both come from the same table" becomes "type is in
+the union of the tables AND state is in the union of the tables", which accepts
+combinations no table permits. Every other fail-closed guarantee in this library
+is worth less if the vocabulary quietly rounds a conjunction of alternatives down
+to something weaker; `examples/control_1068.rego` is the case that found it.
+
+Options are a disjunction of conjunctions, which is **disjunctive normal form**,
+so any or-of-ands over the leaf vocabulary can be written this way. What is still
+unavailable is general negation of an arbitrary leaf — only the negations the leaf
+operators offer themselves (`not_matches_any`, `excludes`, `cmp: "ne"`).
+
+Options hold **leaf checks only**: no `all`, `any`, or nested `any_of` inside one.
+That is Rego rather than a design choice — a combinator that could contain a
+combinator would make evaluation recursive, which the compiler rejects. DNF needs
+exactly two levels, so nothing is lost.
+
+Key `options` by variant name. The name is evidence: the rendered expression reads
+`one of: cloud(...) | safe(...) | standard(...)`, sorted so the report stays
+byte-identical whatever order the options were written in. An array works and
+renders by index. Both directions fail closed — an empty `options` has no
+alternative to satisfy, and an empty option group is rejected rather than being
+vacuously true the way a bare `every` over an empty array would be. A group must
+be an array, for the same reason `any` refuses an object collection: iterating an
+object's values would silently accept a shape the operator doesn't define.
+
+The row echoes **every field any option read**, deduplicated and sorted by name,
+because a disjunction's verdict depends on the whole set — which option matched is
+not recoverable from any single field.
+
 **Custom ops** cover anything the vocabulary can't express. You contribute an
 `op_passed(check, subject)` rule body into the `kosli.evidence` package from
 your own file — see `examples/code_review_ops.rego` — and it flows through the
@@ -623,6 +674,16 @@ each suite covers, the invariants they pin, and the test conventions.
   real trail, which carries no PR detail at all. That remaining gap is the point
   of keeping the file, and it needs an input document composed from more than one
   API call rather than a change to any policy.
+  `control_1068.rego` is the third, and the only one that is not four-eyes: a
+  sketch of a customer's business-requirements control (`RCTLDEF0001068`), whose
+  rule still lives in TypeScript and has no Kosli integration yet. It earns its
+  place twice. It is the reason `any_of` exists — its "type and state from the
+  same flavour table" rule was silently over-passing when written as two
+  independent checks — and it is where the library's first documented **limit**
+  is pinned: the control's real subject is a commit, and the collector destroys
+  the commit-to-ticket link before any evidence exists, so `control_1068_test.rego`
+  asserts that the subject cannot be named and is meant to keep asserting it until
+  a collector attests commits with their resolved tickets.
 - **[`INTEGRATION.md`](INTEGRATION.md)** — how a Kosli control's pipeline fits
   together (collector → Kosli → `kosli evaluate` → policy → schema), which stage
   owns what, and the three constraints at the seam where this library would plug

@@ -13,7 +13,7 @@ a human reader. Point it at the relevant one:
 | --- | --- |
 | [BRIEF.md](BRIEF.md) | Does the library survive a real `kosli get trail`? *(done — see the findings folded into the README and `examples/trail_real_shape.json`)* |
 | [BRIEF_CONTROL_43.md](BRIEF_CONTROL_43.md) | Can the library express control 43 (four-eyes)? Which reading of its approval rule is real, and what does `kosli evaluate` actually pass to a policy? *(done — the answer was `four-eyes.rego` itself, now ported in `examples/control_43.rego`)* |
-| [BRIEF_CONTROL_1068.md](BRIEF_CONTROL_1068.md) | Can the library express a control that **isn't** four-eyes? 1068 (business requirements) is still pre-Rego, so its rule lives in TypeScript — where is the decision, and can a path-based `from` even name its subjects? |
+| [BRIEF_CONTROL_1068.md](BRIEF_CONTROL_1068.md) | Can the library express a control that **isn't** four-eyes? 1068 (business requirements) is still pre-Rego, so its rule lives in TypeScript — where is the decision, and can a path-based `from` even name its subjects? *(done — no, not the subject; and question 4 below paid for the whole trip, yielding the `any_of` operator. See `examples/control_1068.rego`.)* |
 
 Each brief was better than the last for one reason: it asked for **architecture**
 rather than data. Rounds 1 and 2 asked for fixtures; what unblocked the design was
@@ -55,7 +55,7 @@ library is text and travels anywhere, but the evaluator does not.
 Confirm the toolchain before trusting any result:
 
 ```sh
-opa test src examples --ignore '*.json'   # expect PASS: 299/299
+opa test src examples --ignore '*.json'   # expect PASS: 334/334
 ```
 
 ## Work in `scratch/`
