@@ -14,6 +14,7 @@ a human reader. Point it at the relevant one:
 | [BRIEF.md](BRIEF.md) | Does the library survive a real `kosli get trail`? *(done — see the findings folded into the README and `examples/trail_real_shape.json`)* |
 | [BRIEF_CONTROL_43.md](BRIEF_CONTROL_43.md) | Can the library express control 43 (four-eyes)? Which reading of its approval rule is real, and what does `kosli evaluate` actually pass to a policy? *(done — the answer was `four-eyes.rego` itself, now ported in `examples/control_43.rego`)* |
 | [BRIEF_CONTROL_1068.md](BRIEF_CONTROL_1068.md) | Can the library express a control that **isn't** four-eyes? 1068 (business requirements) is still pre-Rego, so its rule lives in TypeScript — where is the decision, and can a path-based `from` even name its subjects? *(done — no, not the subject; and question 4 below paid for the whole trip, yielding the `any_of` operator. See `examples/control_1068.rego`.)* |
+| [BRIEF_INTEGRATION.md](BRIEF_INTEGRATION.md) | Are the integration findings right? The `kosli evaluate` contract, the single-file limit, the bundler, the custom-attestation path — and the load-bearing claim that control 43 shells out to `opa` rather than using `kosli evaluate`. The first brief whose job is **falsification** rather than discovery. |
 
 Each brief was better than the last for one reason: it asked for **architecture**
 rather than data. Rounds 1 and 2 asked for fixtures; what unblocked the design was
@@ -57,6 +58,23 @@ Confirm the toolchain before trusting any result:
 ```sh
 opa test src examples --ignore '*.json'   # expect PASS: 334/334
 ```
+
+## Bundling for `kosli evaluate`
+
+`kosli evaluate --policy` takes one file and parses it as a single module that must
+be `package policy`, so the library cannot be imported on that path — it has to be
+merged, and merging collides with the two rule names the CLI reserves.
+`bundle.py` renames the library's API out of the way and then proves the merge
+preserved behaviour by diffing both forms against the same input:
+
+```sh
+python3 fieldkit/bundle.py --policy examples/control_43.rego \
+    --ops examples/control_43_ops.rego \
+    --verify-with fieldkit/scratch/trail.json -o fieldkit/scratch/policy.rego
+```
+
+None of this is needed on the `opa eval` path, where the library imports normally
+and the whole report is available. See [INTEGRATION.md](../INTEGRATION.md).
 
 ## Work in `scratch/`
 

@@ -684,12 +684,19 @@ each suite covers, the invariants they pin, and the test conventions.
   the commit-to-ticket link before any evidence exists, so `control_1068_test.rego`
   asserts that the subject cannot be named and is meant to keep asserting it until
   a collector attests commits with their resolved tickets.
+- **`schema/evidence-report.schema.json`** — the JSON Schema for a report. Its
+  purpose is `kosli create attestation-type --schema`, which is how a report
+  becomes first-class evidence in Kosli rather than being discarded: `kosli
+  evaluate` reads only `allow` and `violations`, so the report leaves through
+  `kosli attest custom` instead. See [INTEGRATION.md](INTEGRATION.md).
 - **[`INTEGRATION.md`](INTEGRATION.md)** — how a Kosli control's pipeline fits
   together (collector → Kosli → `kosli evaluate` → policy → schema), which stage
   owns what, and the three constraints at the seam where this library would plug
   in. Read it before designing a policy meant to run under `kosli evaluate`.
 - **`fieldkit/`** — tools for pointing the library at a real input document:
   `kit.py shape` describes a document's structure without printing any values,
-  `kit.py run` evaluates a policy and tabulates the failing rows, and
+  `kit.py run` evaluates a policy and tabulates the failing rows,
   `policy_template.rego` is a scaffold carrying the whole operator vocabulary in
-  comments. See [fieldkit/README.md](fieldkit/README.md).
+  comments, and `bundle.py` merges the library into the single `package policy`
+  file that `kosli evaluate --policy` requires — proving as it goes that the merge
+  did not change the report. See [fieldkit/README.md](fieldkit/README.md).

@@ -151,32 +151,147 @@ allow := report.compliant                        # same interface out
 violations := ...                                # collapsed to one string per commit
 ```
 
-Three constraints at that seam:
+Three constraints at that seam, **all of them specific to the `kosli evaluate` door**
+(see below — the `opa eval` door imposes none of them):
 
 | constraint | cost |
 | --- | --- |
 | `violations` must stay **one string per failing commit** | this library emits a row per (subject, check), so the policy must collapse them by a declared precedence: missing attestation → no PR → unverifiable identity → no approval |
 | `allow` must stay a **bool** | free — `report.compliant` already is one |
-| the package must be **`policy`** | free |
+| the package must be **`policy`**, and it is parsed as a single module | *not* free, as it turns out — the library cannot be imported and must be merged in with its public API renamed |
 
 The first is arguably an improvement rather than a tax: precedence becomes stated
 data instead of an emergent consequence of how rule guards happen to be ordered.
 
-## Two open questions that decide whether this is viable
+## Both questions, answered — and the answer reframes the seam
 
-Both are cheap to answer with a Kosli CLI to hand, and neither has been verified.
+These two sat open for three rounds, routed through briefs to the restricted
+machine. They never belonged there: `kosli evaluate` is Kosli's own CLI, it was
+already installed locally, and the answers were in `--help`, the binary, and
+`kosli-dev/cli` on GitHub. Worth remembering before the next brief — sort open
+questions into "needs the restricted machine" and "needs a terminal" first.
 
-1. **Can `--policy` load more than one file?** This library is a separate file in
-   its own package that a policy imports. If `--policy` accepts only a single
-   file, the library must be concatenated or vendored into every policy — workable,
-   but it undermines the "one library, many policies" premise that motivates it.
-2. **Does the report survive evaluation?** `kosli evaluate` queries `allow` and
-   `violations`. The library's actual product — the hashable, attestable evidence
-   table — **has no slot in that contract**. If `--output json` surfaces only those
-   two rules, the report is computed and discarded, and the whole exercise buys
-   better violation strings and nothing else. If it surfaces the full policy
-   document, the report rides along and can be attested through the
-   `--attachments` step above. This difference is most of the value.
+### 1. `--policy` takes one file, and only one module is parsed
+
+The flag is `string`, not `strings` (contrast `--attestations strings` beside it).
+And `internal/evaluate/rego.go` parses that file as a **single module** whose
+package must be exactly `data.policy`:
+
+```go
+rego.Query("data.policy.allow"),
+rego.Module("policy.rego", policySource),
+```
+
+So `kosli.evidence` cannot be imported at all on this path. It has to be textually
+merged into `package policy`, which fails on the first attempt:
+
+```
+rego_type_error: conflicting rules data.policy.report found
+rego_type_error: conflicting rules data.policy.violations found
+```
+
+The `violations` collision is structural rather than unlucky: the CLI **reserves**
+that rule name, and this library has a function of the same name. Same package,
+same name, different arity — rejected.
+
+Namespacing the library's public API on merge fixes it. Verified end to end: a
+concatenated `library.rego + control_43_ops.rego + control_43.rego` with the
+library's `report`/`violations` renamed compiles under `opa check --strict` and
+evaluates to `allow: true`, `violations: []`, and a 10-row report. So it is a build
+step, not a wall.
+
+### 2. The report does **not** survive `kosli evaluate`
+
+The CLI's result type is the whole story:
+
+```go
+type Result struct {
+	Allow      bool
+	Violations []string
+}
+```
+
+It runs exactly two queries — `data.policy.allow`, which must be a bool or it is a
+hard error, and then, **only when allow is false**, `data.policy.violations`.
+Nothing else in the policy document is read. `report` is still computed; it is
+simply never asked for.
+
+One trap: `collectViolations` does `if s, ok := v.(string); ok` with **no else
+branch**. A non-string element in `violations` is silently dropped, not rejected.
+Trying to smuggle structured data out through `violations` fails quietly, returning
+fewer entries than the policy produced.
+
+## The seam has two doors, not one
+
+The mistake in the framing above was treating `kosli evaluate` as *the* integration
+path. It is one path, and it is not the one control 43 uses.
+
+**Control 43 runs the `opa` binary itself**, via `execSync` in a prebuilt Docker
+image. On that path none of the constraints in this section apply — no single-file
+limit, no `package policy` requirement, no name collisions:
+
+```sh
+opa eval -d library.rego -d control_43.rego -d control_43_ops.rego \
+         -i input.json 'data.control43.output'
+```
+
+That returns `allow`, `violations` **and** `report` in one call. The richer output
+was never blocked here; it has been available all along on the path the team
+already uses.
+
+So the two doors are:
+
+| door | carries | when to use it |
+| --- | --- | --- |
+| `kosli evaluate` | `allow` (bool) + `violations` (`[]string`) | a gate. It also fetches the trail data for you, which is its real convenience |
+| `opa eval` in the workflow, then `kosli attest custom` | the whole report | evidence. Needs the input document from somewhere else |
+
+A gate being a boolean is correct. The error was trying to push evidence through
+the door built for gating.
+
+## Where the report goes: a custom attestation type
+
+Kosli has a purpose-built home for exactly this shape, and it inverts the problem
+in the library's favour.
+
+```sh
+kosli create attestation-type evidence-report \
+  --schema schema/evidence-report.schema.json \
+  --jq '.compliant == true' \
+  --jq '[.results[] | select(.check == "$well_formed" and .passed == false)] | length == 0'
+
+kosli attest custom --type evidence-report \
+  --attestation-data report.json --name four-eyes-report \
+  --flow <flow> --trail <trail>
+```
+
+With `kosli evaluate`, Rego computes a boolean, the CLI reads it, and the evidence
+evaporates. Here Rego computes the **evidence**, Kosli stores and schema-validates
+it, and compliance is *derived from the stored evidence* by jq rules. That is much
+closer to what "hashable, attestable report" was supposed to mean than what this
+document was previously aiming at.
+
+The jq rules were checked against a real report rather than written from
+imagination:
+
+```
+.compliant == true                                             => false
+[.requirements[] | select(.satisfied == false)] | length == 0  => false
+[.results[] | select(.check == "$well_formed" and .passed == false)] | length == 0  => true
+```
+
+That third rule earns its place: it separates *"the policy is broken"* from *"the
+thing being judged is non-compliant"* at the attestation-type level — a distinction
+this library already draws in `$well_formed` rows and previously had nowhere to
+express.
+
+Two smaller destinations exist for the same payload: `--user-data <file>` attaches
+arbitrary JSON to any attestation with no schema and no evaluation, and
+`--attachments` puts files in the evidence vault, which is the fallback if a report
+outgrows a payload.
+
+`schema/evidence-report.schema.json` in this repo is the JSON Schema for the report
+shape.
 
 ## What this means for the decision
 
@@ -306,12 +421,35 @@ TypeScript on a machine with access to them.
   the `allow` + `violations` interface and `policy` package; the schema's
   one-string-per-commit shape; `four-eyes.rego` being the only Rego policy in
   `sdlc-workflows`; control 43 having two generations.
-- **Documented but not executed:** every command shown here. No `kosli` CLI was
-  available, so `--show-input` was never run and the live wire shape of
-  `attestations_statuses` is unconfirmed — though the policy iterates values and
-  selects on `attestation_type`, which works for a map or an array, making the
-  distinction moot for policy design.
-- **Unverified:** the two open questions above.
+- **Confirmed by reading the CLI's own source** (`kosli-dev/cli`,
+  `internal/evaluate/rego.go`, `cmd/kosli/createAttestationType.go`) and by running
+  `kosli` 2.13.1 locally: the `Result{Allow bool, Violations []string}` type; the
+  two queries and their order; `allow` having to be a bool; non-string violations
+  being silently dropped; `--policy` taking one file; `validatePolicy` requiring
+  `package policy` on a single module.
+- **Confirmed by running it:** the merge collision on `report` and `violations`,
+  and that namespacing the library's API resolves it — the concatenated bundle
+  passes `opa check --strict` and evaluates to `allow`, `violations` and a 10-row
+  report. The jq evaluation rules were run against a real report with `jq`.
+- **Confirmed by dry-run only:** the custom-attestation path. `kosli attest custom
+  --dry-run` shows the whole report travelling as `attestation_data` to
+  `/api/v2/attestations/{org}/{flow}/trail/{trail}/custom`, but no request was ever
+  sent. **Server-side schema validation and jq evaluation are therefore untested.**
+- **Documented but not executed:** `--show-input` was never run, so the live wire
+  shape of `attestations_statuses` is still unconfirmed — though the policy
+  iterates values and selects on `attestation_type`, which works for a map or an
+  array, making the distinction moot for policy design.
+- **Unverified, and now the most important gap:** where the input document comes
+  from on a real run. Every report produced so far was computed from a fixture
+  written by hand in a scratchpad, not from anything Kosli returned. Something must
+  fetch the trail and feed OPA — `kosli get trail`, `kosli evaluate --show-input`,
+  or the collector composing it — and which one control 43 actually uses is not
+  known. Unlike the two questions above, this one really does live in the
+  restricted machine's workflow YAML.
+- **Also unverified:** whether attestation payloads have a size limit, which
+  matters because a report is O(subjects x checks) and every row echoes its inputs.
+  And `--summary`, which would render key report numbers in the Kosli UI, exists in
+  the CLI source on `main` but not in 2.13.1.
 
 > This file names internal control identifiers and repository names. It is fine on
 > an internal branch; it is worth a deliberate look before anything here reaches a

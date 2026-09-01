@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "kosli.evidence report",
+  "type": "object",
+  "required": ["compliant", "requirements", "results"],
+  "properties": {
+    "compliant": {"type": "boolean"},
+    "requirements": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["require", "satisfied", "subjects", "checks"],
+        "properties": {
+          "require": {"enum": ["every", "some"]},
+          "satisfied": {"type": "boolean"},
+          "subjects": {
+            "type": "object",
+            "required": ["total", "matching"],
+            "properties": {"total": {"type": "integer"}, "matching": {"type": "integer"}}
+          },
+          "checks": {"type": "object"}
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["requirement", "subject", "check", "inputs", "passed"],
+        "properties": {
+          "requirement": {"type": "string"},
+          "subject": {
+            "type": "object",
+            "required": ["type", "id"],
+            "properties": {"type": {"type": "string"}, "id": {}}
+          },
+          "check": {"type": "string"},
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "value"],
+              "properties": {"name": {"type": "string"}, "value": {}}
+            }
+          },
+          "passed": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}
