@@ -463,11 +463,15 @@ test_the_ambiguous_row_names_the_cause if {
 # The case the port false-failed until checks could declare a substitute: the
 # repository's first commit, which no pull request could have reviewed, carrying
 # the alternative evidence production accepts instead.
+# `custom:<name>` is the type string Kosli emits for a custom attestation type —
+# built-in types are bare, a custom one is referenced by
+# `attestation_type: "custom:<name>"`. The attestation's own *name* is whatever
+# the flow template called the slot, so it is not what identifies the evidence.
 initial_commit_trail(compliant) := {
 	"name": "0000001",
 	"git_commit_info": {"author": "alice <alice@example.com>", "sha1": "0000001"},
 	"compliance_status": {"attestations_statuses": {"initial-commit": {
-		"attestation_type": "custom",
+		"attestation_type": "custom:initial-commit-by-verified-committer",
 		"attestation_name": "initial-commit-by-verified-committer",
 		"is_compliant": compliant,
 	}}},
@@ -493,6 +497,45 @@ test_a_substituted_row_records_which_evidence_discharged_it if {
 	]
 	rows[0].passed == true
 	rows[0].cause == "substituted"
+}
+
+# The discriminator, pinned. The port first selected the substitute on
+# `attestation_type == "custom"` plus the attestation name, which matches nothing
+# Kosli emits: the type reference is `custom:<name>` and a bare `custom` is not a
+# type at all. The substitute was therefore inert, and inert fails closed, so
+# every initial commit would have gone on being denied for want of a pull
+# request. A guess in a fixture is the one way a fail-closed library still gets a
+# policy wrong, so both wrong forms are asserted here rather than described.
+test_the_substitute_matches_the_type_reference_kosli_emits if {
+	out(make_input([initial_commit_trail(true)])).allow
+}
+
+test_a_bare_custom_type_does_not_satisfy_the_substitute if {
+	trail := {
+		"name": "0000001",
+		"git_commit_info": {"author": "alice <alice@example.com>", "sha1": "0000001"},
+		"compliance_status": {"attestations_statuses": {"initial-commit": {
+			"attestation_type": "custom",
+			"attestation_name": "initial-commit-by-verified-committer",
+			"is_compliant": true,
+		}}},
+	}
+	not out(make_input([trail])).allow
+}
+
+# Nor does the type's bare name, the third form the field report found in
+# circulation — it is what `kosli create attestation-type` takes as an argument,
+# not what the attestation carries.
+test_a_bare_type_name_does_not_satisfy_the_substitute if {
+	trail := {
+		"name": "0000001",
+		"git_commit_info": {"author": "alice <alice@example.com>", "sha1": "0000001"},
+		"compliance_status": {"attestations_statuses": {"initial-commit": {
+			"attestation_type": "initial-commit-by-verified-committer",
+			"is_compliant": true,
+		}}},
+	}
+	not out(make_input([trail])).allow
 }
 
 # A commit that has a pull request is judged on it, not on the substitute — the

@@ -618,6 +618,13 @@ Details worth knowing:
 - A failing row's `cause` describes the paths **the check itself** reads. "The
   alternative evidence is missing too" is not a reason the primary evidence is
   unsatisfactory.
+- The sharp edge of that: a substitute whose **path is wrong** looks exactly like
+  a substitute whose evidence is absent — both echo `null`, and the row's cause
+  is about the primary either way. A substitute is only ever consulted on the
+  failing path, so a wrong address makes it silently inert and the check just
+  goes on failing. Test a substitute against a document that satisfies it, and
+  treat a substitute that never reports `substituted` anywhere in a report as
+  unreached rather than unneeded.
 
 **Custom ops** cover anything the vocabulary can't express. You contribute an
 `op_passed(check, subject)` rule body into the `kosli.evidence` package from
@@ -842,7 +849,11 @@ each suite covers, the invariants they pin, and the test conventions.
   is pinned: the control's real subject is a commit, and the collector destroys
   the commit-to-ticket link before any evidence exists, so `control_1068_test.rego`
   asserts that the subject cannot be named and is meant to keep asserting it until
-  a collector attests commits with their resolved tickets.
+  a collector attests commits with their resolved tickets — a reading confirmed
+  against the collector's source, which flattens commit messages into a set of
+  ticket ids with no backref. Its flavour tables come from `data.params`, because
+  the real ones are read from an external fact store at runtime and so can never
+  live in a policy file.
 - **`schema/evidence-report.schema.json`** — the JSON Schema for a report. Its
   purpose is `kosli create attestation-type --schema`, which is how a report
   becomes first-class evidence in Kosli rather than being discarded: `kosli

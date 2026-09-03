@@ -50,13 +50,20 @@ pull_requests := array.concat(pr_attestation, ["pull_requests"])
 # declares it as a substitute, so a check discharged that way says so in its row
 # instead of the commit dropping out of scope with no evidence at all.
 #
-# Selected by name as well as type: `custom` is the type of every custom
-# attestation, and the name is what makes this one the initial-commit claim. That
-# is the opposite of the pull request selector below, and for the same reason —
-# select on whichever field carries the identity.
+# Selected on `attestation_type` alone, and the type string carries the type's
+# name. Kosli's own type grammar is why: built-in types are bare
+# (`generic | junit | snyk | pull_request | jira | sonar`) while a custom type is
+# referenced as `custom:<name>` — the server constrains it to `^custom:.*$`, and a
+# type name may not itself contain a colon. So `custom` alone is not a type any
+# attestation ever carries, and the reference is already unique.
+#
+# This started life as `{"attestation_type": "custom", "attestation_name": …}`,
+# which matches nothing on the wire and made the whole substitute inert. It was
+# wrong because it was guessed from a fixture written on this side rather than
+# read from Kosli, which is the one way a fail-closed library still gets a policy
+# wrong: a selector that cannot match denies, so the check simply never fired.
 initial_commit_attestation := ["compliance_status", "attestations_statuses", {"where": {
-	"attestation_type": "custom",
-	"attestation_name": "initial-commit-by-verified-committer",
+	"attestation_type": "custom:initial-commit-by-verified-committer",
 }}]
 
 # Presence of the attestation is the discriminator, not the commit's position in
@@ -95,9 +102,12 @@ requirements := {
 			# show. Asserting the field where nothing can filter it away turns
 			# that silent pass into a stated failure.
 			#
-			# Not hypothetical: real attestations carry `git_commit_info` as a
-			# sibling of `pull_requests` on the attestation object, so a document
-			# assembled differently could well arrive without one at trail level.
+			# Real trails do carry `git_commit_info` at root — that was checked
+			# after a first field report suggested it lived only on the
+			# attestation — so the reachable case is an author that is present
+			# and *unreadable* (null, empty, or not a string) rather than a
+			# missing object. `non_empty_string` covers all of them, and the
+			# check costs one row either way.
 			"author_recorded": {
 				"description": "The trail records the commit's git author, which is what the service-account exemption is judged on",
 				"op": "non_empty_string",

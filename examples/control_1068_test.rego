@@ -169,3 +169,44 @@ test_the_expression_names_every_flavour if {
 	contains(expr, "cloud(")
 	contains(expr, "safe(")
 }
+
+# ---------- table membership is configuration ----------
+
+# The real control reads its flavour tables from an external fact store at
+# runtime, so no version of the policy file can hold the real membership. These
+# pin the `data.params` path that stands in for it: a table that changes must be
+# a parameter change, not a policy change.
+test_flavour_tables_come_from_params_when_given if {
+	result := out({"tickets": [ticket("PA-9", "Widget", "SHIPPED")]}) with data.params as {"flavours": {"widgets": {
+		"types": ["^Widget$"],
+		"states": ["^SHIPPED$"],
+	}}}
+	result.overall_status == "PASSED"
+}
+
+# The joint condition survives the substitution: a cross-product of two supplied
+# tables is still refused, which is the whole point of the operator.
+test_params_tables_still_reject_a_cross_product if {
+	result := out({"tickets": [ticket("PA-9", "Widget", "ADOPTING")]}) with data.params as {"flavours": {
+		"widgets": {"types": ["^Widget$"], "states": ["^SHIPPED$"]},
+		"cloud": {"types": ["^JS Story$"], "states": ["^ADOPTING$"]},
+	}}
+	result.overall_status == "FAILED"
+}
+
+# A ticket the built-in default permits is refused once params replace the tables:
+# the fallback is a default, not a floor.
+test_params_replace_the_defaults_rather_than_extending_them if {
+	result := out({"tickets": [ticket("PA-1", "SAFe Story", "DONE")]}) with data.params as {"flavours": {"widgets": {
+		"types": ["^Widget$"],
+		"states": ["^SHIPPED$"],
+	}}}
+	result.overall_status == "FAILED"
+}
+
+# Malformed configuration falls back rather than emptying the vocabulary, which
+# would deny every ticket for a reason nobody could read off the report.
+test_malformed_params_fall_back_to_the_defaults if {
+	result := out({"tickets": [ticket("PA-1", "SAFe Story", "DONE")]}) with data.params as {"flavours": "standard"}
+	result.overall_status == "PASSED"
+}

@@ -26,11 +26,13 @@
 # collector — attest commits *with* their resolved tickets — not on this library.
 # control_1068_test.rego pins the limit rather than hiding it.
 #
-# THE VOCABULARY BELOW IS ILLUSTRATIVE. The three flavour tables are known to
-# exist and to be keyed this way, and one fact about them is established: no single
-# table holds both `Story` and `DONE`. The exact membership was not readable from
-# outside the bank, so the lists here are a consistent stand-in. Replace them from
-# source before this is anything but a demonstration.
+# THE VOCABULARY BELOW IS ILLUSTRATIVE, and now known to be *permanently* so. The
+# three flavour tables are known to exist and to be keyed this way, and one fact
+# about them is established: no single table holds both `Story` and `DONE`. The
+# membership is **not in the control's source at all** — it is read at runtime from
+# an external fact store — so there is no version of this file that could hold the
+# real lists. That is what `data.params` is for, and the default below is the
+# stand-in for when nothing is passed.
 package control1068
 
 import data.kosli.evidence
@@ -42,7 +44,20 @@ import rego.v1
 # table permits — a Standard `Story` in the Safe-only state `DONE` sails through.
 # That is a silent over-pass, and it is the failure mode this library exists to
 # prevent everywhere else.
-flavours := {
+# Membership arrives as configuration, the way the real control gets it: a fact
+# store at runtime there, `--params` here. `kosli evaluate --params @tables.json`
+# populates `data.params`, and the CLI in control 43's own image is new enough to
+# have that flag — so a table that changes is a parameter change rather than a
+# policy change, which is the only arrangement that can stay true.
+#
+# `examples/control_43.rego` reads `data.params.service_account_patterns` the same
+# way. Both fall back to a literal when nothing is passed, so the policy is
+# runnable and testable on its own.
+flavours := tables if {
+	tables := data.params.flavours
+	is_object(tables)
+	count(tables) > 0
+} else := {
 	"standard": {
 		"types": ["^Story$", "^Defect$", "^New Feature$"],
 		"states": ["^CLOSED$", "^RESOLVED$", "^IN PROGRESS$"],

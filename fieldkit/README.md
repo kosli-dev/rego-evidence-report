@@ -14,7 +14,7 @@ a human reader. Point it at the relevant one:
 | [BRIEF.md](BRIEF.md) | Does the library survive a real `kosli get trail`? *(done — see the findings folded into the README and `examples/trail_real_shape.json`)* |
 | [BRIEF_CONTROL_43.md](BRIEF_CONTROL_43.md) | Can the library express control 43 (four-eyes)? Which reading of its approval rule is real, and what does `kosli evaluate` actually pass to a policy? *(done — the answer was `four-eyes.rego` itself, now ported in `examples/control_43.rego`)* |
 | [BRIEF_CONTROL_1068.md](BRIEF_CONTROL_1068.md) | Can the library express a control that **isn't** four-eyes? 1068 (business requirements) is still pre-Rego, so its rule lives in TypeScript — where is the decision, and can a path-based `from` even name its subjects? *(done — no, not the subject; and question 4 below paid for the whole trip, yielding the `any_of` operator. See `examples/control_1068.rego`.)* |
-| [BRIEF_OPEN_QUESTIONS.md](BRIEF_OPEN_QUESTIONS.md) | **The pending one.** Everything still open that only that machine can answer: how control 43's workflow actually invokes `opa` and what it feeds it, where `git_commit_info` really lives, one real two-author pull request, the new `cause` values against real attestations, the substitute's field names, whether the custom-attestation path works live, and two claims about 1068's source. It absorbed round 4's integration brief, whose claims about the `kosli evaluate` contract, the single-file limit and the bundler were settled from a laptop instead — see [INTEGRATION.md](../INTEGRATION.md). |
+| [BRIEF_OPEN_QUESTIONS.md](BRIEF_OPEN_QUESTIONS.md) | **The pending one**, now down to three questions, each needing live Kosli or GitHub rather than readable source: a pull request with two distinct authors, one real root-commit trail, and whether a report survives a real `kosli attest custom`. Round 5 answered everything else it asked — including refuting the claim that control 43 runs the `opa` binary, which it does not; see [INTEGRATION.md](../INTEGRATION.md). |
 
 Each brief was better than the last for one reason: it asked for **architecture**
 rather than data. Rounds 1 and 2 asked for fixtures; what unblocked the design was
@@ -62,7 +62,7 @@ library is text and travels anywhere, but the evaluator does not.
 Confirm the toolchain before trusting any result:
 
 ```sh
-opa test src examples --ignore '*.json'   # expect PASS: 389/389
+opa test src examples --ignore '*.json'   # expect PASS: 396/396
 ```
 
 ## Bundling for `kosli evaluate`
@@ -79,8 +79,11 @@ python3 fieldkit/bundle.py --policy examples/control_43.rego \
     --verify-with fieldkit/scratch/trail.json -o fieldkit/scratch/policy.rego
 ```
 
-None of this is needed on the `opa eval` path, where the library imports normally
-and the whole report is available. See [INTEGRATION.md](../INTEGRATION.md).
+This is not optional plumbing: control 43 goes through `kosli evaluate`, so the
+bundle is how this library would reach production at all. The `opa eval` path,
+where the library imports normally and the whole report is available, is how it
+is developed and tested — not how that control runs. See
+[INTEGRATION.md](../INTEGRATION.md).
 
 ## Work in `scratch/`
 
