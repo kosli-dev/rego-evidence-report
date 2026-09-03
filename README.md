@@ -631,9 +631,20 @@ the check:
   a projection across a collection (`{"path": ["commits"], "each":
   ["timestamp"]}` → `commits[].timestamp`).
 
-A custom op is a normal Rego rule, so it's on you to keep it fail-closed. The
-comments in `examples/code_review_ops.rego` walk through the three ways
-`peer_approved` could have failed open.
+A custom op is a normal Rego rule, so two things are on you.
+
+**Keep it fail-closed.** The comments in `examples/code_review_ops.rego` walk
+through the three ways `peer_approved` could have failed open.
+
+**Call down, never up.** Rego rejects any cycle in the rule graph, across files,
+at compile time — and your op is contributed *into* `package kosli.evidence`, so
+calling `check_passed`, `op_passed` or `report` from it stops the **library**
+compiling, with most of the errors pointing at `library.rego` rather than at your
+file. Downwards (`leaf_passed`, `element_passed`, `value_at`, any builtin) is
+fine, and `every`/`some` nest as deeply as you type them inside your own body,
+which is where a custom op's real power is. If what you wanted was "this check
+passes when that one does", that's a [substitute](#substitutes).
+[CONTRIBUTING.md](CONTRIBUTING.md) has the error message and the layer stack.
 
 ### Causes
 

@@ -90,6 +90,80 @@ attest. If a change makes one of them fail, the change is almost certainly wrong
   cases most worth not reintroducing — add to this section when you fix a bug of
   the same kind.
 
+## The layer stack, and the one way to break someone else's build
+
+Rego rejects recursion — not just `a` calling itself, but any cycle in the rule
+graph, at any length, across any number of files. `a -> b -> a` and
+`a -> b -> c -> a` are both `rego_recursion_error`, raised by the compiler
+before anything evaluates.
+
+That is the constraint the whole library is shaped around, because evaluating a
+nested check *is* a recursive problem. The way it is spent is a ladder of
+distinct rule names, each level calling only downwards:
+
+```
+check_passed        the named check, or the "substitute" it declares
+  └─ op_passed      dispatch on check.op — where custom ops plug in
+       └─ element_passed    inside all/any: a leaf, or an any_of over leaves
+            └─ any_of_passed / leaf_passed
+```
+
+Every "one level, because Rego forbids recursion" comment in `library.rego` is
+this same wall from a different side. `any_of` options hold leaves only because
+an option containing an `any_of` would be `any_of_passed -> any_of_passed`.
+`each` buys a second collection level and not a third because a third needs a
+rung that calls itself. Depth is bought one rule name at a time, and the price
+is paid at design time.
+
+**So a custom op may call *down* the ladder and never up.** Down is
+`leaf_passed`, `element_passed`, `value_at`, `field`, `comparable`, any builtin
+— and `every`/`some` nested as deeply as you care to type inside your own rule
+body, which is where unbounded depth actually lives and is why the escape hatch
+is worth having. Up is `check_passed`, `op_passed`, `subject_passed`,
+`requirement_satisfied`, `report`.
+
+This is the one authoring mistake whose blast radius is not your own file.
+Custom ops contribute `op_passed` bodies into `package kosli.evidence` from
+outside, and the cycle check runs over the merged graph, so nine lines in a
+policy's ops file stop the *library* compiling:
+
+```rego
+# examples/somebody_ops.rego — plausible, and fatal
+op_passed(check, subj) if {
+	check.op == "delegates"
+	check_passed(check.inner, subj)          # calls back up
+}
+```
+
+```
+$ opa check --strict src/library.rego examples/somebody_ops.rego
+3 errors occurred:
+src/library.rego:478: rego_recursion_error: rule data.kosli.evidence.check_passed is recursive: data.kosli.evidence.check_passed -> data.kosli.evidence.op_passed -> data.kosli.evidence.check_passed
+src/library.rego:480: rego_recursion_error: rule data.kosli.evidence.check_passed is recursive: data.kosli.evidence.check_passed -> data.kosli.evidence.op_passed -> data.kosli.evidence.check_passed
+examples/somebody_ops.rego:5: rego_recursion_error: rule data.kosli.evidence.op_passed is recursive: data.kosli.evidence.op_passed -> data.kosli.evidence.check_passed -> data.kosli.evidence.op_passed
+```
+
+Errors are ordered by file, so the two naming `library.rego` come *first* and the
+one naming the file you actually edited comes last. If `opa check` reports
+recursion in a file you did not touch, look for a custom op that reached
+upwards.
+
+Delegation itself is fine as long as it goes down. The same op written against
+`element_passed` compiles and works, because that rung evaluates a leaf or an
+`any_of` and calls nothing above it:
+
+```rego
+op_passed(check, subj) if {
+	check.op == "delegates"
+	element_passed(check.inner, subj)        # a leaf or an any_of, downwards
+}
+```
+
+What that cannot reach is a *named* check — one that might itself be an
+`all`/`any`, another custom op, or carry a substitute of its own. Delegating to
+one of those is what `substitute` is for, and it is why it lives one rung above
+`op_passed` instead of being an operator like everything else.
+
 ## Design notes
 
 Two decisions come up often enough to write down.
