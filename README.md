@@ -50,8 +50,9 @@ check that failed, and the input values it read.
 | **Operator** (`op`) | The comparison a check performs — `equals`, `range`, `all`, … The library ships a fixed vocabulary; anything beyond it is a custom op. |
 | **Scope filter** (`applies_to`) | Checks that decide which raw subjects a requirement *applies to*. A PR that isn't merged isn't in breach of a code-review control — it's simply not a subject of it. |
 | **`require`** | Whether `every` in-scope subject must pass all checks, or `some` single subject must pass all of them on its own. |
-| **Substitute** | Alternative evidence declared on a check: something other than the primary evidence that discharges it. Not an exemption — the requirement still applies. |
+| **Substitute** | Alternative evidence declared on a check: something other than the primary evidence that discharges it. Not an exemption — the requirement still applies. See [Substitutes](#substitutes). |
 | **Result row** | One piece of evidence: this check, against this subject, read these inputs, and passed or didn't — and, in `cause`, why it reads that way. |
+| **Cause** | Why a row reads the way it does — `absent`, `null`, `ambiguous`, `value`, … — which a boolean plus an echoed `null` cannot say. See [Causes](#causes). |
 | **Report** | The whole output: an overall `compliant` verdict, a per-requirement summary with the check definitions, and every result row. |
 | **Violation** | A failing row that actually represents a **breach**. Not every failing row is one — see [Evidence vs. violations](#evidence-vs-violations). |
 | **Fail-closed** | Missing, null, or wrong-typed input makes a check **fail**, never vanish and never accidentally pass. See [Fail-closed rules](#fail-closed-rules). |
@@ -255,7 +256,8 @@ to do that lookup:
   "check": "approved",
   "description": "A named approver signed off on the deployment",
   "expression": "approved_by is a non-empty string",
-  "inputs": [{"name": "approved_by", "value": null}]
+  "inputs": [{"name": "approved_by", "value": null}],
+  "cause": "absent"
 }
 ```
 
@@ -294,13 +296,17 @@ From outside Rego, the same projection over the report JSON:
 opa eval -d path/to/src/library.rego -d prod_deploy.rego -i deployments.json \
   --format=pretty 'data.tutorial.report' \
   | jq -r '.results[] | select(.passed == false)
-           | "\(.subject.type) \(.subject.id // "(requirement-level)"): \(.check) — inputs: \(.inputs | map("\(.name)=\(.value|tojson)") | join(", "))"'
+           | "\(.subject.type) \(.subject.id // "(requirement-level)"): \(.check) — \(.cause), inputs: \(.inputs | map("\(.name)=\(.value|tojson)") | join(", "))"'
 ```
 
 ```
-deployment d-3: $applies — inputs: environment="staging"
-deployment d-2: approved — inputs: approved_by=null
+deployment d-3: $applies — value, inputs: environment="staging"
+deployment d-2: approved — absent, inputs: approved_by=null
 ```
+
+`d-2` says `absent` and `d-3` says `value`: one has no approver recorded, the
+other recorded a `staging` environment that put it out of scope. Two rows that
+look alike, two different kinds of failure — and only the first is a breach.
 
 ### Checking a list inside a subject
 
@@ -358,8 +364,8 @@ evidence, not violations, and `evidence.violations` drops them.
 Read `examples/code_review.rego`. It expresses
 [SDLC-CTRL-0007](https://sdlc.kosli.com/controls/release/code_review/), Kosli's
 published code review control, as three requirements — an artifact, a code review
-attestation, and a merged PR — using every concept above plus one custom op, in
-roughly 140 lines.
+attestation, and a merged PR — using most of the concepts above plus one custom
+op, in roughly 160 lines.
 
 Read it as a **teaching example rather than a faithful implementation**. The
 control's subject is a *code change*, and its first requirement is that all of
@@ -420,8 +426,9 @@ asserts nothing and is never compliant.
   zero subjects, which fails `$min_subjects`.
 - **`id`** is a path *within* a subject. If it doesn't resolve, `subject.id` is
   `null`; the row still exists.
-- **`applies_to`** entries use the same check vocabulary as `checks`,
-  collection ops included. All of them must pass for a subject to be in scope.
+- **`applies_to`** entries use the same check vocabulary as `checks` —
+  collection ops and [substitutes](#substitutes) included. All of them must pass
+  for a subject to be in scope.
 - **`min_subjects`** defaults to 1, so a typo in `from` fails the requirement
   instead of vacuously satisfying it. Set it to `0` to opt back into a vacuous
   pass — "if there are any, the rule applies; if there are none, that's fine".
@@ -434,8 +441,8 @@ asserts nothing and is never compliant.
 A check names one operator and its parameters. Every `path` is relative to the
 subject.
 
-**Leaf operators** work on a single subject (or, inside `all`/`any`, on a
-single element):
+**Leaf operators** work on a single subject — or on a single element, inside
+`all`/`any`, or inside an `any_of` option:
 
 | `op` | Parameters | Passes when |
 | --- | --- | --- |
@@ -652,12 +659,18 @@ four different fixes.
   cannot address what it is judging has a worse problem than a value it doesn't
   like.
 - For a **custom op**, the paths are the ones in its declared `inputs` — the
-  same list the row echoes.
+  same list the row echoes, falling back to its `path` if it declares one. A
+  custom op with neither has nothing to report a state for and always says
+  `value`, which is a third reason to declare `inputs`.
 - For `all`/`any`, the path read is the **collection**; a defect inside one
   element is that element's, and shows up as `value`.
-- Synthesised rows (`$well_formed`, `$min_subjects`, `$applies`) read no paths of
-  their own, so their cause is `satisfied` or, for `$applies`, the state of the
-  filter's paths.
+- `$well_formed` and `$min_subjects` read no paths of their own: their cause is
+  `satisfied` when they pass and `value` when they don't. `$applies` reports
+  `satisfied`, or the state of the filter's own paths — an out-of-scope subject
+  whose filter field was missing says `absent`, not `value`.
+- A collection that is present and **empty** reads cleanly, so `all` over it
+  fails with `value`. "No elements" is a verdict about the values, not a
+  failure to read them.
 
 The practical payoff is in messages. `examples/control_43.rego` used to render
 "pull_request attestation is missing **or ambiguous**" and leave the reader to
