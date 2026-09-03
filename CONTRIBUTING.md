@@ -35,9 +35,10 @@ that flag, a failing row without it.
 
 - **`src/library_test.rego`** — the engine: subject resolution, `applies_to`
   filters, every leaf and collection operator (including what each one does with
-  missing, null, and wrong-typed input), echoed inputs, rendered expressions, row
-  shape and totality, `min_subjects`, `$well_formed`, both `require` modes, and
-  the `violations` projection.
+  missing, null, and wrong-typed input), the `each` projection and `any_of`
+  element checks, substitutes, every `cause` value and their precedence, echoed
+  inputs, rendered expressions, row shape and totality, `min_subjects`,
+  `$well_formed`, both `require` modes, and the `violations` projection.
 - **`examples/code_review_test.rego`** — the consumer policy: both README
   scenarios, the violation projection, the `peer_approved` custom op, and
   `data.params` configurability.
@@ -54,6 +55,10 @@ attest. If a change makes one of them fail, the change is almost certainly wrong
   in name order within each group.
 - **Every row resolves to exactly one check definition** via its
   `(requirement, check)` pair.
+- **Every row carries a `cause`, and it is one of the seven documented values.**
+  The field exists to tell absence, a null, an unmatched selector and an
+  ambiguous one apart; a change that lets two of those collapse back into one
+  value takes the field's reason for existing with it.
 - **A denial is never silent.** `test_an_unsatisfied_report_always_explains_itself`
   sweeps all 180 combinations of `require` × `min_subjects` × checks-declared ×
   filter × input shape, asserting that no report is ever `compliant: false` with

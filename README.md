@@ -50,7 +50,8 @@ check that failed, and the input values it read.
 | **Operator** (`op`) | The comparison a check performs — `equals`, `range`, `all`, … The library ships a fixed vocabulary; anything beyond it is a custom op. |
 | **Scope filter** (`applies_to`) | Checks that decide which raw subjects a requirement *applies to*. A PR that isn't merged isn't in breach of a code-review control — it's simply not a subject of it. |
 | **`require`** | Whether `every` in-scope subject must pass all checks, or `some` single subject must pass all of them on its own. |
-| **Result row** | One piece of evidence: this check, against this subject, read these inputs, and passed or didn't. |
+| **Substitute** | Alternative evidence declared on a check: something other than the primary evidence that discharges it. Not an exemption — the requirement still applies. |
+| **Result row** | One piece of evidence: this check, against this subject, read these inputs, and passed or didn't — and, in `cause`, why it reads that way. |
 | **Report** | The whole output: an overall `compliant` verdict, a per-requirement summary with the check definitions, and every result row. |
 | **Violation** | A failing row that actually represents a **breach**. Not every failing row is one — see [Evidence vs. violations](#evidence-vs-violations). |
 | **Fail-closed** | Missing, null, or wrong-typed input makes a check **fail**, never vanish and never accidentally pass. See [Fail-closed rules](#fail-closed-rules). |
@@ -155,7 +156,7 @@ approver.
 human-readable form of each check for free. You only write it yourself for
 custom ops.
 
-**`results`** is the evidence. Every row has the same five fields:
+**`results`** is the evidence. Every row has the same six fields:
 
 ```json
 {
@@ -163,7 +164,8 @@ custom ops.
   "subject": {"type": "deployment", "id": "d-2"},
   "check": "approved",
   "inputs": [{"name": "approved_by", "value": null}],
-  "passed": false
+  "passed": false,
+  "cause": "absent"
 }
 ```
 
@@ -177,24 +179,28 @@ This run produces seven rows. Here they all are, condensed to one line each —
 the JSON row above is the last of them. Row order is deterministic and runs from
 the most general question to the most specific.
 
-| requirement | subject.id | check | inputs | passed |
-| --- | --- | --- | --- | --- |
-| prod_deploy | `null` *(requirement-level)* | `$well_formed` | `count(checks) = 1`, `require = "every"` | ✅ |
-| prod_deploy | `null` *(requirement-level)* | `$min_subjects` | `count(matching(deployments)) = 2` | ✅ |
-| prod_deploy | `"d-1"` | `$applies` | `environment = "prod"` | ✅ |
-| prod_deploy | `"d-2"` | `$applies` | `environment = "prod"` | ✅ |
-| prod_deploy | `"d-3"` | `$applies` | `environment = "staging"` | ❌ |
-| prod_deploy | `"d-1"` | `approved` | `approved_by = "bob"` | ✅ |
-| prod_deploy | `"d-2"` | `approved` | `approved_by = null` | ❌ |
+| requirement | subject.id | check | inputs | passed | cause |
+| --- | --- | --- | --- | --- | --- |
+| prod_deploy | `null` *(requirement-level)* | `$well_formed` | `count(checks) = 1`, `require = "every"` | ✅ | `satisfied` |
+| prod_deploy | `null` *(requirement-level)* | `$min_subjects` | `count(matching(deployments)) = 2` | ✅ | `satisfied` |
+| prod_deploy | `"d-1"` | `$applies` | `environment = "prod"` | ✅ | `satisfied` |
+| prod_deploy | `"d-2"` | `$applies` | `environment = "prod"` | ✅ | `satisfied` |
+| prod_deploy | `"d-3"` | `$applies` | `environment = "staging"` | ❌ | `value` |
+| prod_deploy | `"d-1"` | `approved` | `approved_by = "bob"` | ✅ | `satisfied` |
+| prod_deploy | `"d-2"` | `approved` | `approved_by = null` | ❌ | `absent` |
 
-Three things to take from that table:
+Four things to take from that table:
 
 1. **Every row carries the value it read.** The last row doesn't just say
    "failed" — it says `approved_by` was `null`, so the verdict can be
    recomputed from the row.
-2. **The failure produced a row at all.** In plain Rego an undefined check
+2. **`cause` says what the value means.** The last row echoes `null` and the
+   `d-3` row echoes `"staging"`; those are different kinds of failure, and
+   `absent` versus `value` is the difference between *no evidence was recorded*
+   and *the evidence says no*. See [Causes](#causes).
+3. **The failure produced a row at all.** In plain Rego an undefined check
    leaves no trace. Here `d-2` is named.
-3. **Three checks you didn't declare showed up**, prefixed with `$`. The library
+4. **Three checks you didn't declare showed up**, prefixed with `$`. The library
    synthesises them, and `$` guarantees they can never collide with your own
    check names:
    - **`$well_formed`** — one row per requirement: does this requirement assert
@@ -319,13 +325,18 @@ whole projection:
   "requirement": "prod_deploy", "subject": {"type": "deployment", "id": "d-1"},
   "check": "checks_green",
   "inputs": [{"name": "checks[].conclusion", "value": ["success", "failure"]}],
-  "passed": false
+  "passed": false,
+  "cause": "value"
 }
 ```
 
 Against a deployment whose `checks` array is *empty*, it fails, with
 `"value": []`. "Every check passed" over a subject with no recorded checks is
 absence of evidence, not evidence of compliance.
+
+One level deeper — every commit of every pull request — is `"each"`, and the
+nested check can itself be an `any_of`; see
+[Collection operators](#operators).
 
 ### Requiring one subject to pass everything
 
@@ -459,13 +470,46 @@ missing would be excluded from a four-eyes requirement rather than denied by it.
 Where that matters, assert the field as a `check` too, so unreadable input has to
 surface somewhere as a failure.
 
-**Collection operators** apply a nested check across a nested array, one nesting
-level deep (Rego forbids recursion):
+**Collection operators** apply a nested check across a nested array:
 
 | `op` | Parameters | Passes when |
 | --- | --- | --- |
-| `all` | `path`, `check` | `path` is a non-empty array and *every* element passes the nested `check` |
-| `any` | `path`, `check` | `path` is a non-empty array and *some* element passes the nested `check` |
+| `all` | `path`, `check`, `each` *(optional)* | `path` is a non-empty array and *every* element passes the nested `check` |
+| `any` | `path`, `check`, `each` *(optional)* | `path` is a non-empty array and *some* element passes the nested `check` |
+
+The nested `check` is a leaf **or an `any_of`** over leaves. That second form is
+what makes "every element satisfies A or B" expressible — the shape of every
+exemption, where one field carries the evidence and another carries the reason
+there is none.
+
+**`each` projects one level deeper.** With it, the elements quantified over are
+the members of every `path[].each` rather than the members of `path`:
+
+```rego
+# every commit of every pull request has a linked account, or says why it can't
+{
+	"op": "all",
+	"path": ["pull_requests"],
+	"each": ["commits"],
+	"check": {"op": "any_of", "options": {
+		"linked_account": [{"op": "non_empty_string", "path": ["author_username"]}],
+		"web_flow": [{"op": "matches_any", "path": ["author"], "patterns": bot_patterns}],
+	}},
+}
+```
+
+Two levels is the limit — Rego forbids recursion, which is the same wall
+`any_of` hits. `each` flattens, but only after establishing that **every**
+collection on the way down is a non-empty array: an inner collection that isn't
+there fails the check instead of reducing the population being quantified over,
+which would leave the elements that *are* there carrying the verdict for the
+ones that aren't. The row echoes the inner collections themselves, since an
+`any_of` element check reads several fields for different reasons and there is
+no single field to project.
+
+This pair was the difference between `examples/control_43.rego`'s identity check
+being a custom op and being data. That is worth knowing before writing a custom
+op that quantifies: check whether `each` plus `any_of` already says it.
 
 **The combinator** is the only operator that relates two fields of a subject to
 *each other*:
@@ -518,6 +562,56 @@ The row echoes **every field any option read**, deduplicated and sorted by name,
 because a disjunction's verdict depends on the whole set — which option matched is
 not recoverable from any single field.
 
+### Substitutes
+
+Any named check may declare a **`substitute`**: a second check that satisfies it
+when the check itself does not hold.
+
+```rego
+"reviewed_in_a_pull_request": {
+	"description": "The commit was reviewed in a pull request",
+	"op": "present",
+	"path": pr_attestation,
+	"substitute": {
+		"description": "A verified committer attested the repository's initial commit",
+		"op": "equals",
+		"path": ["compliance_status", "attestations_statuses", {"where": {"attestation_name": "initial-commit"}}, "is_compliant"],
+		"value": true,
+	},
+}
+```
+
+This is how **alternative evidence** is expressed: the requirement still
+applies, and something other than the primary evidence discharges it. A
+repository's initial commit can carry no pull request — there is no parent to
+open one against — so a compliant attestation from a verified committer stands
+in for the review that could never have happened.
+
+Substitution is not exemption, and the two have different homes. An exemption
+says the subject is **not a subject** of this requirement, which is
+`applies_to`: a service-account commit produces an `$applies` row and no check
+rows, because it is not in breach of four-eyes. A substitute says the subject
+**is** in scope and the requirement **is** met, by other means — so it produces
+an ordinary check row, passing, with `cause: "substituted"` and the substitute's
+own inputs echoed beside the primary's. Choosing `applies_to` where a substitute
+belongs throws away the evidence that discharged the check.
+
+Details worth knowing:
+
+- A substitute belongs on a **named** check — one in `checks`, or an
+  `applies_to` filter. It is not honoured on the element check of `all`/`any`,
+  nor on a leaf inside `any_of`.
+- A substitute of a substitute is **ignored**: one level, like every other
+  nesting here.
+- Either side may be a custom op; both are evaluated by the same operator
+  machinery.
+- The rendered expression names both sides — `A, or substitute: B` — because a
+  row that passed on its substitute is unexplainable against an expression that
+  names only the primary.
+- A failing row's `cause` describes the paths **the check itself** reads. "The
+  alternative evidence is missing too" is not a reason the primary evidence is
+  unsatisfactory.
+
 **Custom ops** cover anything the vocabulary can't express. You contribute an
 `op_passed(check, subject)` rule body into the `kosli.evidence` package from
 your own file — see `examples/code_review_ops.rego` — and it flows through the
@@ -534,6 +628,43 @@ A custom op is a normal Rego rule, so it's on you to keep it fail-closed. The
 comments in `examples/code_review_ops.rego` walk through the three ways
 `peer_approved` could have failed open.
 
+### Causes
+
+Every row carries a `cause`. It exists because `passed: false` plus an echoed
+`null` is ambiguous in a way that matters: a field that was never recorded, a
+field explicitly set to `null`, a path selector that matched nothing, and one
+that matched twice all echo as `null`, and they are four different problems with
+four different fixes.
+
+| `cause` | Means |
+| --- | --- |
+| `satisfied` | the check held |
+| `substituted` | the check did not hold; its declared substitute did |
+| `ambiguous` | a path selector matched **more than one** element |
+| `unmatched` | a path selector matched nothing, though its collection was there |
+| `absent` | a path the check reads is not present at all |
+| `null` | a path the check reads is present and `null` |
+| `value` | everything read cleanly; the assertion is false of the values |
+
+- Computed over **every path the check reads**, with precedence in that order —
+  so a row names the most fundamental thing wrong with its inputs rather than
+  the first. An ambiguous selector outranks any value, because a policy that
+  cannot address what it is judging has a worse problem than a value it doesn't
+  like.
+- For a **custom op**, the paths are the ones in its declared `inputs` — the
+  same list the row echoes.
+- For `all`/`any`, the path read is the **collection**; a defect inside one
+  element is that element's, and shows up as `value`.
+- Synthesised rows (`$well_formed`, `$min_subjects`, `$applies`) read no paths of
+  their own, so their cause is `satisfied` or, for `$applies`, the state of the
+  filter's paths.
+
+The practical payoff is in messages. `examples/control_43.rego` used to render
+"pull_request attestation is missing **or ambiguous**" and leave the reader to
+guess, because the row could not tell the two apart. With `cause` they are two
+messages: one means a collector never ran, the other means two attestations of
+the same type landed on one trail.
+
 ### Fail-closed rules
 
 Every operator fails on a missing, null or wrong-typed field rather than
@@ -546,7 +677,8 @@ Rego's defaults point the other way:
   accepts two timestamp formats but never mixes them: a number against an
   RFC3339 string fails rather than coercing, and two epoch numbers are assumed
   to share a unit, which no value can reveal.
-- `all`/`any` require a non-empty array.
+- `all`/`any` require a non-empty array — and with `each`, so does every inner
+  collection.
 - `min_subjects` defaults to 1, so a typo in `from` fails the requirement
   instead of vacuously satisfying it. A policy with no requirements at all is
   never compliant, and neither is a requirement that declares no checks.
@@ -565,7 +697,7 @@ results}` — see [The report](#the-report) for a worked example.
 Check **definitions** — raw spec, description, and rendered `expression` — live
 once per `(requirement, check)` pair under `requirements[<name>].checks`. Rows
 in `results` carry only what differs per subject:
-`{requirement, subject, check, inputs, passed}`. A row's `(requirement, check)`
+`{requirement, subject, check, inputs, passed, cause}`. A row's `(requirement, check)`
 is a reference into `requirements[<requirement>].checks[<check>]`. Look a check
 up by that pair, not by name alone — two requirements may reuse a name for
 unrelated checks.
@@ -601,7 +733,8 @@ array, each entry being a failing row joined to its check definition:
     "check": "commits_signed",
     "description": "Every commit in the pull request is signed ...",
     "expression": "every commits: verified == true",
-    "inputs": [{"name": "commits[].verified", "value": [true, false]}]
+    "inputs": [{"name": "commits[].verified", "value": [true, false]}],
+    "cause": "value"
   }
 ]
 ```
@@ -611,7 +744,7 @@ array, each entry being a failing row joined to its check definition:
   Keeps `$min_subjects` and `$well_formed` failures. See
   [Evidence vs. violations](#evidence-vs-violations) for why each.
 - `description` and `expression` fall back to `""` when the check didn't declare
-  them; every other field comes from the row.
+  them; every other field, `cause` included, comes from the row.
 - An **array**, not a set: order follows `results`, and two distinct failures
   that would render to the same string are not collapsed.
 - Returns **structured entries, never formatted strings**.
@@ -660,7 +793,7 @@ each suite covers, the invariants they pin, and the test conventions.
   `control_43.rego` is the more interesting one: a port of a **real production
   policy** — a customer's four-eyes implementation (`RCTLDEF0000043`) of that same
   SDLC-CTRL-0007 requirement, modelled per commit rather than per artifact. With
-  `control_43_ops.rego` for the two things the vocabulary can't express and
+  `control_43_ops.rego` for the one thing the vocabulary can't express and
   `control_43_test.rego` mirroring all 37 cases of the original's test suite. It
   agrees with the original on every case except three, where the original passes
   input it cannot verify — see [INTEGRATION.md](INTEGRATION.md).
@@ -671,9 +804,11 @@ each suite covers, the invariants they pin, and the test conventions.
   one real breach — the code review attestation is `COMPLETE` but not compliant —
   while its **`merged_pr` requirement stays inert**: the per-commit fields it
   reads (`pull_requests`, `commits`, `approvers`, `verified`) exist nowhere in a
-  real trail, which carries no PR detail at all. That remaining gap is the point
-  of keeping the file, and it needs an input document composed from more than one
-  API call rather than a change to any policy.
+  `kosli get trail` response, which carries no PR detail at all. The gap is a
+  property of that one API call, not of the policy — `kosli evaluate` composes
+  the document from a trail fetch plus one attestation fetch per attestation, and
+  against *that* document the PR fields are present. See
+  [INTEGRATION.md](INTEGRATION.md).
   `control_1068.rego` is the third, and the only one that is not four-eyes: a
   sketch of a customer's business-requirements control (`RCTLDEF0001068`), whose
   rule still lives in TypeScript and has no Kosli integration yet. It earns its

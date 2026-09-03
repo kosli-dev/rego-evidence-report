@@ -228,9 +228,10 @@ def cmd_run(args):
                 "%s=%s" % (i.get("name"), brief(i.get("value")))
                 for i in row.get("inputs", [])
             )
-            print("  %-16s %-16s %-30s %s" % (
+            print("  %-16s %-16s %-9s %-30s %s" % (
                 row.get("requirement"),
                 row.get("check"),
+                row.get("cause", ""),
                 brief_id(row.get("subject", {}).get("id")),
                 inputs,
             ))

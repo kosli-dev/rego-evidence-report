@@ -244,10 +244,202 @@ So the two doors are:
 | door | carries | when to use it |
 | --- | --- | --- |
 | `kosli evaluate` | `allow` (bool) + `violations` (`[]string`) | a gate. It also fetches the trail data for you, which is its real convenience |
-| `opa eval` in the workflow, then `kosli attest custom` | the whole report | evidence. Needs the input document from somewhere else |
+| `opa eval` in the workflow, then `kosli attest custom` | the whole report | evidence. Needs the input document from somewhere else — see below, it comes from the first door |
 
 A gate being a boolean is correct. The error was trying to push evidence through
 the door built for gating.
+
+The two doors also compose, which is what makes "needs the input document from
+somewhere else" less of a problem than it reads. `kosli evaluate ... --show-input
+--output json | jq '.input'` is a capture of exactly the document the policy sees;
+feed that to `opa eval` and you get the report from the same bytes the gate
+judged. The CLI's own examples suggest this workflow, and on `main` there is a
+third subcommand built for it — `kosli evaluate input --input-file trail-data.json
+--policy policy.rego`, which runs a captured document through the embedded OPA
+with no API call at all, and `--params @params.json` to populate `data.params`
+(which `examples/control_43.rego` already reads for its service-account
+patterns). Neither `evaluate input` nor `--params` is in 2.13.1; both are in
+`cmd/kosli/evaluateInput.go` and `evaluateHelpers.go` on `main`.
+
+## Where the input document comes from — settled, by running it
+
+This was the last "unverified, and now the most important gap" in the status list
+below: every report so far had been computed from a fixture written by hand.
+`kosli evaluate` turns out to compose exactly the document the port needs, and it
+does the composition itself.
+
+The mechanism, from `cmd/kosli/evaluateHelpers.go` and `internal/evaluate/transform.go`
+(**identical in v2.13.1 and on `main`**), per trail named on the command line:
+
+1. `GET /api/v2/trails/{org}/{flow}/{trail}`.
+2. `TransformTrail` — `compliance_status.attestations_statuses` arrives from the
+   API as an **array** and is converted to a **map keyed by `attestation_name`**.
+   Artifact-level attestations get the same treatment.
+3. `FilterAttestations` — `--attestations` *limits* which entries survive (plain
+   name for trail-level, `artifact.name` for artifact-level). It does not enable
+   enrichment, and because it runs before the next step it also reduces the
+   number of API calls.
+4. `CollectAttestationIDs` then **one `GET /api/v2/attestations/{org}?attestation_id=<id>`
+   per surviving `attestation_id`** (deduplicated; entries without one are
+   skipped), and `RehydrateTrail` merges each attestation's own fields onto its
+   status entry — *only where the key is not already there*, so status metadata
+   wins a collision. A trail with n attestations therefore costs n+1 API calls.
+5. The result is wrapped as `input.trails[]`, one whole trail object per name
+   (`evaluate trail` wraps a single one as `input.trail`).
+
+So the enriched entry is the union of the status metadata (`attestation_id`,
+`attestation_name`, `attestation_type`, `is_compliant`, `status`) and the
+attestation object (`pull_requests`, its own `git_commit_info`,
+`schema_version`, `attestation_data`), and **`pull_requests` is reachable at
+`compliance_status.attestations_statuses[<name>].pull_requests[]`**. The port's
+`from: ["trails"]`, `id: ["name"]` and selector path are correct as written.
+
+Two consequences the port was already built for, by luck or by instinct:
+
+- The collection is a **map keyed by attestation name**, so a policy that reads
+  it positionally breaks and one that keys on the name breaks the moment
+  `KOSLI_ATTESTATION_NAME` changes. Selecting on `attestation_type` is the only
+  stable address, and the library's requirement that a selector resolve over a
+  map as readily as an array is load-bearing rather than a nicety.
+- The map is keyed by name, so **two attestations of the same type coexist
+  happily** — exactly the defect-3 shape. The selector fails closed on it and now
+  says `cause: "ambiguous"` rather than being indistinguishable from a missing
+  attestation.
+
+Verified by running `kosli` 2.13.1 with `--host` pointed at a stub HTTP server on
+localhost serving the two endpoints above, so the transformation is the installed
+binary's own code path over synthetic values. The captured `--show-input` document
+then went straight into the port:
+
+```sh
+kosli evaluate trails <sha> --policy allow-all.rego --flow f --show-input \
+  --output json --host http://127.0.0.1:8777 --org o --api-token t | jq '.input' > input.json
+
+opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
+  -i input.json 'data.control43.output'
+```
+
+`allow: true`, no violations, ten rows. Deleting `author_username` from the PR
+commit produces the identity message; adding a second `pull_request` attestation
+under a different name produces the ambiguity message.
+
+The whole chain then ran through the CLI as a gate, which is the one thing that
+had only ever been `opa check`ed:
+
+```sh
+python3 fieldkit/bundle.py --policy examples/control_43.rego \
+    --ops examples/control_43_ops.rego -o policy.rego
+
+kosli evaluate trails <sha> --policy policy.rego --flow f \
+  --host http://127.0.0.1:8777 --org o --api-token t
+# RESULT:      DENIED
+# VIOLATIONS:  Commit 1111111: a pull request commit has no linked GitHub account …
+# exit 1
+```
+
+So the bundled library, merged into `package policy` with its API renamed, is
+accepted by `kosli evaluate` and gates on the document that command composes
+itself. `violations` comes back `null` rather than `[]` when `allow` is true —
+the CLI only runs that second query on a denial.
+
+**What this does not verify** is Kosli's response bodies — the stub served shapes reported from real
+trails by the firewalled machine, not captured from the API here — nor which
+document control 43's own workflow hands to `opa`, which is still a question for
+its workflow YAML.
+
+## What real data said about the fields
+
+From the firewalled machine, against real trails and PR attestations. Field names
+and types only, no values.
+
+- A `pull_request` attestation carries `pull_requests[]` as a **sibling of
+  `git_commit_info`**, each entry holding `url, state, author, title, created_at,
+  merged_at, head_ref, merge_commit`, `approvers[] {username, state, timestamp}`
+  and `commits[] {sha1, message, author, author_username?, branch, timestamp,
+  url}`. `schema_version: 2` and `is_compliant` sit on the attestation.
+- **All timestamps are numeric epoch** (floats). `compare_time` accepting epoch
+  numbers is therefore not a convenience; RFC3339 parsing would simply be wrong
+  here.
+- **`author_username` on a commit is optional and unstable.** Present on every
+  commit of one real PR, absent on a `noreply`/web-flow commit of another — an
+  n-of-N field, which is the fail-closed hazard the trip set out to find. Two
+  causes are indistinguishable at the value level: never resolvable (bot,
+  web-flow, Copilot — the intended exemption) and *was* resolvable and no longer
+  is (a deleted GitHub account; hypothesised, not observed in sample).
+- **The git `author` string is the discriminator**, not the null: it stays
+  `Name <email>` either way, which is why the exemption matches on it. Confirmed
+  by removing `author_username` from a real-author commit: `identities_resolved`
+  fails and the trail is denied. Fail-closed, in the direction we want.
+- A design note worth keeping: identity that depends on mutable external state
+  (a GitHub account that can be deleted) is a **weak subject**. Where the data
+  allows, an account-independent anchor — a verified committer, a signature — is
+  the better thing to hold responsible.
+
+Still untested on real data: a **pull request with two distinct authors**. Both
+real PRs were single-author, so the per-author rule (`every author ∃ approver ≠
+author`) has met only synthetic input; the port's suite covers it in
+`test_multi_author_cross_approval_passes` and its negative twin. Generating a real
+two-author PR needs write access to a real repository, so it stays open here.
+
+## What the field report asked the library for, and what it got
+
+Three asks came back from the port meeting real data. Two are now vocabulary; the
+third turned out to be asking for the wrong thing.
+
+**1. Substitute evidence — a check discharged by something other than its primary
+evidence.** Production lets a compliant `custom:initial-commit-by-verified-committer`
+attestation stand in for the pull request requirement on a repository's root
+commit, which no pull request could ever have reviewed. The port had no equivalent
+and false-failed the initial commit with "no PR found". Any named check may now
+declare a **`substitute`**, and the four PR-dependent checks of `commit_reviewed`
+declare the same one. The row says `cause: "substituted"` and echoes the evidence
+that discharged it, which is why this is a substitute rather than an `applies_to`
+exemption: out of scope produces no evidence at all, and here there is evidence,
+just not the usual kind.
+
+**2. A row-level cause discriminator.** Rows now carry
+`cause ∈ {satisfied, substituted, ambiguous, unmatched, absent, null, value}`.
+This was independently reinvented by the production policy, which emits four
+distinct reasons and uses a separate `any_pr_fully_approved` rule to keep "no
+approval" apart from "unresolvable author" — and it closes the port's own worst
+message. `pr_attestation_present` used to render "missing **or ambiguous**",
+because a selector that matched nothing and a selector that matched twice both
+echoed `null`; they are now two messages, and they send someone to two different
+places.
+
+**3. A `resolved-or-exempt` identity operator.** Not added — the ask diagnosed the
+wrong blocker. The disjunction it wanted (`author_username` is a non-empty string,
+*or* the git author matches an exemption pattern) was already expressible as
+`any_of`; what actually forced `identities_resolved` to be a custom op was
+**nesting depth**: every commit of every pull request is two levels of collection
+and the vocabulary stopped at one. So the library gained `each` — a one-level
+projection on `all`/`any` — and let their element check be an `any_of`. Together
+those express the check as data:
+
+```rego
+"identities_resolved": {
+	"op": "all",
+	"path": pull_requests,
+	"each": ["commits"],
+	"check": {"op": "any_of", "options": {
+		"linked_account": [{"op": "non_empty_string", "path": ["author_username"]}],
+		"web_flow": [{"op": "matches_any", "path": ["author"], "patterns": service_account_patterns}],
+	}},
+	"substitute": verified_initial_commit,
+}
+```
+
+A narrower bespoke operator would have replaced one custom op with one operator
+nobody else could use, and left the nesting limit where it was. This removes the
+custom op outright, renders its own expression instead of a hand-written string,
+and puts the exemption's discriminator in the report where a reader can see it.
+`control_43_ops.rego` is down to the four-eyes condition itself, which relates
+approvers to commit authors across two collections and remains the escape hatch
+working as intended.
+
+One behaviour tightened in passing: the custom op treated a pull request with an
+**empty** `commits` array as "every commit checks out". `each` requires every
+collection on the way down to be non-empty, so that now fails closed.
 
 ## Where the report goes: a custom attestation type
 
@@ -368,8 +560,8 @@ happens to this library.
 ## The port, and what parity measured
 
 `examples/control_43.rego` expresses the control as a `kosli.evidence` policy,
-with `examples/control_43_ops.rego` supplying two custom operators and
-`examples/control_43_test.rego` mirroring all 37 of the original's cases.
+with `examples/control_43_ops.rego` supplying the one remaining custom operator
+and `examples/control_43_test.rego` mirroring all 37 of the original's cases.
 
 Parity was measured rather than asserted: both policies were loaded together and
 run over the same 27 input documents, comparing `allow` and violation counts.
@@ -393,19 +585,50 @@ for.
 What the port needed that the vocabulary didn't have: a **path selector**
 (`{"where": {"attestation_type": "pull_request"}}`), added to the library, which
 resolves identically whether attestations arrive as an array or a map, and
-`not_matches_any` for the service-account exemption. What still needs a custom op
-is the four-eyes condition itself — approvers compared against commit authors
-across two nested collections — which no operator over a single path can express.
-That is the escape hatch working as intended.
+`not_matches_any` for the service-account exemption. Then, after real data was
+read: `each` and an `any_of` element check (which turned `identities_resolved`
+from a custom op into data), a `substitute` for the initial commit, and a
+per-row `cause` — all three above. What still needs a custom op is the four-eyes
+condition itself — approvers compared against commit authors across two nested
+collections — which no operator over a single path can express. That is the
+escape hatch working as intended.
 
 The exemption is expressed as **scope**, not as a passing check: a service-account
 commit produces a `$applies` row and no check rows, because it is not in breach of
 four-eyes, it is not a subject of it.
 
+**That framing had a fail-open edge, and the field report is what exposed it.** A
+scope filter fails *permissively*: a commit whose `git_commit_info.author` cannot
+be read matches no exemption pattern, so `not_matches_any` fails, so the commit
+falls out of scope — and with `min_subjects: 0` (there deliberately, so a release
+of nothing but bot commits is compliant) the requirement went with it. A trail
+with no author and no attestations was **allowed, with an empty report of
+breaches**. Reproduced, then closed: `commits_present`, which declares no filter,
+now asserts the author too, so an unreadable author is denied by a requirement
+nothing can filter it away from.
+
+Worth being straight about the direction: the original's early-exit exemption
+fails *closed* here — an unreadable author matches no pattern, rule 1 doesn't
+fire, and the commit goes on to need a pull request. Expressing an exemption as
+scope buys better evidence and costs this hazard, which is why the README's
+`matches_any` entry says to assert the field as a check as well. This is that
+warning being paid for the first time.
+
+The same pass closed a second hole in the message projection. `violations` is
+keyed by a precedence table, and a check missing from that table produced no
+message — so `commit_identified` could deny a trail while `violations` came back
+empty, which is a denial nobody can act on. Both `commits_present` checks are in
+the table now, and a test sweeps every check for a message.
+
 One honest divergence: `identities_resolved` is a gating check here, while in the
 original an unresolved identity in one pull request cannot deny a commit that a
 *different* pull request fully covers. The port is stricter in that corner. No test
 in either suite exercises it.
+
+The port has since moved with production rather than staying frozen at parity: the
+initial-commit substitute (production gained it; the port false-failed without it)
+and two messages where there was one. Parity as measured above therefore describes
+the 37 cases, not the whole of either policy.
 
 ## Status of these claims
 
@@ -430,22 +653,32 @@ TypeScript on a machine with access to them.
 - **Confirmed by running it:** the merge collision on `report` and `violations`,
   and that namespacing the library's API resolves it — the concatenated bundle
   passes `opa check --strict` and evaluates to `allow`, `violations` and a 10-row
-  report. The jq evaluation rules were run against a real report with `jq`.
+  report. The jq evaluation rules were run against a real report with `jq`. The
+  bundle has since been run **through `kosli evaluate` itself**, against the stub
+  API: `RESULT: DENIED`, one violation string, exit 1. The gate works end to end.
 - **Confirmed by dry-run only:** the custom-attestation path. `kosli attest custom
   --dry-run` shows the whole report travelling as `attestation_data` to
   `/api/v2/attestations/{org}/{flow}/trail/{trail}/custom`, but no request was ever
   sent. **Server-side schema validation and jq evaluation are therefore untested.**
-- **Documented but not executed:** `--show-input` was never run, so the live wire
-  shape of `attestations_statuses` is still unconfirmed — though the policy
-  iterates values and selects on `attestation_type`, which works for a map or an
-  array, making the distinction moot for policy design.
-- **Unverified, and now the most important gap:** where the input document comes
-  from on a real run. Every report produced so far was computed from a fixture
-  written by hand in a scratchpad, not from anything Kosli returned. Something must
-  fetch the trail and feed OPA — `kosli get trail`, `kosli evaluate --show-input`,
-  or the collector composing it — and which one control 43 actually uses is not
-  known. Unlike the two questions above, this one really does live in the
-  restricted machine's workflow YAML.
+- **Confirmed by running `--show-input`:** the wire shape of
+  `attestations_statuses` — a map keyed by `attestation_name`, with each
+  attestation's own payload merged onto its status entry, `pull_requests`
+  included. Run against a stub API on localhost via `--host`, so the composition
+  is the installed 2.13.1 binary's, over shapes reported from real trails rather
+  than captured from the API here. The port evaluates that captured document
+  correctly. See [Where the input document comes from](#where-the-input-document-comes-from--settled-by-running-it).
+- **Confirmed against real trails, by the firewalled machine:** the
+  `pull_requests[]` field names and types; epoch floats throughout;
+  `author_username` being optional and unstable, with the git `author` string as
+  the discriminator; `schema_version: 2`; `is_compliant` on the attestation; and
+  that removing a real commit's `author_username` denies the trail. Field names
+  and types only — no values crossed.
+- **Still open:** which document control 43's *own* workflow hands to `opa`.
+  `kosli evaluate --show-input` is now known to produce a document the policy can
+  read, and `kosli get trail` is known not to be one (no PR payload), but which
+  the workflow actually uses lives in its YAML on the restricted machine. Also
+  open: a real pull request with **two distinct authors**, which needs write
+  access to a real repository — the per-author rule has met only synthetic input.
 - **Also unverified:** whether attestation payloads have a size limit, which
   matters because a report is O(subjects x checks) and every row echoes its inputs.
   And `--summary`, which would render key report numbers in the Kosli UI, exists in

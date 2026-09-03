@@ -414,21 +414,101 @@ test_stricter_untimestamped_commit_is_rejected if {
 # return two values, which OPA rejects as eval_conflict_error — the whole
 # evaluation dies. A selector requiring exactly one match fails closed instead,
 # and says which commit and which check.
+ambiguous_trail := {
+	"name": "abc1234",
+	"git_commit_info": {"author": "alice <alice@example.com>", "sha1": "abc1234"},
+	"compliance_status": {"attestations_statuses": {
+		"pr-a": {"attestation_type": "pull_request", "pull_requests": [make_pr(
+			"abc1234", "alice",
+			[pr_commit("s1", "alice")], [approval("bob", 1000001)],
+		)]},
+		"pr-b": {"attestation_type": "pull_request", "pull_requests": []},
+	}},
+}
+
 test_stricter_ambiguous_attestation_fails_closed if {
-	pr := make_pr("abc1234", "alice", [pr_commit("s1", "alice")], [approval("bob", 1000001)])
-	trail := {
-		"name": "abc1234",
-		"git_commit_info": {"author": "alice <alice@example.com>", "sha1": "abc1234"},
-		"compliance_status": {"attestations_statuses": {
-			"pr-a": {"attestation_type": "pull_request", "pull_requests": [pr]},
-			"pr-b": {"attestation_type": "pull_request", "pull_requests": []},
-		}},
-	}
-	v := violations_for([trail])
+	v := violations_for([ambiguous_trail])
 	count(v) == 1
 	some msg in v
+	contains(msg, "two or more pull_request attestations match")
+	not out(make_input([ambiguous_trail])).allow
+}
+
+# The distinction the report could not draw before rows carried a cause: two
+# attestations and no attestation both resolve the selector to nothing, and the
+# fixes are different people's work.
+test_ambiguous_and_missing_attestations_get_different_messages if {
+	ambiguous := violations_for([ambiguous_trail])
+	missing := violations_for([{
+		"name": "abc1234",
+		"git_commit_info": {"author": "alice <alice@example.com>", "sha1": "abc1234"},
+		"compliance_status": {"attestations_statuses": {}},
+	}])
+	ambiguous != missing
+	some msg in missing
 	contains(msg, "pull_request attestation is missing")
-	not out(make_input([trail])).allow
+}
+
+test_the_ambiguous_row_names_the_cause if {
+	rows := [r |
+		some r in out(make_input([ambiguous_trail])).report.results
+		r.check == "pr_attestation_present"
+	]
+	count(rows) == 1
+	rows[0].cause == "ambiguous"
+}
+
+# ---------- the initial commit ----------
+
+# The case the port false-failed until checks could declare a substitute: the
+# repository's first commit, which no pull request could have reviewed, carrying
+# the alternative evidence production accepts instead.
+initial_commit_trail(compliant) := {
+	"name": "0000001",
+	"git_commit_info": {"author": "alice <alice@example.com>", "sha1": "0000001"},
+	"compliance_status": {"attestations_statuses": {"initial-commit": {
+		"attestation_type": "custom",
+		"attestation_name": "initial-commit-by-verified-committer",
+		"is_compliant": compliant,
+	}}},
+}
+
+test_verified_initial_commit_passes_without_a_pull_request if {
+	out(make_input([initial_commit_trail(true)])).allow
+	violations_for([initial_commit_trail(true)]) == set()
+}
+
+# Not a waiver: the substitute has to be compliant evidence, and a
+# non-compliant attestation leaves the commit exactly as unreviewed as it was.
+test_non_compliant_initial_commit_attestation_does_not_substitute if {
+	not out(make_input([initial_commit_trail(false)])).allow
+	some msg in violations_for([initial_commit_trail(false)])
+	contains(msg, "pull_request attestation is missing")
+}
+
+test_a_substituted_row_records_which_evidence_discharged_it if {
+	rows := [r |
+		some r in out(make_input([initial_commit_trail(true)])).report.results
+		r.check == "pr_attestation_present"
+	]
+	rows[0].passed == true
+	rows[0].cause == "substituted"
+}
+
+# A commit that has a pull request is judged on it, not on the substitute — the
+# substitute is only consulted when the check itself does not hold.
+test_an_ordinary_commit_is_unaffected_by_the_substitute_path if {
+	pr := make_pr("abc1234", "alice", [pr_commit("s1", "alice")], [approval("alice", 1000001)])
+	some msg in violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])
+	contains(msg, "independent approval")
+}
+
+# A pull request recording no commits at all cannot be checked for who wrote
+# them. The identity check now says so, where the custom op it replaced treated
+# an empty commit list as "every commit checks out".
+test_a_pull_request_with_no_commits_is_unverifiable if {
+	pr := make_pr("abc1234", "alice", [], [approval("bob", 1000001)])
+	not out(make_input([make_trail("abc1234", "alice <alice@example.com>", [pr])])).allow
 }
 
 # The evidence the original cannot produce: a row per commit per check, carrying
@@ -443,8 +523,48 @@ test_report_carries_a_row_per_commit_and_check if {
 		r.passed == true
 	}
 	rows == {
-		"commit_identified", "$applies",
+		"commit_identified", "author_recorded", "$applies",
 		"pr_attestation_present", "pull_request_found",
 		"identities_resolved", "independently_approved",
+	}
+}
+
+# ---------- the exemption cannot swallow a commit it could not read ----------
+
+# A scope filter fails permissively: an unreadable author matches no exemption
+# pattern, so the commit falls out of scope and, with min_subjects 0, took the
+# whole requirement with it. Allowed, silently, with no evidence at all — until
+# the author was asserted where nothing can filter it away.
+test_a_commit_with_no_author_is_denied_rather_than_exempted if {
+	trail := {
+		"name": "abc1234",
+		"compliance_status": {"attestations_statuses": {}},
+	}
+	not out(make_input([trail])).allow
+	some msg in violations_for([trail])
+	contains(msg, "no git author recorded")
+}
+
+test_a_trail_that_names_no_commit_is_denied_out_loud if {
+	trail := {
+		"name": "",
+		"git_commit_info": {"author": "alice <alice@example.com>"},
+		"compliance_status": {"attestations_statuses": {}},
+	}
+	not out(make_input([trail])).allow
+	some msg in violations_for([trail])
+	contains(msg, "does not name the commit it covers")
+}
+
+# The property behind both: `allow: false` with an empty `violations` would be a
+# denial nobody can act on. Every check in either requirement has a message, and
+# the precedence table is what guarantees it.
+test_no_failing_check_is_left_without_a_message if {
+	every trail in [
+		{"name": "abc1234", "compliance_status": {"attestations_statuses": {}}},
+		{"name": "", "git_commit_info": {"author": "alice <a@example.com>"}},
+		{"name": "abc1234", "git_commit_info": {"author": "alice <a@example.com>"}},
+	] {
+		count(violations_for([trail])) > 0
 	}
 }

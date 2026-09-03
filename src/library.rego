@@ -1,4 +1,4 @@
-# kosli.evidence v5
+# kosli.evidence v6
 #
 # A policy declares an object mapping requirement names to requirements, and
 # passes it to report():
@@ -18,12 +18,25 @@
 # a row's (requirement, check) pair always resolves to exactly one definition.
 #
 # Leaf check ops: range, excludes, includes, equals, present,
-# non_empty_string, compare, compare_time.
-# Collection ops: {"op": "all"|"any", "path": [...], "check": <leaf check>}
-# (one nesting level: Rego forbids recursion). Both require a non-empty array:
-# zero recorded elements is absence of evidence, not evidence of compliance.
+# non_empty_string, matches_any, not_matches_any, compare, compare_time.
+# Combinator: {"op": "any_of", "options": {name: [<leaf check>, ...]}} — a
+# disjunction of conjunctions over leaf checks.
+# Collection ops: {"op": "all"|"any", "path": [...], "check": <leaf or any_of>,
+# "each": [...]} — "each" projects one level deeper, so the element checked is
+# every member of every subject[path][].each rather than every member of
+# subject[path]. Two levels is the limit: Rego forbids recursion.
+# Both require a non-empty array at every level: zero recorded elements is
+# absence of evidence, not evidence of compliance.
 # Custom ops: contribute op_passed(check, subj) bodies to this package from
 # another file; give the check "expression" and "inputs" for report rendering.
+#
+# Any named check may declare a "substitute": a second check that satisfies it
+# when the check itself does not hold. That is how alternative evidence is
+# expressed — the requirement stands, and something other than the primary
+# evidence discharges it. A substitute is honoured for a named check (including
+# an "applies_to" filter), not for the element check of "all"/"any" and not for
+# a leaf inside "any_of", and a substitute of a substitute is ignored: one
+# level, for the same reason every other nesting here stops at one.
 #
 # Note that "from" locates a collection in the input document, while a check's
 # "path" locates a field within one subject. Two different roots, two different
@@ -32,9 +45,23 @@
 # Report shape: report.requirements[<name>].checks is the definition table — one
 # entry per check name, holding the raw check spec plus its rendered
 # "expression". report.results[] rows carry only
-# {requirement, subject, check, inputs, passed} — look up
+# {requirement, subject, check, inputs, passed, cause} — look up
 # report.requirements[<requirement>].checks[<check>] for the description and
 # expression instead of repeating them on every row.
+#
+# "cause" says *why* a row reads the way it does, which a bare boolean plus an
+# echoed null cannot: absence, a null, and a path selector that matched nothing
+# or matched twice all render as null in "inputs" and mean different things.
+# One of:
+#   satisfied   — the check held
+#   substituted — the check did not hold; its declared substitute did
+#   ambiguous   — a path selector matched more than one element
+#   unmatched   — a path selector matched nothing, though its collection was there
+#   absent      — a path the check reads is not present at all
+#   null        — a path the check reads is present and null
+#   value       — everything read cleanly; the assertion is false of the values
+# Precedence runs in that order over every path the check reads, so a row names
+# the most fundamental thing wrong with its inputs rather than the first.
 #
 # The report is a superset: it records every check that ran, passing or failing,
 # in scope or out, because evidence that exonerates matters as much as evidence
@@ -106,7 +133,7 @@ default subject_matches(_, _) := false
 
 subject_matches(subj, req) if {
 	every _, check in applies_to_of(req) {
-		op_passed(check, subj)
+		check_passed(check, subj)
 	}
 }
 
@@ -338,21 +365,60 @@ op_passed(check, subj) if {
 
 op_passed(check, subj) if {
 	check.op == "all"
-	coll := value_at(subj, check.path)
-	is_array(coll)
-	count(coll) > 0
-	every elem in coll {
-		leaf_passed(check.check, elem)
+	every elem in elements(subj, check) {
+		element_passed(check.check, elem)
 	}
 }
 
 op_passed(check, subj) if {
 	check.op == "any"
+	some elem in elements(subj, check)
+	element_passed(check.check, elem)
+}
+
+# The elements an "all"/"any" quantifies over. Undefined — hence a failing check
+# rather than a vacuous pass — unless every collection on the way down is a
+# non-empty array.
+#
+# With "each" the result is flattened one level, so `all` and `any` keep a single
+# body each whether they quantify over one level or two. Flattening is only safe
+# because the guard has already established that every inner collection is there
+# and non-empty: without it, a subject whose inner collection was missing would
+# contribute no elements and `every` would pass over what remained.
+elements(subj, check) := coll if {
+	not check.each
 	coll := value_at(subj, check.path)
 	is_array(coll)
-	some elem in coll
-	leaf_passed(check.check, elem)
+	count(coll) > 0
 }
+
+elements(subj, check) := [elem |
+	some outer in value_at(subj, check.path)
+	some elem in value_at(outer, check.each)
+] if {
+	check.each
+	outer_coll := value_at(subj, check.path)
+	is_array(outer_coll)
+	count(outer_coll) > 0
+	every outer in outer_coll {
+		inner := value_at(outer, check.each)
+		is_array(inner)
+		count(inner) > 0
+	}
+}
+
+# An element check is a leaf, or an `any_of` over leaves. Allowing the second is
+# what makes "every element satisfies A or B" expressible without a custom op —
+# the shape every exemption has, where one field carries the evidence and another
+# carries the reason there is none.
+default element_passed(_, _) := false
+
+element_passed(check, elem) if {
+	not combinator(check)
+	leaf_passed(check, elem)
+}
+
+element_passed(check, elem) if any_of_passed(check, elem)
 
 # Every other operator asks one question of one field. `any_of` is the only way to
 # say that two fields of a subject must agree with *each other*, and it exists
@@ -381,7 +447,11 @@ op_passed(check, subj) if {
 # Fail-closed in both directions: an empty `options` passes nothing (there is no
 # alternative to satisfy), and an empty option group is rejected rather than
 # vacuously satisfied the way a bare `every` over an empty array would be.
-op_passed(check, subj) if {
+op_passed(check, subj) if any_of_passed(check, subj)
+
+default any_of_passed(_, _) := false
+
+any_of_passed(check, subj) if {
 	check.op == "any_of"
 	some group in check.options
 	is_array(group)
@@ -390,6 +460,160 @@ op_passed(check, subj) if {
 		leaf_passed(leaf, subj)
 	}
 }
+
+# ---------- check verdicts ----------
+
+# The verdict of a *named* check: its own operator, or the substitute it declares.
+# Separate from op_passed so that the substitute is evaluated by the same
+# machinery as the check it stands in for — including a custom op on either side —
+# without op_passed calling itself, which Rego forbids.
+#
+# Alternative evidence is a check-level rather than a requirement-level idea on
+# purpose. Attached to a check, the rows stay consistent with the verdict: the
+# check that was discharged says so, with cause "substituted", and the other
+# checks of the requirement are unaffected. A requirement-level substitute would
+# have to satisfy the requirement while its own rows still read as failures.
+default check_passed(_, _) := false
+
+check_passed(check, subj) if op_passed(check, subj)
+
+check_passed(check, subj) if op_passed(substitute_of(check), subj)
+
+# {} rather than undefined, so that "has no substitute" fails the check above
+# through the ordinary fail-closed route (no operator matches an empty check)
+# instead of by the rule being undefined.
+substitute_of(check) := object.get(check, "substitute", {})
+
+# ---------- causes ----------
+
+# Every path a check reads *off the subject*. An explicit "inputs" list wins, so
+# a custom op declares what it reads once and both the echoed inputs and the
+# cause follow from it. The element paths of "all"/"any" and the "each"
+# projection are not here: they address fields inside an element, not fields of
+# the subject, and a defect there is a defect of one element rather than of the
+# path the check reads.
+default read_paths(_) := []
+
+read_paths(check) := [input_spec_path(spec) | some spec in check.inputs] if check.inputs
+
+read_paths(check) := [check.left, check.right] if {
+	not check.inputs
+	two_sided(check)
+}
+
+read_paths(check) := [check.path] if {
+	not check.inputs
+	quantified(check)
+}
+
+read_paths(check) := [p |
+	some group in check.options
+	some leaf in group
+	some p in leaf_paths(leaf)
+] if {
+	not check.inputs
+	combinator(check)
+}
+
+read_paths(check) := [check.path] if {
+	not check.inputs
+	not two_sided(check)
+	not quantified(check)
+	not combinator(check)
+	check.path
+}
+
+input_spec_path(spec) := spec if is_array(spec)
+
+input_spec_path(spec) := object.get(spec, "path", []) if is_object(spec)
+
+# What reading one path off one subject actually did. Total, and the default is
+# "absent" rather than "value": every way of failing to read that isn't named
+# below — a selector over something that is not a collection, a path that walks
+# through a scalar — is a form of absence, and guessing "the values just didn't
+# satisfy the check" for those would be the one wrong answer.
+default read_state(_, _) := "absent"
+
+read_state(subj, path) := "ambiguous" if count(selector_candidates(subj, path)) > 1
+
+read_state(subj, path) := "unmatched" if count(selector_candidates(subj, path)) == 0
+
+read_state(subj, path) := "null" if resolved(subj, path) == null
+
+read_state(subj, path) := "value" if {
+	v := resolved(subj, path)
+	v != absent
+	v != null
+}
+
+# The elements a path's selector picks out, before "exactly one" is required.
+# Undefined when the path has no selector, or when what precedes the selector is
+# absent or not a collection — leaving those to read_state's default.
+# The base is bound in the body rather than iterated inside the comprehension:
+# a comprehension over an undefined collection is an *empty* array, not
+# undefined, which would report every ordinary path as a selector that matched
+# nothing.
+selector_candidates(subj, path) := candidates if {
+	base := base_collection(subj, path)
+	candidates := [v |
+		some v in base
+		selector_matches(v, path[selector_index(path)])
+	]
+}
+
+base_collection(subj, path) := base if {
+	i := selector_index(path)
+	base := object.get(subj, array.slice(path, 0, i), absent)
+	base != absent
+	is_collection(base)
+}
+
+is_collection(v) if is_array(v)
+
+is_collection(v) if is_object(v)
+
+# Most fundamental first: an ambiguous selector means the policy cannot address
+# what it is judging, which matters more than any value it might have read.
+cause_precedence := ["ambiguous", "unmatched", "absent", "null"]
+
+default worst_read(_, _) := "value"
+
+worst_read(subj, paths) := cause_precedence[i] if {
+	states := {read_state(subj, p) | some p in paths}
+	i := min([j |
+		some j, c in cause_precedence
+		c in states
+	])
+}
+
+default row_cause(_, _) := "value"
+
+row_cause(check, subj) := "satisfied" if op_passed(check, subj)
+
+row_cause(check, subj) := "substituted" if {
+	not op_passed(check, subj)
+	op_passed(substitute_of(check), subj)
+}
+
+# A failing row reports the state of the paths the check itself reads. A failing
+# substitute does not contribute: the row is about the check, and pointing at the
+# absence of alternative evidence would be a confident wrong answer about why the
+# primary evidence is unsatisfactory.
+row_cause(check, subj) := worst_read(subj, read_paths(check)) if not check_passed(check, subj)
+
+# Synthesised rows read no paths, so their cause is their verdict.
+verdict_cause(passed) := "satisfied" if passed
+
+verdict_cause(passed) := "value" if not passed
+
+applies_cause(subj, req) := "satisfied" if subject_matches(subj, req)
+
+applies_cause(subj, req) := worst_read(subj, filter_paths(req)) if not subject_matches(subj, req)
+
+filter_paths(req) := [p |
+	some name in applies_to_names(req)
+	some p in read_paths(applies_to_of(req)[name])
+]
 
 # ---------- human-readable expressions ----------
 
@@ -430,20 +654,32 @@ expression_of(check) := leaf_describe(check) if {
 	not combinator(check)
 }
 
-expression_of(check) := sprintf("every %s: %s", [path_name(check.path), leaf_describe(check.check)]) if {
+expression_of(check) := sprintf("every %s: %s", [collection_name(check), element_describe(check.check)]) if {
 	not check.expression
 	check.op == "all"
 }
 
-expression_of(check) := sprintf("some %s: %s", [path_name(check.path), leaf_describe(check.check)]) if {
+expression_of(check) := sprintf("some %s: %s", [collection_name(check), element_describe(check.check)]) if {
 	not check.expression
 	check.op == "any"
 }
 
-expression_of(check) := sprintf("one of: %s", [concat(" | ", sort([variant_describe(nm, group) | some nm, group in check.options]))]) if {
+expression_of(check) := any_of_describe(check) if {
 	not check.expression
 	check.op == "any_of"
 }
+
+# Named with the same "[]." convention echoed inputs use for a projection, so the
+# expression and the input it reads carry the same name.
+collection_name(check) := path_name(check.path) if not check.each
+
+collection_name(check) := sprintf("%s[].%s", [path_name(check.path), path_name(check.each)]) if check.each
+
+element_describe(check) := leaf_describe(check) if not combinator(check)
+
+element_describe(check) := any_of_describe(check) if combinator(check)
+
+any_of_describe(check) := sprintf("one of: %s", [concat(" | ", sort([variant_describe(nm, group) | some nm, group in check.options]))])
 
 # Variants are sorted so the rendering is order-independent, and the leaves within
 # one variant are not, because an array's order is already fixed. A malformed group
@@ -482,8 +718,19 @@ check_inputs(subj, check) := [
 check_inputs(subj, check) := [{"name": nm, "value": vals}] if {
 	not check.inputs
 	quantified(check)
+	not check.each
 	vals := [value_at(elem, object.get(check.check, "path", [])) | some elem in value_at(subj, check.path)]
 	nm := sprintf("%s[].%s", [path_name(check.path), path_name(object.get(check.check, "path", []))])
+}
+
+# With "each" the echoed value is the inner collections themselves, not a field
+# projected out of them: the element check may be an `any_of` reading two fields
+# for two different reasons, and there is no one field to project.
+check_inputs(subj, check) := [{"name": collection_name(check), "value": vals}] if {
+	not check.inputs
+	quantified(check)
+	check.each
+	vals := [value_at(elem, check.each) | some elem in value_at(subj, check.path)]
 }
 
 check_inputs(subj, check) := [{"name": path_name(check.path), "value": value_at(subj, check.path)}] if {
@@ -517,12 +764,30 @@ leaf_paths(leaf) := [leaf.path] if {
 	leaf.path
 }
 
+# What a row echoes: the check's own inputs, and — when it declares a substitute —
+# the substitute's too, so that a row satisfied by alternative evidence carries
+# the evidence that satisfied it instead of only the absence that didn't.
+row_inputs(subj, check) := check_inputs(subj, check) if not check.substitute
+
+row_inputs(subj, check) := array.concat(
+	check_inputs(subj, check),
+	check_inputs(subj, check.substitute),
+) if check.substitute
+
 # ---------- check definitions (looked up once per requirement, not per row) ----------
 
 # The raw check spec plus its rendered human-readable expression, keyed by check
 # name so rows can reference {requirement, check} instead of repeating this on
 # every row.
-check_def(check) := object.union(check, {"expression": expression_of(check)})
+check_def(check) := object.union(check, {"expression": expression_of(check)}) if not check.substitute
+
+# A check with a substitute renders both sides, because the rendered expression is
+# what a reader checks the verdict against — and a row that passed on its
+# substitute is unexplainable against an expression that names only the primary.
+check_def(check) := object.union(check, {"expression": sprintf(
+	"%s, or substitute: %s",
+	[expression_of(check), expression_of(check.substitute)],
+)}) if check.substitute
 
 matching_count_name(req) := sprintf("count(matching(%s))", [path_name(from_of(req))])
 
@@ -570,7 +835,7 @@ requirement_check_defs(req) := object.union(
 
 subject_passed(req, subj) if {
 	every _, check in checks_of(req) {
-		op_passed(check, subj)
+		check_passed(check, subj)
 	}
 }
 
@@ -581,8 +846,9 @@ subject_rows(doc, policy, req_name) := [row |
 		"requirement": req_name,
 		"subject": subject_ref(subj, policy[req_name]),
 		"check": check_name,
-		"inputs": check_inputs(subj, check),
-		"passed": op_passed(check, subj),
+		"inputs": row_inputs(subj, check),
+		"passed": check_passed(check, subj),
+		"cause": row_cause(check, subj),
 	}
 ]
 
@@ -597,6 +863,7 @@ well_formed_row(policy, req_name) := {
 		{"name": "require", "value": require_of(policy[req_name])},
 	],
 	"passed": well_formed(policy[req_name]),
+	"cause": verdict_cause(well_formed(policy[req_name])),
 }
 
 min_subjects_row(doc, policy, req_name) := {
@@ -605,6 +872,7 @@ min_subjects_row(doc, policy, req_name) := {
 	"check": "$min_subjects",
 	"inputs": [{"name": matching_count_name(policy[req_name]), "value": count(matching_subjects(doc, policy[req_name]))}],
 	"passed": count(matching_subjects(doc, policy[req_name])) >= min_subjects_of(policy[req_name]),
+	"cause": verdict_cause(count(matching_subjects(doc, policy[req_name])) >= min_subjects_of(policy[req_name])),
 }
 
 # One row per raw subject, so a subject dropped by "applies_to" is still named in
@@ -615,6 +883,7 @@ applies_rows(doc, policy, req_name) := [{
 	"check": "$applies",
 	"inputs": applies_inputs(subj, policy[req_name]),
 	"passed": subject_matches(subj, policy[req_name]),
+	"cause": applies_cause(subj, policy[req_name]),
 } |
 	some subj in raw_subjects(doc, policy[req_name])
 ] if {
@@ -625,7 +894,7 @@ applies_rows(_, policy, req_name) := [] if count(applies_to_of(policy[req_name])
 
 applies_inputs(subj, req) := [inp |
 	some name in applies_to_names(req)
-	some inp in check_inputs(subj, applies_to_of(req)[name])
+	some inp in row_inputs(subj, applies_to_of(req)[name])
 ]
 
 # ---------- requirement verdicts ----------
@@ -734,6 +1003,7 @@ violations(report) := [{
 	"description": definition_field(report, row, "description"),
 	"expression": definition_field(report, row, "expression"),
 	"inputs": row.inputs,
+	"cause": row.cause,
 } |
 	some row in report.results
 	is_violation(report, row)

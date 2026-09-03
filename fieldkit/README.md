@@ -15,6 +15,7 @@ a human reader. Point it at the relevant one:
 | [BRIEF_CONTROL_43.md](BRIEF_CONTROL_43.md) | Can the library express control 43 (four-eyes)? Which reading of its approval rule is real, and what does `kosli evaluate` actually pass to a policy? *(done — the answer was `four-eyes.rego` itself, now ported in `examples/control_43.rego`)* |
 | [BRIEF_CONTROL_1068.md](BRIEF_CONTROL_1068.md) | Can the library express a control that **isn't** four-eyes? 1068 (business requirements) is still pre-Rego, so its rule lives in TypeScript — where is the decision, and can a path-based `from` even name its subjects? *(done — no, not the subject; and question 4 below paid for the whole trip, yielding the `any_of` operator. See `examples/control_1068.rego`.)* |
 | [BRIEF_INTEGRATION.md](BRIEF_INTEGRATION.md) | Are the integration findings right? The `kosli evaluate` contract, the single-file limit, the bundler, the custom-attestation path — and the load-bearing claim that control 43 shells out to `opa` rather than using `kosli evaluate`. The first brief whose job is **falsification** rather than discovery. |
+| [BRIEF_INPUT_DOCUMENT.md](BRIEF_INPUT_DOCUMENT.md) | Two things left that only that machine can answer: which document control 43's workflow actually hands to `opa`, and one real pull request with two distinct authors. Plus what changed here in response to the last round, so the next port pass doesn't rebuild what the vocabulary now covers. |
 
 Each brief was better than the last for one reason: it asked for **architecture**
 rather than data. Rounds 1 and 2 asked for fixtures; what unblocked the design was
@@ -56,7 +57,7 @@ library is text and travels anywhere, but the evaluator does not.
 Confirm the toolchain before trusting any result:
 
 ```sh
-opa test src examples --ignore '*.json'   # expect PASS: 334/334
+opa test src examples --ignore '*.json'   # expect PASS: 389/389
 ```
 
 ## Bundling for `kosli evaluate`
@@ -133,8 +134,13 @@ compliant: false
   merged_pr                satisfied=false require=some  subjects=2/3 matching
 
 failing rows:
-  merged_pr        commits_signed   …hub.com/kosli-dev/app/pull/42 commits[].verified=[true, false]
+  merged_pr        commits_signed   value     …hub.com/kosli-dev/app/pull/42 commits[].verified=[true, false]
 ```
+
+The third column is the row's **`cause`**, which is the fastest way to tell a
+mistake from a breach: `absent` or `unmatched` usually means the `path` is wrong,
+`ambiguous` means it addresses two things at once, and `value` means the document
+really does say no.
 
 Add `--ops FILE...` for custom operators, `--json` for the raw report. Unlike
 `shape`, **this output contains real values** — it is for reading there, not for
@@ -159,8 +165,8 @@ answers are enough — field names and operator names, no values:
    is the highest-value finding, because it becomes a library change rather than
    a per-policy escape hatch.
 5. **Any check that failed for the wrong reason** — a wrong `path` reported as a
-   breach rather than as a mistake. Does the row's `inputs` column make the two
-   distinguishable?
+   breach rather than as a mistake. Do the row's `cause` and `inputs` columns make
+   the two distinguishable, and is the cause the one you would have named?
 6. **Did anything go undefined**, or did `report` itself fail to evaluate? Copy
    the `opa check --strict` error verbatim if so.
 7. **Scale.** How many subjects and rows, and was evaluation noticeably slow?

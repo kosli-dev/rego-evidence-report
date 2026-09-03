@@ -47,6 +47,11 @@ inputs_of(subj, check) := row.inputs if {
 	row.check == "c"
 }
 
+cause_of(subj, check) := row.cause if {
+	some row in solo(subj, check).results
+	row.check == "c"
+}
+
 rendered(subj, check) := solo(subj, check).requirements.s.checks.c.expression
 
 rows_for(report, req_name, check_name) := [r |
@@ -674,6 +679,138 @@ test_any_without_a_nested_check_fails if {
 	verdict({"approvers": [{"state": "APPROVED"}]}, {"op": "any", "path": ["approvers"]}) == false
 }
 
+# ---------- collection operators: the "each" projection ----------
+
+# Two levels: every commit of every pull request. Without "each" this needs a
+# custom op, which is how control 43's identity check started life.
+every_commit_signed := {
+	"op": "all",
+	"path": ["prs"],
+	"each": ["commits"],
+	"check": {"op": "equals", "path": ["signed"], "value": true},
+}
+
+any_commit_signed := {
+	"op": "any",
+	"path": ["prs"],
+	"each": ["commits"],
+	"check": {"op": "equals", "path": ["signed"], "value": true},
+}
+
+test_each_passes_when_every_element_of_every_inner_collection_passes if {
+	verdict(
+		{"prs": [{"commits": [{"signed": true}]}, {"commits": [{"signed": true}, {"signed": true}]}]},
+		every_commit_signed,
+	) == true
+}
+
+test_each_fails_when_one_element_of_one_inner_collection_fails if {
+	verdict(
+		{"prs": [{"commits": [{"signed": true}]}, {"commits": [{"signed": true}, {"signed": false}]}]},
+		every_commit_signed,
+	) == false
+}
+
+# The reason "each" flattens under a guard rather than on its own: an inner
+# collection that isn't there must not quietly reduce the population being
+# quantified over, or the remaining elements carry the verdict for the missing
+# ones.
+test_each_rejects_a_missing_inner_collection if {
+	verdict({"prs": [{"commits": [{"signed": true}]}, {"url": "u"}]}, every_commit_signed) == false
+}
+
+test_each_rejects_an_empty_inner_collection if {
+	verdict({"prs": [{"commits": [{"signed": true}]}, {"commits": []}]}, every_commit_signed) == false
+}
+
+test_each_rejects_a_non_array_inner_collection if {
+	verdict({"prs": [{"commits": "none"}]}, every_commit_signed) == false
+}
+
+test_each_rejects_an_empty_outer_collection if {
+	verdict({"prs": []}, every_commit_signed) == false
+}
+
+test_each_rejects_a_missing_outer_collection if verdict({}, every_commit_signed) == false
+
+test_each_under_any_passes_when_one_element_anywhere_passes if {
+	verdict(
+		{"prs": [{"commits": [{"signed": false}]}, {"commits": [{"signed": true}]}]},
+		any_commit_signed,
+	) == true
+}
+
+test_each_under_any_fails_when_no_element_passes if {
+	verdict({"prs": [{"commits": [{"signed": false}]}]}, any_commit_signed) == false
+}
+
+# An `any_of` as the element check. This is the shape that removed control 43's
+# identity custom op: per element, the evidence is there or the reason it isn't
+# is recognised.
+identified := {
+	"op": "all",
+	"path": ["prs"],
+	"each": ["commits"],
+	"check": {"op": "any_of", "options": {
+		"linked_account": [{"op": "non_empty_string", "path": ["author_username"]}],
+		"web_flow": [{"op": "matches_any", "path": ["author"], "patterns": [`noreply@github\.com`]}],
+	}},
+}
+
+test_an_any_of_element_check_passes_per_element_on_either_option if {
+	verdict(
+		{"prs": [{"commits": [
+			{"author_username": "alice"},
+			{"author": "GitHub <noreply@github.com>"},
+		]}]},
+		identified,
+	) == true
+}
+
+test_an_any_of_element_check_fails_when_an_element_satisfies_neither_option if {
+	verdict(
+		{"prs": [{"commits": [
+			{"author_username": "alice"},
+			{"author_username": null, "author": "Bob <bob@example.com>"},
+		]}]},
+		identified,
+	) == false
+}
+
+test_an_any_of_element_check_is_also_available_without_each if {
+	verdict({"commits": [{"author_username": "alice"}]}, {
+		"op": "all",
+		"path": ["commits"],
+		"check": {"op": "any_of", "options": {
+			"linked_account": [{"op": "non_empty_string", "path": ["author_username"]}],
+		}},
+	}) == true
+}
+
+test_each_renders_the_projection_in_the_expression if {
+	rendered({"prs": []}, every_commit_signed) == "every prs[].commits: signed == true"
+}
+
+test_each_renders_an_any_of_element_check if {
+	rendered({"prs": []}, identified) == sprintf(
+		"every prs[].commits: one of: %s | %s",
+		[
+			"linked_account(author_username is a non-empty string)",
+			`web_flow(author matches one of [noreply@github\.com])`,
+		],
+	)
+}
+
+# The inner collections themselves, not a field projected out of them: an
+# `any_of` element check reads several fields for different reasons, so there is
+# no single field to echo.
+test_each_echoes_the_inner_collections if {
+	inputs_of({"prs": [{"commits": [{"signed": true}]}, {"commits": []}]}, every_commit_signed) == [{
+		"name": "prs[].commits",
+		"value": [[{"signed": true}], []],
+	}]
+}
+
 # ---------- combinator: any_of ----------
 
 # The shape that motivated the operator, from control 1068: a ticket is permitted
@@ -875,6 +1012,119 @@ test_any_of_echoes_an_absent_field_as_null if {
 	]
 }
 
+# ---------- substitutes ----------
+
+# Alternative evidence: the repository's initial commit can carry no pull
+# request, so a compliant attestation from a verified committer stands in for
+# one. The requirement is not waived — it is discharged by something else.
+reviewed_or_verified := {
+	"description": "Reviewed in a pull request",
+	"op": "equals",
+	"path": ["reviewed"],
+	"value": true,
+	"substitute": {
+		"description": "Attested by a verified committer",
+		"op": "equals",
+		"path": ["verified_committer"],
+		"value": true,
+	},
+}
+
+test_a_check_passes_on_its_substitute if {
+	verdict({"verified_committer": true}, reviewed_or_verified) == true
+}
+
+test_a_substituted_row_says_so if {
+	cause_of({"verified_committer": true}, reviewed_or_verified) == "substituted"
+}
+
+test_a_check_that_holds_on_its_own_terms_is_not_substituted if {
+	cause_of({"reviewed": true, "verified_committer": true}, reviewed_or_verified) == "satisfied"
+}
+
+test_a_check_fails_when_neither_it_nor_its_substitute_holds if {
+	verdict({"reviewed": false, "verified_committer": false}, reviewed_or_verified) == false
+}
+
+# The cause describes the check, not its substitute. "The alternative evidence is
+# missing too" is not a reason the primary evidence is unsatisfactory.
+test_a_failing_row_reports_the_state_of_its_own_paths if {
+	cause_of({"verified_committer": false}, reviewed_or_verified) == "absent"
+}
+
+test_a_substitute_is_evaluated_by_the_same_operators if {
+	verdict({"approvals": ["alice"]}, {
+		"op": "equals",
+		"path": ["reviewed"],
+		"value": true,
+		"substitute": {"op": "includes", "path": ["approvals"], "value": "alice"},
+	}) == true
+}
+
+# One level, like every other nesting here: a substitute is evaluated by
+# op_passed, which does not look for a substitute of its own.
+test_a_substitute_of_a_substitute_is_ignored if {
+	verdict({"third": true}, {
+		"op": "equals",
+		"path": ["first"],
+		"value": true,
+		"substitute": {
+			"op": "equals",
+			"path": ["second"],
+			"value": true,
+			"substitute": {"op": "equals", "path": ["third"], "value": true},
+		},
+	}) == false
+}
+
+test_a_substituted_check_satisfies_its_requirement if {
+	rep := evidence.report(
+		{"items": [{"id": "a", "reviewed": true}, {"id": "b", "verified_committer": true}]},
+		{"s": {
+			"subject_type": "thing",
+			"from": ["items"],
+			"id": ["id"],
+			"checks": {"c": reviewed_or_verified},
+		}},
+	)
+	rep.compliant == true
+	evidence.violations(rep) == []
+}
+
+# A scope filter is a check like any other, so it can be substituted too.
+test_a_substitute_works_in_an_applies_to_filter if {
+	rep := evidence.report({"items": [{"id": "a", "internal": true}]}, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
+		"id": ["id"],
+		"applies_to": {"in_scope": {
+			"op": "equals",
+			"path": ["production"],
+			"value": true,
+			"substitute": {"op": "equals", "path": ["internal"], "value": true},
+		}},
+		"checks": {"c": {"op": "equals", "path": ["signed"], "value": true}},
+	}})
+	rep.requirements.s.subjects.matching == 1
+}
+
+test_a_substitute_renders_both_sides if {
+	rendered({}, reviewed_or_verified) == "reviewed == true, or substitute: verified_committer == true"
+}
+
+# A row satisfied by alternative evidence has to carry the evidence that
+# satisfied it, or it cannot be recomputed from the report.
+test_a_substituted_row_echoes_both_sides if {
+	inputs_of({"verified_committer": true}, reviewed_or_verified) == [
+		{"name": "reviewed", "value": null},
+		{"name": "verified_committer", "value": true},
+	]
+}
+
+test_the_substitute_spec_stays_in_the_definition_table if {
+	solo({}, reviewed_or_verified).requirements.s.checks.c.substitute.description == "Attested by a verified committer"
+}
+
 # ---------- echoed inputs ----------
 
 test_inputs_echo_the_read_path if {
@@ -1007,7 +1257,7 @@ test_one_row_per_subject_and_check if {
 
 test_row_carries_exactly_the_documented_keys if {
 	every row in solo({"state": "MERGED"}, is_merged).results {
-		object.keys(row) == {"requirement", "subject", "check", "inputs", "passed"}
+		object.keys(row) == {"requirement", "subject", "check", "inputs", "passed", "cause"}
 	}
 }
 
@@ -1049,6 +1299,138 @@ test_requirement_name_is_the_policy_key if {
 	rep := evidence.report({"items": [{"id": "a"}]}, id_req(["items"]))
 	object.keys(rep.requirements) == {"s"}
 	{r.requirement | some r in rep.results} == {"s"}
+}
+
+# ---------- causes ----------
+
+# The report weakness this closes: absence, a null, a selector that matched
+# nothing and a selector that matched twice all echo as null in "inputs", and a
+# consumer that can only see the null has to guess which of the four it was.
+selected_state := {"op": "equals", "path": ["atts", {"where": {"type": "pr"}}, "state"], "value": "MERGED"}
+
+test_cause_satisfied_when_the_check_holds if {
+	cause_of({"state": "MERGED"}, {"op": "equals", "path": ["state"], "value": "MERGED"}) == "satisfied"
+}
+
+test_cause_value_when_the_paths_read_cleanly_and_the_assertion_is_false if {
+	cause_of({"state": "OPEN"}, {"op": "equals", "path": ["state"], "value": "MERGED"}) == "value"
+}
+
+test_cause_absent_when_the_path_is_not_there if {
+	cause_of({}, {"op": "equals", "path": ["state"], "value": "MERGED"}) == "absent"
+}
+
+test_cause_null_when_the_path_is_there_and_null if {
+	cause_of({"state": null}, {"op": "equals", "path": ["state"], "value": "MERGED"}) == "null"
+}
+
+test_cause_absent_when_the_path_walks_through_a_scalar if {
+	cause_of({"pr": "none"}, {"op": "equals", "path": ["pr", "state"], "value": "MERGED"}) == "absent"
+}
+
+test_cause_ambiguous_when_a_selector_matches_more_than_one_element if {
+	cause_of(
+		{"atts": [{"type": "pr", "state": "MERGED"}, {"type": "pr", "state": "OPEN"}]},
+		selected_state,
+	) == "ambiguous"
+}
+
+test_cause_unmatched_when_a_selector_matches_nothing if {
+	cause_of({"atts": [{"type": "scan"}]}, selected_state) == "unmatched"
+}
+
+test_cause_unmatched_over_an_empty_collection if {
+	cause_of({"atts": []}, selected_state) == "unmatched"
+}
+
+test_cause_absent_when_the_collection_a_selector_reads_is_not_there if {
+	cause_of({}, selected_state) == "absent"
+}
+
+# A selector resolves over a map as readily as an array, and so does its cause:
+# `kosli evaluate` hands the policy attestations keyed by name.
+test_cause_ambiguous_over_a_map_keyed_collection if {
+	cause_of(
+		{"atts": {"first": {"type": "pr", "state": "MERGED"}, "second": {"type": "pr", "state": "OPEN"}}},
+		selected_state,
+	) == "ambiguous"
+}
+
+test_cause_satisfied_when_a_selector_matches_exactly_one if {
+	cause_of({"atts": [{"type": "pr", "state": "MERGED"}, {"type": "scan"}]}, selected_state) == "satisfied"
+}
+
+# Most fundamental first, over every path the check reads: an ambiguous selector
+# means the policy cannot address what it is judging, which is worth more than
+# any value it might have read on the other side.
+test_cause_precedence_prefers_the_more_fundamental_defect if {
+	cause_of({"left": null}, {
+		"op": "compare",
+		"left": ["left"],
+		"right": ["right"],
+		"cmp": "lt",
+	}) == "absent"
+}
+
+test_cause_precedence_reports_null_only_when_nothing_worse_happened if {
+	cause_of({"left": null, "right": null}, {
+		"op": "compare",
+		"left": ["left"],
+		"right": ["right"],
+		"cmp": "lt",
+	}) == "null"
+}
+
+# A quantified check reads the collection; a defect inside one element is a
+# defect of that element, not of the path the check reads.
+test_cause_of_a_quantified_check_describes_the_collection if {
+	cause_of({"commits": [{"verified": false}]}, all_verified) == "value"
+	cause_of({}, all_verified) == "absent"
+}
+
+# An explicit "inputs" list is what a custom op declares it reads, so it is also
+# what the cause is computed from.
+test_cause_follows_an_explicit_inputs_list if {
+	cause_of({}, {
+		"op": "equals",
+		"path": ["state"],
+		"value": "MERGED",
+		"inputs": [["atts", {"where": {"type": "pr"}}, "state"]],
+		"expression": "custom",
+	}) == "absent"
+}
+
+test_synthesised_rows_carry_a_cause if {
+	rep := evidence.report({"items": []}, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
+		"id": ["id"],
+		"checks": {"c": {"op": "present", "path": ["x"]}},
+	}})
+	rows_for(rep, "s", "$well_formed")[0].cause == "satisfied"
+	rows_for(rep, "s", "$min_subjects")[0].cause == "value"
+}
+
+test_an_applies_row_carries_the_state_of_the_filter_paths if {
+	rep := evidence.report({"items": [{"id": "a", "env": "prod"}, {"id": "b"}]}, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
+		"id": ["id"],
+		"applies_to": {"prod_only": {"op": "equals", "path": ["env"], "value": "prod"}},
+		"checks": {"c": {"op": "present", "path": ["x"]}},
+	}})
+	applies := rows_for(rep, "s", "$applies")
+	[r.cause | some r in applies] == ["satisfied", "absent"]
+}
+
+test_violations_carry_the_cause if {
+	rep := evidence.report({"items": [{"id": "a"}]}, {"s": {
+		"subject_type": "thing",
+		"from": ["items"],
+		"id": ["id"],
+		"checks": {"c": {"op": "equals", "path": ["state"], "value": "MERGED"}},
+	}})
+	[v.cause | some v in evidence.violations(rep)] == ["absent"]
 }
 
 # ---------- min_subjects ----------
@@ -1401,7 +1783,7 @@ test_violation_entry_carries_exactly_the_documented_keys if {
 	rep := evidence.report({"items": [{"id": "a"}]}, violating_req)
 	count(evidence.violations(rep)) == 2
 	every v in evidence.violations(rep) {
-		object.keys(v) == {"requirement", "subject", "check", "description", "expression", "inputs"}
+		object.keys(v) == {"requirement", "subject", "check", "description", "expression", "inputs", "cause"}
 	}
 }
 
@@ -1416,6 +1798,7 @@ test_violations_join_the_definition_onto_the_row if {
 		"description": "Reviewed",
 		"expression": "reviewed == true",
 		"inputs": [{"name": "reviewed", "value": null}],
+		"cause": "absent",
 	}]
 }
 

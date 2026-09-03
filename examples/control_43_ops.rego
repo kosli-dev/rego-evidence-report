@@ -1,9 +1,12 @@
-# Custom operators for control 43, contributed into the kosli.evidence package.
+# The custom operator for control 43, contributed into the kosli.evidence package.
 #
-# Two things exceed the operator vocabulary, and both for the same reason: they
-# compare a subject's fields *to each other* across two nested collections —
+# One thing exceeds the operator vocabulary, and the reason is specific: it
+# compares a subject's fields *to each other* across two nested collections —
 # approvers against commit authors — which no declarative operator over a single
-# path can express.
+# path can express. Identity resolution used to be here too, and is now declared
+# as data: "every commit of every pull request satisfies A or B" is `all` with
+# `each` and an `any_of` element check, which the library gained after this file
+# made the case for it.
 #
 # Helpers are prefixed c43_ because every custom op in every policy shares this
 # one package, so an unprefixed `covered` would eventually collide with someone
@@ -17,22 +20,9 @@ package kosli.evidence
 
 import rego.v1
 
-# Every commit of every associated pull request has an identity we can check.
-# Fails on a pull request whose `commits` is missing or not an array, rather than
-# treating "no commits to check" as "all commits check out".
-op_passed(check, trail) if {
-	check.op == "identities_resolved"
-	prs := value_at(trail, check.path)
-	is_array(prs)
-	count(prs) > 0
-	every pr in prs {
-		is_array(pr.commits)
-		every c in pr.commits {
-			c43_author_known(c, check.patterns)
-		}
-	}
-}
-
+# Whether one commit's author is someone we can hold responsible. Still needed
+# here — `independently_approved` has to know which authors count before it can
+# ask who approved them — but no longer the implementation of a check of its own.
 c43_author_known(c, _) if {
 	is_string(c.author_username)
 	c.author_username != ""

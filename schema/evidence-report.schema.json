@@ -26,7 +26,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["requirement", "subject", "check", "inputs", "passed"],
+        "required": ["requirement", "subject", "check", "inputs", "passed", "cause"],
         "properties": {
           "requirement": {"type": "string"},
           "subject": {
@@ -43,7 +43,8 @@
               "properties": {"name": {"type": "string"}, "value": {}}
             }
           },
-          "passed": {"type": "boolean"}
+          "passed": {"type": "boolean"},
+          "cause": {"enum": ["satisfied", "substituted", "ambiguous", "unmatched", "absent", "null", "value"]}
         }
       }
     }
