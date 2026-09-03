@@ -1,4 +1,4 @@
-# Brief 6: three questions, and none of them are yours to answer alone
+# Brief 6: three questions, all needing more than a read
 
 **You are Claude Code on the restricted machine.** Round 5 answered almost
 everything asked of it, including the one that mattered most, and it did so by
@@ -11,6 +11,36 @@ do not synthesise around it.
 git fetch --depth 1 origin integration && git reset --hard FETCH_HEAD
 opa test src examples --ignore '*.json'   # expect PASS: 396/396
 ```
+
+If the round-5 clone is gone:
+
+```sh
+git clone --depth 1 --branch integration \
+  https://github.com/kosli-dev/rego-evidence-report.git
+```
+
+**This file may have reached you on its own**, which is how the last hand-over
+travelled in the other direction. Here is what each investigation actually needs,
+so a missing repo costs you one answer rather than three:
+
+| | needs |
+| --- | --- |
+| **2** — the root-commit trail | nothing but a terminal and this document, if the answer is prose. `fieldkit/sanitize.py` as well, if a capture travels. |
+| **1** — the two-author pull request | production's own `four-eyes.rego` is enough for a verdict. The repo adds the port's per-row view beside it. |
+| **3** — the live attestation | the repo proper: the library to *produce* a report, `schema/` to register the type. |
+
+If git auth is the sticking point while HTTPS works, a single file travels
+anywhere — `sanitize.py` is stdlib-only:
+
+```sh
+curl -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github.raw" \
+  'https://api.github.com/repos/kosli-dev/rego-evidence-report/contents/fieldkit/sanitize.py?ref=integration' \
+  -o sanitize.py
+```
+
+**No sanitizer means no JSON comes home.** Prose findings with no fixture is the
+good outcome, not a round that fell short — round 1 moved a file without it and
+carried a real employee's email, an internal host and live tenant ids.
 
 ## The hard rules have not changed
 
@@ -66,8 +96,17 @@ true, **say so in one line and stop** — it is not answerable by reading, and a
 constructed example teaches nothing the test suite does not already assert.
 
 If access appears: find an existing merged pull request whose `commits[]` carry
-two or more distinct `author_username` values, run both policies over it, and
-report counts and verdicts only — distinct authors (n), approvers (k), how many
+two or more distinct `author_username` values, then run both policies over it —
+production `four-eyes.rego`, and, with the repo present,
+
+```sh
+python3 fieldkit/kit.py run examples/control_43.rego <trail>.json \
+    --ops examples/control_43_ops.rego
+```
+
+which prints one row per (commit, check) with its `cause` in the third column.
+Without the repo, production's verdict alone is still worth having. Report counts
+and verdicts only — distinct authors (n), approvers (k), how many
 approvers also wrote commits, whether the two policies agree, and whether it is a
 **mutual review** (each author approved the other). That last case must pass, and
 it is where the per-author reading and the "approver who authored nothing"
@@ -96,8 +135,16 @@ matched fixture pair would make it three.
 ## Investigation 3 — does the report survive a real attestation?
 
 The report's destination has only ever been dry-run from this side: no request
-sent, so **server-side schema validation and jq evaluation are untested**. If you
-have any writable flow, on any instance:
+sent, so **server-side schema validation and jq evaluation are untested**. This
+one needs the repo, because the report has to be produced before it can be
+attested:
+
+```sh
+python3 fieldkit/kit.py run examples/control_43.rego <trail>.json \
+    --ops examples/control_43_ops.rego --json > report.json
+```
+
+Then, if you have any writable flow, on any instance:
 
 ```sh
 kosli create attestation-type evidence-report --schema schema/evidence-report.schema.json \
