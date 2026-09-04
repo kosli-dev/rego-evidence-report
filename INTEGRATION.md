@@ -752,6 +752,60 @@ it: a fixture carrying the real type string, which is what should have existed;
 and the operational tell that a substitute never once reporting `substituted`
 across a whole report is a substitute nobody is reaching.
 
+## Control 1068's output contract — no schema, and one fail-open
+
+Round 7 read the control's TypeScript to answer a question the 1068 round never
+reached: does the implementation validate the data it produces? **It does not.**
+
+- **No schema file and no runtime validation on the way out.** `Evidence` is built
+  as an object literal, serialised with `JSON.stringify`, written to disk and
+  fingerprinted. There is no `zod`/`ajv`/`joi`/`io-ts` anywhere in the control and
+  no `*schema*.json` at all. TypeScript types erase at runtime, so the output is
+  typed but unchecked. Where control 43 has `four-eyes-result-schema.json` fixing
+  `violations` as a `string[]`, 1068's analogue — `non_permitted_tickets:
+  Ticket[]` — is richer *and* unvalidated.
+- **The one guard that exists is on the Jira response, not the payload.**
+  `getBuildTicketFrom` throws on any missing `issuetype`/`summary`/`status`/
+  `project` field, so a ticket missing the field the predicate reads becomes a
+  failure rather than an `undefined` comparison. Fail-closed, by accident of
+  input validation rather than output contract.
+- **Shapes.** `Evidence { overall_status, jira_api_url, from_tag?, to_tag?,
+  permitted_tickets[], non_permitted_tickets[] }`; `Ticket { ticketKey, parentKey?,
+  ticketType, ticketDescription, ticketState, projectId, projectKey,
+  jiraFixVersionAssigned?, parent? }`; `EvidenceFile { name, fingerprint (sha256),
+  path }`, alongside a factstore `EvidenceManifest` from an external library.
+- **Pass and fail differ in exactly one field:** `overall_status`
+  (`PASSED`/`FAILED`), mirrored by the fact attestation's `controlStatus`. The
+  ticket arrays differ in content, not shape.
+- **No verbatim consumer in the control's own repo** — evidence renders to a PDF
+  and to the GitHub Actions summary, both human-facing. Any factstore consumer is
+  out-of-repo and therefore unknown, which is where a message-format break would
+  hide if one exists.
+
+`apidown` is the good news. Unlike four-eyes, **1068 fails when its evidence
+source is down**: a per-ticket rejection lands in `notFoundJiraTickets` and thence
+in `nonPermitted`, and even a total outage leaves `permitted == 0`, which
+`isControlPassed` (`permitted > 0 && nonPermitted == 0`) denies. A port may copy
+that structure safely. It is also the one hazard case **no test pins**.
+
+**The one real fail-open is the 404-drop.** A rejected ticket is pushed to
+`notFound` only if its message is *not* `JIRA_TICKET_NOT_FOUND`, so a 404 lands in
+neither list and vanishes from validation entirely. A referenced ticket that was
+deleted, mistyped into a 404, or hidden by permissions is neither validated nor a
+violation: the release passes as if it had never been referenced. Every *other*
+error — 400/401/403/409/422/5xx/network — is fail-closed. The drop is deliberate
+and pinned by a test named "filter out the 404 tickets", and it is 1068's exact
+analogue of the "we only look at what is present" shape that produced two
+fail-opens in four-eyes. A commit whose message references no ticket is likewise
+skipped silently; the control fails only if the whole range yields zero permitted.
+
+Two consequences for this library. A port **cannot lean on 1068 having validated
+its own output**, because it hasn't — the report's own `$well_formed` rows and
+`schema/evidence-report.schema.json` are doing work that has no counterpart
+upstream. And if the port is ever fed 1068 evidence, it must treat a dropped or
+absent ticket as a **breach**, not trust `permitted_tickets` and
+`non_permitted_tickets` to be jointly complete. They are not.
+
 ## Status of these claims
 
 Sourced from control 43's `README.md` and `SCENARIOS.md`, and from a round of
@@ -814,13 +868,42 @@ TypeScript on a machine with access to them.
 - **Inferred, and worth stating as an inference:** the CLI in control 43's image
   is at least 2.18.0, because `--no-assert` appears there and not in 2.17.0. That
   puts `kosli evaluate input` and `--params` in that image already.
+- **Confirmed by round 6, reading the collector's source:** that the
+  `initial-commit-by-verified-committer` substitute **cannot land on a non-root
+  commit**. `getInitialCommitInfo` runs `git log --max-parents=0 --first-parent`,
+  which by construction yields only the repository's true root commit; the
+  attestation is written to a separate trail named after that root sha; the range
+  loop skips the root sha, so the type is emitted exactly once; and the payload
+  self-labels with `is_initial_commit`. This was the one open item that could have
+  made the port **too permissive**, and it resolves in the port's favour. The
+  caveat is that this is a property of the *collector*, not the policy — a
+  hand-run `kosli attest custom --type initial-commit-by-verified-committer` on
+  any trail would still fool a discriminator that trusts mere presence. Closing
+  that would mean the port reading the payload's `commit.is_initial_commit`
+  instead of trusting the type's presence.
+- **Confirmed by round 6, locally rather than on the wire:** the report validates
+  against `schema/evidence-report.schema.json` (draft 2020-12) in both directions
+  — a compliant report (11 rows, every `cause` `satisfied`) and a failing one
+  (7 rows, causes `absent` + `satisfied`), with every required key present and
+  every `cause` inside the enum. Both proposed `--jq` rules evaluate correctly
+  under the real `jq` binary, and the `$well_formed` rule is **not vacuous**: the
+  library emits one real `$well_formed` row per requirement, so the rule found
+  zero malformed rows rather than matching nothing. A report is ~16 KB at 11 rows
+  for a single subject. The validator was stdlib rather than `jsonschema`, so it
+  enforced the `required` lists and the `cause` enum rather than the full draft —
+  a live server is still the real test of shape.
 - **Still open, needing live Kosli or GitHub access rather than either machine:**
   a real pull request with **two distinct authors** (both captured PRs resolve to
-  one author or none, so the per-author rule has met only synthetic input); a real
-  root-commit trail, to see the corrected substitute fire on data nobody wrote for
-  it; and whether an attestation payload has a size limit. A live `kosli attest
-  custom` of a report — server-side schema validation and jq evaluation — remains
-  the one claim about the report's destination that has never been executed.
+  one author or none, so the per-author rule has met only synthetic input); and a
+  real root-commit trail, to *witness* on the wire what round 6 settled from
+  source — that `attestation_type` reads `custom:initial-commit-by-verified-committer`
+  and that `is_compliant` sits on the status entry as a boolean. Neither is a
+  guess any more; both are unobserved. Round 6 confirmed the restricted machine
+  cannot close them: no `kosli` binary and no mirror, and GitHub unreachable
+  behind a proxy returning `407 CONNECT tunnel failed`. A live `kosli attest
+  custom` of a report — **server-side** schema validation and jq evaluation —
+  remains the one claim about the report's destination that has never been
+  executed.
 - **Also unverified:** whether attestation payloads have a size limit, which
   matters because a report is O(subjects x checks) and every row echoes its inputs.
   And `--summary`, which would render key report numbers in the Kosli UI, exists in
