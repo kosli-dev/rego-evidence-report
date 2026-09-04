@@ -15,6 +15,15 @@ The `--ignore` is required: `examples/*.json` are `opa eval` fixtures and both
 define `data.trail`, so loading them together is a merge error. The test files
 build their fixtures inline instead.
 
+Rego packages have the same hazard, and it is not a name clash that shadows —
+two modules of one package **merge**. `examples/code_review.rego` and the
+vendored `examples/four-eyes.vendored.rego` are both ports of policies deployed
+as `package policy`, and loading two `package policy` modules together makes
+`allow` a conflicting complete rule and silently unions their `violations` sets,
+failing tests in whichever file you were not editing. Hence the vendored copy is
+renamed. If you add another policy that upstream deploys as `package policy`,
+rename it the same way and say so in its header.
+
 ### Under strict builtin errors
 
 `opa test` has no flag for strict builtin errors, so the fail-closed claims are

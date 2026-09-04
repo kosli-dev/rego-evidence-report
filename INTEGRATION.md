@@ -640,6 +640,24 @@ and `examples/control_43_test.rego` mirroring all 37 of the original's cases.
 Parity was measured rather than asserted: both policies were loaded together and
 run over the same 27 input documents, comparing `allow` and violation counts.
 
+**It is asserted now.** `examples/control_43_parity_test.rego` feeds one corpus
+of eight cases to both policies and fails the moment their verdicts part without
+an entry on a declared-divergence list, which is empty today. The production
+policy is vendored as `examples/four-eyes.vendored.rego` — body byte-for-byte,
+renamed to `package four_eyes_vendored` because upstream's `package policy`
+would otherwise merge with `examples/code_review.rego` rather than sit beside
+it. Two things it does not do: it asserts **verdicts** only, leaving cause-level
+differences to `control_43_test.rego` where they belong, and it cannot notice
+that the vendored copy has drifted from a production policy it cannot see. The
+capture carried no upstream revision to pin, so today the harness proves parity
+against *a* version of the production policy rather than a known one.
+
+The corpus also gives the still-missing two-author pull request a home: when one
+is finally captured and sanitised it drops in as a ninth case and both policies
+judge it at once. The synthetic `two_author_mutual` case — each author approving
+the other — already passes in both, which is where the per-author reading and
+the "approver who authored nothing" reading would have parted company.
+
 **24 of 24 ordinary cases agree.** The three that differ are the three defects
 above — in each, the original allows or crashes and the port denies:
 
