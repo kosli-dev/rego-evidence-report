@@ -45,7 +45,7 @@ the projector. Arrows in either window move both, over `BroadcastChannel` (a
 browser API for messaging between same-origin tabs) with a `localStorage`
 fallback. `p` is deliberately local, so the projector window never shows notes.
 
-19 presented slides plus two appendix slides — a headline and at most one artefact each, so
+20 presented slides plus two appendix slides — a headline and at most one artefact each, so
 the room listens instead of reads. `←` `→` to move; `n` toggles a presenter bar
 carrying that slide's talking point and the command to run; the rail under the
 stage jumps anywhere. **The prose lives here, not on the slides** — the
@@ -53,19 +53,23 @@ mapping from beats to slide numbers is in each beat's heading below.
 
 **Every data-bearing slide names its policy** in a pill at the right of the
 eyebrow — `control 43` or `prod_deploy`. The deck alternates between them, and
-without the pill the switch at slide 6 and the switch back at slide 12 are
+without the pill the switch at slide 7 and the switch back at slide 13 are
 invisible to the room:
 
 | slides | pill | |
 | --- | --- | --- |
-| 2–5 | `control 43` | parity, the gap, the payoff table |
-| 6–11 | `prod_deploy` | declare, report, definitions, causes, violations |
-| 12–15 | `control 43` | the failing row, harness, defects, cost |
-| 16–19 | none | integration, unknowns, next — no policy data |
-| 20–21 | named in the eyebrow | A1 `prod_deploy`, A2 `control_43` |
+| 2 | none | the genesis — no policy data |
+| 3–6 | `control 43` | parity, the gap, the payoff table |
+| 7–12 | `prod_deploy` | declare, report, definitions, causes, violations |
+| 13–16 | `control 43` | the failing row, harness, defects, cost |
+| 17–20 | none | integration, unknowns, next — no policy data |
+| 21–22 | named in the eyebrow | A1 `prod_deploy`, A2 `control_43` |
 
 It's a sandwich, not a handoff: the vocabulary middle would be a lecture about a
-toy if it didn't land back on control 43's real failing row at slide 12.
+toy if it didn't land back on control 43's real failing row at slide 13.
+
+Slide 2 has no pill because the genesis is about the *requirement*, not about a
+policy's output.
 
 The spine of the talk is one input document evaluated twice — once by
 hand-written `four-eyes.rego`, once by this library — so the room sees the *same verdict*
@@ -94,7 +98,7 @@ first parse of `library.rego` is the slowest thing you'll do on stage.
 
 ---
 
-## Beat 0 — What this is  ·  slide 1  ·  30s
+## Beat 0 — What this is, and why  ·  slides 1–2  ·  1 min
 
 > A Rego library for writing **control policies** that return a structured,
 > hashable **evidence report**, instead of a bare `allow`/`deny` plus
@@ -105,9 +109,41 @@ library gives every one of them the same output shape. The library is 549 code
 lines in `package kosli.evidence`, and the engine is OPA itself — nothing is
 reimplemented.
 
+### Where the requirement came from — slide 2
+
+**This predates the library, and it isn't an engineering preference.** The ask
+was compliance reporting in spreadsheets — CSV and Excel — which Deutsche Bank
+already works from.
+
+The arc in three steps, and the middle one is the twist:
+
+1. **Control 43's legacy generation emitted `xlsx` itself.** It judged in
+   TypeScript and wrote the report directly. One control, bespoke code.
+2. **The Rego rewrite split collection from judgement** — the collector gathers
+   and pushes the rule into Rego, and does no evaluation. That separation is what
+   makes a policy library possible at all. `INTEGRATION.md` calls it *the*
+   defining property of the new generation.
+3. **And it left nothing emitting a spreadsheet.** `{allow, violations}` has no
+   columns. The capability the legacy version had, the rewrite gave up.
+
+So the report isn't a nicer output — **it's what the original ask needed**, and
+uniform across controls instead of one bespoke exporter per control. The rest of
+the deck is that claim being made good.
+
+Say the customer's name or don't, as the room warrants; the slide says
+*Deutsche Bank* because the demand being demonstrated rather than assumed is the
+whole point of the slide. **If you share the deck link outside Kosli, take the
+name off first.**
+
+**Provenance, since this deck is careful about it elsewhere:** step 1 and step 2
+are recorded in `INTEGRATION.md` (the legacy-vs-Rego generations, and the
+collector doing no evaluation). That spreadsheet reporting was the *founding*
+requirement is Julien's own account and is written down nowhere else in the
+repo — this beat is now that record.
+
 ---
 
-## Beat 1 — Same output  ·  slides 2–3  ·  1.5 min, tab B
+## Beat 1 — Same output  ·  slides 3–4  ·  1.5 min, tab B
 
 Control 43 (`RCTLDEF0000043`, four-eyes) is **the only Rego policy in `sdlc-workflows`** — every other control
 is workflow wiring. 182 code lines, hand-written by colleagues working with the
@@ -164,7 +200,7 @@ stages 1, 2, 3 and 5 are untouched.
 
 ---
 
-## Beat 2 — What the string can't say, and what the report says  ·  slides 4–5  ·  2 min, tab B
+## Beat 2 — What the string can't say, and what the report says  ·  slides 5–6  ·  2 min, tab B
 
 The room has just seen two runs agree to the byte. Slide 4 names what that
 agreement doesn't buy you — what the string on its own can't carry:
@@ -208,7 +244,7 @@ commit_identified       a1b2c3d  PASS  satisfied
 ```
 
 One failure; the other five say what *was* verified — the attestation was there,
-the PR was found, the identity resolved. Every bullet on slide 4 is answered by
+the PR was found, the identity resolved. Every bullet on slide 5 is answered by
 the column beside it.
 
 **This is the beat the whole talk rests on, and it needs no vocabulary** — the
@@ -221,7 +257,7 @@ other check name reads as English.
 
 ---
 
-## Beat 3 — Declare a policy instead  ·  slide 6  ·  3 min, tab A
+## Beat 3 — Declare a policy instead  ·  slide 7  ·  3 min, tab A
 
 The rule is declared as data: the things being checked, and the checks that
 apply to them. `demo/deployments.json` — three deployments, one not in
@@ -292,7 +328,7 @@ false
 
 ---
 
-## Beat 4 — Read the report  ·  slides 7–10  ·  4 min, tab A
+## Beat 4 — Read the report  ·  slides 8–11  ·  4 min, tab A
 
 `d-1`, `d-2`, `d-3` are the three deployments' `name` fields — the path the
 requirement's `"id": ["name"]` names. One subject is one deployment, and
@@ -353,7 +389,7 @@ Nine rows from twelve lines of declaration:
 Rows 8 and 9 are the `absent`/`value` pair — the single most useful thing in
 the report.
 
-### The other half of the report — slide 8
+### The other half of the report — slide 9
 
 The report has two halves, and everything above is one of them. Check
 **definitions** live once per `(requirement, check)` pair under
@@ -393,7 +429,7 @@ on each row and the `subjects: {total, matching}` counts.)
 
 ---
 
-## Beat 5 — Two functions  ·  slide 11  ·  1.5 min, tab A
+## Beat 5 — Two functions  ·  slide 12  ·  1.5 min, tab A
 
 The library has exactly two entry points, and the second takes the **report**,
 not the input:
@@ -456,7 +492,7 @@ Three properties worth naming:
 
 ---
 
-## Beat 6 — Inside the failing row, and what parity found  ·  slides 12–15  ·  3 min, tab B
+## Beat 6 — Inside the failing row, and what parity found  ·  slides 13–16  ·  3 min, tab B
 
 The failing row's `inputs`:
 
@@ -583,7 +619,7 @@ bet: 61 lines, **no custom op** — `any_of` covered it. Two caveats:
 
 ---
 
-## Beat 7 — Where it plugs in, and the one blocker  ·  slides 16–17  ·  1.5 min
+## Beat 7 — Where it plugs in, and the one blocker  ·  slides 17–18  ·  1.5 min
 
 Five stages; four of them are control-agnostic:
 
@@ -624,7 +660,7 @@ Three ways past it:
 
 ---
 
-## Beat 8 — What we have not run  ·  slide 18  ·  1 min
+## Beat 8 — What we have not run  ·  slide 19  ·  1 min
 
 Put this before the close, not after — end on the plan, not the caveats. Every
 item is tracked in the repo, not remembered:
@@ -663,7 +699,7 @@ control. The other two are cost, not direction.
 
 ---
 
-## Appendix — both reports, live  ·  slides 20–21  ·  on demand
+## Appendix — both reports, live  ·  slides 21–22  ·  on demand
 
 **Not in the linear path.** They sit after the close, so you only reach them
 deliberately: press `End` for A2, or click either of the last two ticks on the
@@ -674,10 +710,10 @@ one of them:
 
 | | report | for questions about |
 | --- | --- | --- |
-| **A1** | `prod_deploy` on `demo/deployments.json` — 2.8 KB, 205 lines | the vocabulary, slides 6–11 |
-| **A2** | `control_43` on `demo/trail_self_approved.json` — 14.8 KB, 506 lines | the spine, slides 2–5 and 12 |
+| **A1** | `prod_deploy` on `demo/deployments.json` — 2.8 KB, 205 lines | the vocabulary, slides 7–12 |
+| **A2** | `control_43` on `demo/trail_self_approved.json` — 14.8 KB, 506 lines | the spine, slides 3–6 and 13 |
 
-**A2 is where `pr_attestation_present` and the rest of slide 5's check names
+**A2 is where `pr_attestation_present` and the rest of slide 6's check names
 live.** They appear nowhere in A1, because A1 is a different policy — the toy
 declares `approved` and `ci_green` and nothing else.
 
@@ -696,7 +732,7 @@ Worth opening if asked:
 | A1 | `requirements.prod_deploy.checks` | definitions live once, with the rendered `expression` |
 | A1 | `results` | nine rows carrying only what differs per subject |
 | A1 | any row's `inputs` | the values echoed back, which is what makes the row recomputable |
-| A2 | `results[5]` | the failing `independently_approved` row — the one slide 12 dissects |
+| A2 | `results[5]` | the failing `independently_approved` row — the one slide 13 dissects |
 | A2 | `requirements` | two of them, `commit_reviewed` and `commits_present`, which is why the `$`-checks appear twice |
 
 A2 opens showing all nine rows without expanding anything, so
@@ -721,7 +757,7 @@ opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_
 
 ---
 
-## Close  ·  slide 19  ·  1 min
+## Close  ·  slide 20  ·  1 min
 
 Two decisions, previously mistaken for one:
 
@@ -736,7 +772,7 @@ Two next steps:
 settled; that was the parity harness. Cost isn't, and control 43 is the wrong
 control to measure it on. 1068 is the candidate because the sketch already
 exists: **61 lines, no custom op**, which is the shape the bet predicts. Two
-things to have ready, since slide 15's third row invites both:
+things to have ready, since slide 16's third row invites both:
 
 - It's a **sketch against synthetic input, not a port** — 1068 has no Rego to
   port, its rule is TypeScript.
@@ -769,7 +805,13 @@ Point at `README.md` for the vocabulary and operator reference,
 
 ## If you're running long
 
-Cut in this order. Beats 1 and 4 are the load-bearing ones.
+**You will be.** The beats total **19.5 minutes** against a 15-minute budget, and
+the cuts below recover 3.5, which lands at 16. So go in expecting to drop one
+whole beat, not to trim — beat 8 is the one to lose, and beat 3 is the one to
+shorten if you'd rather keep it.
+
+Cut in this order. Beats 0, 1 and 4 are the load-bearing ones — 0 because
+without the genesis the room has no reason to want any of this.
 
 1. **Beat 8 (open questions)** — the material is in `INTEGRATION.md` and
    `BRIEF_OPEN_QUESTIONS.md`, and the Q&A section below covers it if asked
@@ -778,7 +820,7 @@ Cut in this order. Beats 1 and 4 are the load-bearing ones.
    point (saves ~45s).
 3. **Beat 7's three doors** — say "it's blocked, three ways past it, ask me"
    (saves ~50s).
-4. **Beat 6's two control-1068 caveats** — keep the row on slide 15, since it
+4. **Beat 6's two control-1068 caveats** — keep the row on slide 16, since it
    carries the argument; just say "it's half a control, ask me why" (saves ~35s).
 5. **Beat 1's `cat`** — describe the input instead of showing it (saves ~20s).
 
@@ -795,18 +837,18 @@ middle slides need:
 
 | what the slide needs | `control_43` here | `prod_deploy` |
 | --- | --- | --- |
-| repetition to avoid — slide 8, "definitions live once" | 1 subject, nothing repeats | 3 subjects |
-| `applies_to` and scope — slides 6–7 | **zero** `$applies` rows | 3 |
-| `absent` ≠ `value` — slide 9 | only `satisfied` and `value`; **`absent` never occurs** | all three |
-| rows for `violations` to filter — slide 11 | 1 failing row | 3 |
-| a requirements block that fits a slide — slide 6 | **124 lines** | 19 |
+| repetition to avoid — slide 9, "definitions live once" | 1 subject, nothing repeats | 3 subjects |
+| `applies_to` and scope — slides 7–8 | **zero** `$applies` rows | 3 |
+| `absent` ≠ `value` — slide 10 | only `satisfied` and `value`; **`absent` never occurs** | all three |
+| rows for `violations` to filter — slide 12 | 1 failing row | 3 |
+| a requirements block that fits a slide — slide 7 | **124 lines** | 19 |
 
-That last one decides it on its own: slide 6 holds 17 lines. And it doesn't run
+That last one decides it on its own: slide 7 holds 17 lines. And it doesn't run
 the other way either — prod_deploy can't be the spine, because nobody is
 impressed that a toy ports. There's no parity, no defects and no cost story
 without the real control.
 
-So: **control 43 carries the claim (slides 2–5, 12–15), prod_deploy carries the
+So: **control 43 carries the claim (slides 3–6, 13–16), prod_deploy carries the
 vocabulary (6–11).** Both reports are in the appendix, one slide each.
 
 **"Isn't this just OPA with extra steps?"**
@@ -859,7 +901,7 @@ that for the `opa`-in-the-image route. Four things it still doesn't do:
   No input dump distinguishes a selector that matched nothing (`unmatched`) from
   one that matched twice (`ambiguous`), because that depends on what the check's
   selector was. In the original policy, two `pull_request` attestations don't
-  even fail — they crash (`eval_conflict_error`, slide 14).
+  even fail — they crash (`eval_conflict_error`, slide 15).
 - **Nothing binds the dump to the verdict.** Two artifacts, two flags, neither
   referencing the other, and neither recording which policy version ran. The
   report is one deterministic hashable document binding subject + check + values
