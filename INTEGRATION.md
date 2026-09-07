@@ -218,9 +218,16 @@ Nothing else in the policy document is read. `report` is still computed; it is
 simply never asked for.
 
 One trap: `collectViolations` does `if s, ok := v.(string); ok` with **no else
-branch**. A non-string element in `violations` is silently dropped, not rejected.
-Trying to smuggle structured data out through `violations` fails quietly, returning
-fewer entries than the policy produced.
+branch**. A non-string element in `violations` is silently dropped, not rejected —
+so a policy that puts an object or a number in that set gets back fewer entries
+than it produced, with nothing said about it.
+
+**Read that precisely, because the distinction is load-bearing.** It is
+*non-strings* that vanish, not structured data as such. A JSON document encoded
+*as a string* passes through untouched, which leaves `violations` usable as a
+carrier for the whole report — see [The third path](#the-third-path-an-evidence-pass-that-abuses-violations).
+An earlier version of this file said flatly that smuggling structured data through
+`violations` fails quietly, which reads as a closed door and is wrong.
 
 ## One door, not two: control 43 goes through `kosli evaluate`
 
@@ -257,10 +264,23 @@ the image to open another. `kosli evaluate` runs exactly two queries —
 `data.policy.allow` and, on a denial, `data.policy.violations` — and that is still
 true on `main` at v2.39.x, so it is not a version problem. Everything else the
 policy computes is computed and discarded. **This is the single blocker on the
-evidence report reaching production**, and it has exactly two fixes: add `opa` to
-the image (one static binary) and run the bundle over the captured input document
-a second time, or get the CLI to surface more of the policy document than two
-rules.
+evidence report reaching production.** Three ways past it, and the third was
+missing from this file for longer than it should have been:
+
+1. **Get the CLI to surface more** of the policy document than two rules — a third
+   field on `Result`, or `--output json` returning the document. This is the real
+   fix, and it is smaller than it sounds: OPA is *already* in production, linked
+   into the `kosli` binary as a Go library (`internal/evaluate/rego.go`). The ask
+   is to expose one more query on a document the CLI already evaluates with an
+   engine it already carries, not to ship a new dependency.
+2. **Add `opa` to the image** (one static binary) and run the bundle over the
+   captured input document a second time.
+3. **Carry the report out through `violations`** as encoded strings, which needs
+   neither of the above. It is a hack, it works, and it is written up below.
+
+1 is the destination and 2 is the pragmatic middle, but both need somebody else to
+change something — the CLI's release cycle, or the image. 3 needs nothing, which is
+its entire merit.
 
 **3. The pipeline is already shaped for the second evaluation.** The control's own
 README says the input document is produced with `kosli evaluate trails …
@@ -278,13 +298,79 @@ The CLI in the image is **at least 2.18.0**: `--no-assert` does not exist in
 2.17.0 and appears in 2.18.0. That matters because `kosli evaluate input`
 (evaluate a captured document locally, no API call) and `--params` (populate
 `data.params`, which `examples/control_43.rego` already reads for its
-service-account patterns) both predate 2.18.0 — so both are available on that
+web-flow patterns) both predate 2.18.0 — so both are available on that
 image today, without a CLI upgrade. Neither is in 2.13.1, which is what is
 installed here.
 
 What survives of the old framing: a gate returning a boolean is still correct, and
-pushing evidence through a gate is still the wrong move. What does not survive is
-the idea that a wider door was already open.
+pushing evidence through a gate is still the wrong *design*. What does not survive
+is the idea that a wider door was already open — and, as the next section admits,
+the difference between a wrong design and an unavailable one is worth a hack when
+the alternative is no evidence at all.
+
+### The third path: an evidence pass that abuses `violations`
+
+**This is a hack. It is written down because it works and because it is the only
+option that needs nothing from anybody else, not because it is good.**
+
+The lever is the precise shape of the trap above: `violations` is `[]string`, and a
+string survives the collector intact. So a JSON-encoded report row is a legal
+element. The second query runs **only when `allow` is false**, so the evidence pass
+has to fail on purpose.
+
+Two calls over one bundle, the mode chosen by `--params` rather than by a second
+policy file — `--params` populates `data.params`, is confirmed present on that
+image, and the policy already reads it:
+
+```rego
+evidence_mode if data.params.mode == "evidence"
+
+allow := report.compliant if not evidence_mode
+allow := false if evidence_mode                 # forces the second query
+
+violations := <the human messages> if not evidence_mode
+violations := <report rows, one JSON string each> if evidence_mode
+```
+
+```sh
+# A — the gate, byte for byte what production runs today
+kosli evaluate trails <shas> --policy bundle.rego --no-assert --output json …   | jq -r '.allow'
+
+# B — the evidence pass, whose verdict is meaningless and ignored
+kosli evaluate trails <shas> --policy bundle.rego --params @evidence.json   --no-assert --output json … | jq '.violations | map(fromjson)' > report.json
+
+kosli attest custom --type evidence-report --attestation-data report.json …
+```
+
+Nothing is projected away: every row, passing and failing, with its `cause` and its
+echoed inputs, comes back through the round-trip. `violations` is the pipe, not the
+payload.
+
+**One row per string, and that is forced rather than stylistic.** `violations` is a
+Rego *set*, so what arrives is canonically sorted, not meaningfully ordered.
+Chunking one large JSON document across elements would reassemble in the wrong
+order. Rows survive because each already names its subject and check; the report's
+top-level fields (`compliant`, `requirements[]`) need their own element.
+
+What makes it a tolerable hack: the gate path is untouched when `mode` is absent,
+both calls share one bundle so there is no second artefact to drift, and the abuse
+is confined to a branch that only fires when asked for. What makes it a hack: it
+forces a denial nobody means, on a field with a published contract, because the only
+other channel out of the policy is a boolean.
+
+**Unverified, and the last point is the one that could kill it:**
+
+- `--no-assert` becomes *mandatory* on call B, or `allow: false` exits 1 and fails
+  the workflow.
+- Call B's output must not land where call A's does.
+  `four-eyes-result-schema.json` expects one human-readable string per failing
+  commit, so the evidence pass needs its own attestation name.
+- Two full evaluations per gate, the second pure overhead on the happy path.
+- **Whether the CLI or the server caps `violations` by count or size.** A report is
+  O(subjects × checks) and every row echoes what it read. Nothing here has measured
+  this, and it decides whether the whole approach is viable. It is a local
+  experiment against the stub, which is where it should be settled before anyone
+  builds on this.
 
 ## Where the input document comes from — settled, by running it
 
@@ -587,9 +673,17 @@ There is now a second, separable question, and round 5 sharpened it into
 something answerable: **the evidence report cannot reach production through the
 door control 43 uses.** `kosli evaluate` returns two rules and discards the rest,
 so adopting the library as a *gate* is available today and buys better failure
-messages, while adopting it as *evidence* needs one of two small things — `opa`
-added to the image, or the CLI surfacing more of the policy document. Those are
-different decisions with different costs, and previously they looked like one.
+messages, while adopting it as *evidence* means getting the report past a CLI that
+reads two rules. Those are different decisions with different costs, and previously
+they looked like one.
+
+Three ways to do the second, set out in full [above](#2-the-report-does-not-survive-kosli-evaluate):
+the CLI surfacing more of the document (the real fix, and a small ask since OPA is
+already linked into the binary), `opa` added to the image, or the report carried
+out through `violations` as encoded strings. The first two need somebody else to
+change something; the third needs nothing and is a hack. **What decides between
+them is not preference but whether `violations` has a size cap**, which nothing has
+measured yet — and that is a local experiment, not another round trip.
 
 ## Four defects in the current policy
 
@@ -1104,6 +1198,12 @@ TypeScript on a machine with access to them.
   custom` of a report — **server-side** schema validation and jq evaluation —
   remains the one claim about the report's destination that has never been
   executed.
+- **Unverified, and now the pivotal one:** whether `violations` is capped by count
+  or size in the CLI or the server. If it is not, the report can leave through the
+  existing door today with no image change and no CLI release — an evidence pass
+  that forces a denial and encodes each row as a string. If it is, that path closes
+  and the report waits on the image or the CLI. This has never been measured,
+  it is measurable locally against the stub, and it decides the integration route.
 - **Also unverified:** whether attestation payloads have a size limit, which
   matters because a report is O(subjects x checks) and every row echoes its inputs.
   And `--summary`, which would render key report numbers in the Kosli UI, exists in
