@@ -393,6 +393,69 @@
     width: 100%;
   }
 
+  /* ---------- JSON explorer (appendix) ---------- */
+  .jsonwrap {
+    background: var(--term-bg);
+    border-radius: 3px;
+    padding: .8em 1em;
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .jsontree {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8em;
+    line-height: 1.65;
+    color: var(--term-ink);
+  }
+  .jsontree details { margin: 0; }
+  .jsontree summary {
+    cursor: pointer;
+    list-style: none;
+    white-space: nowrap;
+    border-radius: 2px;
+  }
+  .jsontree summary::-webkit-details-marker { display: none; }
+  .jsontree summary::before {
+    content: "\25B8";
+    display: inline-block;
+    width: 1.1em;
+    color: var(--term-dim);
+    transition: transform .12s ease;
+  }
+  .jsontree details[open] > summary::before { content: "\25BE"; }
+  .jsontree summary:hover { background: #ffffff14; }
+  .jsontree summary:focus-visible { outline: 2px solid #d9a441; outline-offset: 1px; }
+  .jsontree .kids { padding-left: 1.6em; border-left: 1px solid #ffffff1a; margin-left: .45em; }
+  .jsontree .leaf { padding-left: 1.1em; white-space: nowrap; }
+  .jsontree .k { color: #d9a441; }
+  .jsontree .n { color: var(--term-dim); font-style: italic; }
+  .jsontree .s { color: #9fd39f; }
+  .jsontree .num { color: #d7dbe2; }
+  .jsontree .b-true { color: #7fc79b; }
+  .jsontree .b-false { color: #e08585; }
+  .jsontree .nul { color: var(--term-dim); }
+  .jsontree .pv { color: var(--term-dim); }
+  .jsontree details[open] > summary > .pv { opacity: 0; }
+
+  .treebar { display: flex; gap: .6em; align-items: baseline; }
+  .treebar button {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: .72em;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: .25em .7em;
+    cursor: pointer;
+  }
+  .treebar button:hover { color: var(--ink); border-color: var(--ink-soft); }
+  .treebar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .treebar .hintline { font-size: .74em; color: var(--muted); margin-left: auto; }
+
   /* ---------- chrome ---------- */
   .chrome {
     width: min(1240px, 100%);
@@ -895,6 +958,21 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
 <span class="dim">DEMO.md</span>         this walkthrough, with every command</div>
   </section>
 
+  <!-- 20 -->
+  <section class="slide dense" data-label="Appendix: the report"
+    data-say="The whole document, live, so a question about the structure can be answered by opening it rather than described. This is the real report for the three-deployment policy, 2.8 KB and 205 lines pretty-printed, which is why it is a tree and not a paste. Reachable with End at any point, or by clicking the last tick on the rail; it sits after the close so it is never in the linear path. Clicks and space inside the tree are handled by the tree, not by the deck, so expanding a node does not advance the slide. Three things worth opening if asked: requirements.prod_deploy.checks to show definitions living once, results to show the nine rows carrying only what differs, and any row's inputs to show the values echoed back."
+    data-cmd="opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
+  --format=json 'data.demo.report' | jq .">
+    <div class="tag"><span class="n">A</span><span>The whole report</span></div>
+    <div class="treebar">
+      <button type="button" id="tree-expand">Expand all</button>
+      <button type="button" id="tree-collapse">Collapse</button>
+      <span class="hintline">2.8 KB &middot; 205 lines pretty-printed &middot; 9 rows</span>
+    </div>
+    <div class="jsonwrap"><div class="jsontree" id="jsontree"></div></div>
+    <script type="application/json" id="report-json">{"compliant":false,"requirements":{"prod_deploy":{"checks":{"$applies":{"description":"subject is in scope as a deployment under this requirement's applies_to filter; out-of-scope subjects are recorded but not evaluated","expression":"environment == prod"},"$min_subjects":{"description":"at least 1 matching deployment subject(s) required","expression":"count(matching(deployments)) >= 1"},"$well_formed":{"description":"the requirement declares at least one check and a recognised \"require\" value; lacking either, it asserts nothing that could ever be satisfied","expression":"count(checks) >= 1 and require in {every, some}"},"approved":{"description":"A named approver signed off on the deployment","expression":"approved_by is a non-empty string","op":"non_empty_string","path":["approved_by"]},"ci_green":{"check":{"op":"equals","path":["conclusion"],"value":"success"},"description":"Every CI check on the deployment passed","expression":"every ci_checks: conclusion == success","op":"all","path":["ci_checks"]}},"require":"every","satisfied":false,"subjects":{"matching":2,"total":3}}},"results":[{"cause":"satisfied","check":"$well_formed","inputs":[{"name":"count(checks)","value":2},{"name":"require","value":"every"}],"passed":true,"requirement":"prod_deploy","subject":{"id":null,"type":"deployment"}},{"cause":"satisfied","check":"$min_subjects","inputs":[{"name":"count(matching(deployments))","value":2}],"passed":true,"requirement":"prod_deploy","subject":{"id":null,"type":"deployment"}},{"cause":"satisfied","check":"$applies","inputs":[{"name":"environment","value":"prod"}],"passed":true,"requirement":"prod_deploy","subject":{"id":"d-1","type":"deployment"}},{"cause":"satisfied","check":"$applies","inputs":[{"name":"environment","value":"prod"}],"passed":true,"requirement":"prod_deploy","subject":{"id":"d-2","type":"deployment"}},{"cause":"value","check":"$applies","inputs":[{"name":"environment","value":"staging"}],"passed":false,"requirement":"prod_deploy","subject":{"id":"d-3","type":"deployment"}},{"cause":"satisfied","check":"approved","inputs":[{"name":"approved_by","value":"bob"}],"passed":true,"requirement":"prod_deploy","subject":{"id":"d-1","type":"deployment"}},{"cause":"satisfied","check":"ci_green","inputs":[{"name":"ci_checks[].conclusion","value":["success"]}],"passed":true,"requirement":"prod_deploy","subject":{"id":"d-1","type":"deployment"}},{"cause":"absent","check":"approved","inputs":[{"name":"approved_by","value":null}],"passed":false,"requirement":"prod_deploy","subject":{"id":"d-2","type":"deployment"}},{"cause":"value","check":"ci_green","inputs":[{"name":"ci_checks[].conclusion","value":["success","failure"]}],"passed":false,"requirement":"prod_deploy","subject":{"id":"d-2","type":"deployment"}}]}</script>
+  </section>
+
 </div>
 
 <div class="pmeta">
@@ -906,7 +984,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
 
 <div class="chrome">
   <div class="rail" id="rail" role="tablist" aria-label="Slides"></div>
-  <span class="count" id="count">1 / 19</span>
+  <span class="count" id="count">1 / 20</span>
   <span class="hint"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> move &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>p</kbd> presenter</span>
 </div>
 
@@ -917,6 +995,79 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
 </div>
 
 <script>
+  // ---- appendix: render the embedded report as a collapsible tree ----
+  (function () {
+    var host = document.getElementById('jsontree');
+    var src = document.getElementById('report-json');
+    if (!host || !src) return;
+
+    var data;
+    try { data = JSON.parse(src.textContent); } catch (e) { return; }
+
+    function leafHtml(v) {
+      if (v === null) return '<span class="nul">null</span>';
+      if (typeof v === 'boolean') return '<span class="b-' + v + '">' + v + '</span>';
+      if (typeof v === 'number') return '<span class="num">' + v + '</span>';
+      return '<span class="s">' + JSON.stringify(v) + '</span>';
+    }
+
+    // a collapsed object is useless if it only says {6}; show a few scalars so a
+    // row is identifiable without opening it
+    function preview(val) {
+      if (Array.isArray(val)) return '';
+      var bits = [];
+      Object.keys(val).forEach(function (k) {
+        var v = val[k];
+        if (bits.length >= 3) return;
+        if (v !== null && typeof v === 'object') return;
+        bits.push(k + ': ' + (typeof v === 'string' ? v : String(v)));
+      });
+      if (!bits.length) return '';
+      var txt = bits.join('  ');
+      if (txt.length > 62) txt = txt.slice(0, 61) + '\u2026';
+      return ' <span class="pv">' + txt + '</span>';
+    }
+
+    function label(key, val) {
+      var k = key === null
+        ? '<span class="k">report</span> '
+        : '<span class="k">' + key + '</span>: ';
+      if (Array.isArray(val)) return k + '<span class="n">[' + val.length + ']</span>';
+      return k + '<span class="n">{' + Object.keys(val).length + '}</span>' + preview(val);
+    }
+
+    function build(key, val, depth) {
+      if (val === null || typeof val !== 'object') {
+        var d = document.createElement('div');
+        d.className = 'leaf';
+        d.innerHTML = (key === null ? '' : '<span class="k">' + key + '</span>: ') + leafHtml(val);
+        return d;
+      }
+      var det = document.createElement('details');
+      if (depth < 1) det.open = true;
+      var sum = document.createElement('summary');
+      sum.innerHTML = label(key, val);
+      det.appendChild(sum);
+      var kids = document.createElement('div');
+      kids.className = 'kids';
+      var keys = Array.isArray(val) ? val.map(function (_, i) { return i; }) : Object.keys(val);
+      keys.forEach(function (k) {
+        kids.appendChild(build(Array.isArray(val) ? String(k) : k, val[k], depth + 1));
+      });
+      det.appendChild(kids);
+      return det;
+    }
+
+    host.appendChild(build(null, data, -1));
+
+    function setAll(open) {
+      Array.prototype.forEach.call(host.querySelectorAll('details'), function (d) { d.open = open; });
+      if (!open) host.querySelector('details').open = true;
+    }
+    document.getElementById('tree-expand').addEventListener('click', function () { setAll(true); });
+    document.getElementById('tree-collapse').addEventListener('click', function () { setAll(false); });
+  })();
+
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var rail = document.getElementById('rail');
   var count = document.getElementById('count');
@@ -992,6 +1143,8 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
   document.addEventListener('keydown', function (e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     var k = e.key;
+    // inside the appendix tree, space and Enter belong to the disclosure widget
+    if ((k === ' ' || k === 'Enter') && e.target.closest && e.target.closest('.jsonwrap')) return;
     if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'j') { go(at + 1); e.preventDefault(); }
     else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'k') { go(at - 1); e.preventDefault(); }
     else if (k === 'Home') { go(0); e.preventDefault(); }
@@ -1004,7 +1157,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
   });
 
   document.getElementById('stage').addEventListener('click', function (e) {
-    if (e.target.closest('.term, table, a')) return;
+    if (e.target.closest('.term, table, a, button, details, summary, .jsonwrap')) return;
     var mid = this.getBoundingClientRect().left + this.clientWidth / 2;
     go(e.clientX < mid ? at - 1 : at + 1);
   });

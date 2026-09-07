@@ -45,7 +45,7 @@ the projector. Arrows in either window move both, over `BroadcastChannel` (a
 browser API for messaging between same-origin tabs) with a `localStorage`
 fallback. `p` is deliberately local, so the projector window never shows notes.
 
-19 deliberately sparse slides — a headline and at most one artefact each, so
+19 presented slides plus an appendix — a headline and at most one artefact each, so
 the room listens instead of reads. `←` `→` to move; `n` toggles a presenter bar
 carrying that slide's talking point and the command to run; the rail under the
 stage jumps anywhere. **The prose lives here, not on the slides** — the
@@ -621,6 +621,41 @@ Detail worth having, in the order someone will ask:
 If asked which of these would change the decision: **3 failing** would kill the
 evidence path as designed, and **1 disagreeing** would mean the port isn't the
 control. The other two are cost, not direction.
+
+---
+
+## Appendix — the whole report, live  ·  slide 20  ·  on demand
+
+**Not in the linear path.** It sits after the close, so you only reach it
+deliberately: press `End`, or click the last tick on the rail. Then press
+`Home` (or the first tick) to come back.
+
+The real report for `demo/deployments.json` — 2.8 KB, 205 lines pretty-printed —
+embedded as a collapsible tree, so a question about the structure gets answered
+by opening it rather than described. Every collapsed node previews its first few
+scalar fields, so a row reads as `4: {6} cause: value check: $applies passed:
+false` without expanding it.
+
+`Expand all` / `Collapse` are there for when someone asks to see everything;
+fully expanded it's 3,500px of tree in a well that scrolls on its own.
+
+Three things worth opening if asked:
+
+| open | to show |
+| --- | --- |
+| `requirements.prod_deploy.checks` | definitions live once, with the rendered `expression` |
+| `results` | nine rows carrying only what differs per subject |
+| any row's `inputs` | the values echoed back, which is what makes the row recomputable |
+
+Clicks and `space` inside the tree belong to the tree, not the deck — expanding
+a node won't advance the slide.
+
+The same document from the terminal, if you'd rather:
+
+```sh
+opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
+  --format=json 'data.demo.report' | jq .
+```
 
 ---
 
