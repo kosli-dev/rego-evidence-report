@@ -358,19 +358,161 @@ is confined to a branch that only fires when asked for. What makes it a hack: it
 forces a denial nobody means, on a field with a published contract, because the only
 other channel out of the policy is a boolean.
 
-**Unverified, and the last point is the one that could kill it:**
+**All of this has since been checked against the CLI source and by running it —
+see [What the CLI and server sources settled](#what-the-cli-and-server-sources-settled).**
+The short version:
 
-- `--no-assert` becomes *mandatory* on call B, or `allow: false` exits 1 and fails
-  the workflow.
-- Call B's output must not land where call A's does.
+- **`violations` is not capped.** 50,000 rows and 16.4 MB came back intact, and
+  `collectViolations` has no bound in source. This was the question that could have
+  killed the approach, and it does not.
+- `--params` and `--no-assert` behave as written above. One correction: stdout
+  carries the full JSON *with or without* `--no-assert`, because the printer runs
+  before the deny error — the flag keeps a forced denial from failing the workflow
+  step, which is still a reason to pass it, just not the reason given.
+- **One call, not two, if you want the input as well**: `--show-input` folds the
+  input document into the same response as `violations`.
+- Call B's output still must not land where call A's does.
   `four-eyes-result-schema.json` expects one human-readable string per failing
   commit, so the evidence pass needs its own attestation name.
-- Two full evaluations per gate, the second pure overhead on the happy path.
-- **Whether the CLI or the server caps `violations` by count or size.** A report is
-  O(subjects × checks) and every row echoes what it read. Nothing here has measured
-  this, and it decides whether the whole approach is viable. It is a local
-  experiment against the stub, which is where it should be settled before anyone
-  builds on this.
+- Two full evaluations per gate remains the real cost, the second pure overhead on
+  the happy path.
+
+## What the CLI and server sources settled
+
+Both repositories were read locally — `kosli-dev/cli` at `a5ecf036` and
+`kosli-dev/server` at `d09be5998`. Between them they close the pivotal unknown
+above, the payload limit that had been open since the report first had a
+destination, and two of investigation 3's three questions. Where a claim was
+*executed* rather than read, it says so.
+
+### The evidence pass is viable: `violations` is not capped
+
+`collectViolations` appends every string it finds with no bound, no truncation and
+no size check. Confirmed by running it too: **50,000 rows and 16.4 MB round-tripped
+intact** through `--output json` on the installed 2.13.1, every element present,
+growth linear. The only HTTP request in that path is the `GET
+/api/v2/trails/{org}/{flow}/{trail}` that fetches the input — violations are
+produced by a local OPA evaluation and marshalled locally, so no server limit
+applies to them at all.
+
+That resolves the question the previous section called pivotal. **The report can
+leave through the existing door today**, with no image change and no CLI release.
+
+Three assumptions underneath the hack also hold:
+
+- **`--params`** takes a JSON object or `@file`, unmarshalled whole and mounted at
+  `data.params` via `inmem.NewFromObject({"params": …})`. One flag, replace rather
+  than merge — there is no merge semantics to design around.
+- **`--no-assert`** resolves as `assertOnDeny() == !noAssert` and is mutually
+  exclusive with `--assert`, exactly as assumed. Worth knowing that it is
+  *narrower* than assumed: `PrintJson` runs **before** the "policy denied" error is
+  returned, so stdout carries the complete JSON either way. `--no-assert` is
+  exit-code hygiene so a forced denial does not fail the workflow step, not the
+  thing that gets you the data.
+- **`--output json`** emits `{allow, violations}` with violations in full, and
+  `--show-input` adds `input` — and `params`, when both are set — to the **same
+  document**. So one call can return the report *and* the input document it judged,
+  which is better than the two the hack was written to need.
+
+### The payload limit is 10 MB, and that is ~2,290 commits
+
+`attest custom` sends **multipart/form-data**, with the payload in a `data_json`
+field (`newAttestationForm`). That matters, because the server's `check_file_size`
+middleware gates *only* multipart requests — so it does apply here.
+`ApplicationSettings.MAX_CONTENT_LENGTH` is `10 * 1024 * 1024`; the middleware
+checks the `content-length` header and then the actual body, returning 413 "File
+size exceeds 10MB limit".
+
+Measured against a real report from this library, control 43's five-check shape
+costs about **4.6 KB per commit** once fixed overhead is amortised:
+
+| commits | report | vs 10 MB |
+| --- | --- | --- |
+| 1 | 15 KB | 0% |
+| 200 | 923 KB | 9% |
+| 1,000 | 4.58 MB | 44% |
+| 2,000 | 9.15 MB | 87% |
+| 2,300 | 10.53 MB | **413** |
+
+So the ceiling is around 2,290 commits per report — comfortable for an ordinary
+release, reachable by a wide range. `--attachments` (the evidence vault) is the
+documented way past it, and is why that fallback is worth keeping in mind rather
+than dismissing.
+
+### Investigation 3, answered by importing the server's own validator
+
+Two of its three questions were *executed* — not by a live request, but by calling
+the server's own code with the server's own libraries:
+
+```
+$ python -c "from bounded_schema_validation import schema_validation_errors; ..."
+server module imported OK; deadline = 2s
+
+--- report_ok      (compliant, 9 rows)   schema errors: NONE
+    .compliant == true                                  -> True   status=True
+    [.results[] | select(.check == "$well_formed" ...)]  -> True   status=True
+    overall attestation status = all(parts) = True
+
+--- report_fail    (failing, 14 rows)    schema errors: NONE
+    .compliant == true                                  -> False  status=False
+    [.results[] | select(.check == "$well_formed" ...)]  -> True   status=True
+    overall attestation status = all(parts) = False
+```
+
+**The server would accept the shape, and the verdict is correct in both
+directions.** Round 6 validated with a stdlib checker that enforced the `required`
+lists and the `cause` enum but not the full draft; this is the real validator.
+
+What that validator is: `jsonschema`, with `validator_for(schema,
+default=Draft202012Validator)` — so `$schema` is honoured, and ours declares draft
+2020-12. Two details that matter more for the next schema than for this one:
+
+- Validation runs under a **single shared 2-second deadline**
+  (`SCHEMA_VALIDATION_TIMEOUT_SECONDS`), applied to `pattern` and
+  `patternProperties` only, deliberately shared rather than per-match so N
+  catastrophic patterns cannot run N × the cap. `evidence-report.schema.json` uses
+  neither keyword, so it is moot for us.
+- `FormatChecker()` is **enabled**, so `format` is *enforced* rather than annotated,
+  which is not jsonschema's default. Ours declares no `format`; a future schema
+  adding `"format": "date-time"` would find it validated, which is worth wanting
+  but not worth discovering by surprise.
+
+A failure is not a generic reject: `validate_attestation_data` raises `BadRequest`
+carrying a **per-path error map**, so a mismatch says which pointer failed and why.
+
+### One sharp edge in the jq evaluation
+
+The rules are evaluated as `jq.compile(rule).input(attestation_data).first()`, and
+a part's verdict is:
+
+```python
+data["status"] = data["result"] is True
+```
+
+**Identity against boolean `true`.** A rule returning a *truthy* non-boolean — a
+count, a non-empty string, an array — is `False`, silently. Both proposed rules
+return real booleans and are safe, but anyone reaching for `.results | length` as a
+rule will get a permanent failure with nothing to explain it. Overall status is
+`all(part.status)`, so one such rule condemns the whole attestation.
+
+Two more: `.first()` means **only the first output** of a rule is used, so a rule
+producing a stream silently discards the rest; and unlike schema validation, jq
+evaluation has **no timeout**. Rules are compile-checked at type-creation time, so
+a syntactically invalid rule is a 400 then rather than a surprise at attest time.
+
+`--summary` expressions are a separate path and carry none of this: they return a
+display value of any type, and `evaluate` is written never to raise — a broken
+expression logs a warning and yields `None`. So the proposed summary counting rows
+whose `cause` is `ambiguous` or `absent` returns its number safely.
+
+### What is still not executed
+
+No HTTP request has been made to a deployed Kosli. Auth, routing, middleware
+ordering and persistence remain unexercised; what is verified is the validation and
+evaluation **logic**, by calling the server's own modules. The third question of
+investigation 3 — does a real `kosli attest custom` of a report come back
+compliant — is now the only part of it left, and it is a formality against a
+writable flow rather than an open risk.
 
 ## Where the input document comes from — settled, by running it
 
@@ -681,9 +823,15 @@ Three ways to do the second, set out in full [above](#2-the-report-does-not-surv
 the CLI surfacing more of the document (the real fix, and a small ask since OPA is
 already linked into the binary), `opa` added to the image, or the report carried
 out through `violations` as encoded strings. The first two need somebody else to
-change something; the third needs nothing and is a hack. **What decides between
-them is not preference but whether `violations` has a size cap**, which nothing has
-measured yet — and that is a local experiment, not another round trip.
+change something; the third needs nothing and is a hack.
+
+**The third is now known to work.** `violations` is uncapped, the payload limit is
+10 MB (~2,290 commits), and a real report validates against the server's own
+validator with the jq rules giving the right verdict both ways. So the sequencing
+is no longer a question of feasibility: the hack is available immediately and buys
+the evidence today, and the CLI ask is worth making anyway so that the hack can be
+deleted rather than lived with. Nothing about adopting the library as a *gate*
+changes either way.
 
 ## Four defects in the current policy
 
@@ -1198,16 +1346,22 @@ TypeScript on a machine with access to them.
   custom` of a report — **server-side** schema validation and jq evaluation —
   remains the one claim about the report's destination that has never been
   executed.
-- **Unverified, and now the pivotal one:** whether `violations` is capped by count
-  or size in the CLI or the server. If it is not, the report can leave through the
-  existing door today with no image change and no CLI release — an evidence pass
-  that forces a denial and encodes each row as a string. If it is, that path closes
-  and the report waits on the image or the CLI. This has never been measured,
-  it is measurable locally against the stub, and it decides the integration route.
-- **Also unverified:** whether attestation payloads have a size limit, which
-  matters because a report is O(subjects x checks) and every row echoes its inputs.
-  And `--summary`, which would render key report numbers in the Kosli UI, exists in
-  the CLI source on `main` but not in 2.13.1.
+- **Settled from the CLI and server sources, and by running what could be run**
+  (`cli@a5ecf036`, `server@d09be5998`): `violations` is **not capped** — 50,000
+  rows and 16.4 MB round-tripped intact — so the evidence pass is viable and the
+  report can leave through the existing door with no image change and no CLI
+  release. The attestation payload limit is **10 MB**, from the multipart
+  `check_file_size` middleware, which is about **2,290 commits** at control 43's
+  measured 4.6 KB per commit. `--params`, `--no-assert` and `--output json` all
+  behave as the evidence pass assumes, and `--show-input` folds the input document
+  into the same response. Schema validation is `jsonschema` on draft 2020-12 with
+  `FormatChecker` enabled and a shared 2-second deadline on `pattern` keywords;
+  **a real report validates with zero errors and the jq rules give the right
+  verdict in both directions**, executed against the server's own validator module.
+  The jq status test is `result is True`, so a truthy non-boolean rule fails
+  silently. See [What the CLI and server sources settled](#what-the-cli-and-server-sources-settled).
+- **Also unverified:** `--summary`, which would render key report numbers in the
+  Kosli UI, exists in the CLI source on `main` but not in 2.13.1.
 
 > This file names internal control identifiers and repository names. It is fine on
 > an internal branch; it is worth a deliberate look before anything here reaches a
