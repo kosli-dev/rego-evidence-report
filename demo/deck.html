@@ -687,7 +687,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
 
   <!-- 11 -->
   <section class="slide dense" data-label="The row"
-    data-say="This is the inputs array of slide 10's failing row, one entry per path the check read. The first path is literally `name` because a trail's name IS the commit sha -- that is how the collector records it, one trail per commit. The last entry is the substitute the check looked for and did not find: a root commit has no parent to open a pull request against, so an initial-commit attestation can discharge the check instead. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
+    data-say="This is the inputs array of slide 10's failing row, one entry per path the check read. On the double brackets: the check declares that input as {path: pull_requests, each: [approvers]}, a projection, which the row renders as pull_requests[].approvers. The outer array is one entry per pull request -- the [] in the name -- and the inner one is that pull request's own approvers array. One PR with one approver is why it collapses to [[{...}]]; with two PRs the outer array has two entries. The nesting is load-bearing: the rule is 'some pull_request: every author: some approver != author', so flattening would lose which approver belonged to which pull request and 'some PR fully approved' could not be answered. The first path is literally `name` because a trail's name IS the commit sha -- that is how the collector records it, one trail per commit. The last entry is the substitute the check looked for and did not find: a root commit has no parent to open a pull request against, so an initial-commit attestation can discharge the check instead. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43.report' \
   | jq '.result[0].expressions[0].value.results[]
@@ -705,6 +705,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
         </tbody>
       </table>
     </div>
+    <p class="sub">The outer array is one entry per pull request &mdash; flatten it and <em>some</em> pull request fully approved becomes unanswerable.</p>
     <p class="punch">Same name in both rows. You can <em>see</em> alice approving alice.</p>
   </section>
 

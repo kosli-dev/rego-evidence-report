@@ -408,7 +408,19 @@ opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_
 ```
 
 The row carries the approvers, the commits, and — as that fourth entry — the
-substitute it looked for and didn't find. A root commit has no parent to open a
+substitute it looked for and didn't find.
+
+**Expect a question about the double brackets.** The check declares that input
+as `{"path": pull_requests, "each": ["approvers"]}` — a projection, which the row
+renders as `pull_requests[].approvers`. The **outer** array is one entry per
+pull request (that's the `[]` in the name); the **inner** array is that pull
+request's own `approvers`. This fixture has one PR with one approver, which is
+why it collapses to `[[{…}]]`; with two PRs the outer array has two entries.
+
+The nesting is load-bearing, not incidental. The rule is *some pull_request:
+every author: some approver ≠ author*, so flattening the arrays would lose which
+approver belonged to which pull request — and "some PR was fully approved" would
+become unanswerable. A root commit has no parent to open a
 PR against, so an initial-commit attestation can discharge the check instead.
 Operational tell: a substitute that never reports `cause: substituted` anywhere
 in a report is one nobody is reaching.
