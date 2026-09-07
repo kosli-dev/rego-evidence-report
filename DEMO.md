@@ -91,7 +91,7 @@ reimplemented.
 
 ---
 
-## Beat 1 — What a policy tells you today  ·  slides 2–3  ·  2 min, tab B
+## Beat 1 — Same output, and then some  ·  slides 2–4  ·  2.5 min, tab B
 
 Control 43 (`RCTLDEF0000043`, four-eyes) is **the only Rego policy in `sdlc-workflows`** — every other control
 is workflow wiring. 182 code lines, hand-written by colleagues working with the
@@ -122,7 +122,67 @@ opa eval -d examples/four-eyes.vendored.rego -i demo/trail_self_approved.json \
 }
 ```
 
-That is the right verdict, and a serviceable string. What isn't there:
+**That is the right verdict, and a serviceable string.** Now the same input
+through `examples/control_43.rego`, which expresses the same control with this
+library, modelled per commit — same query:
+
+```sh
+opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
+  -i demo/trail_self_approved.json --format=json 'data.control43' \
+  | jq '.result[0].expressions[0].value | {allow, violations}'
+```
+
+```json
+{
+  "allow": false,
+  "violations": [
+    "Commit a1b2c3d: no independent approval after latest code commit"
+  ]
+}
+```
+
+**Identical** — same verdict, same string, byte for byte. Slide 3 stacks the two
+outputs rather than setting them side by side, so the lines align and the
+sameness is visible instead of asserted. The interface out is unchanged, so
+stages 1, 2, 3 and 5 are untouched. What came with it:
+
+```sh
+opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
+  -i demo/trail_self_approved.json --format=json 'data.control43.report' \
+  | jq -r '.result[0].expressions[0].value.results[]
+           | "\(.check)\t\(.subject.id // "—")\t\(if .passed then "PASS" else "FAIL" end)\t\(.cause)"' \
+  | column -t -s$'\t'
+```
+
+```
+$well_formed            —        PASS  satisfied
+$well_formed            —        PASS  satisfied
+$min_subjects           —        PASS  satisfied
+$min_subjects           —        PASS  satisfied
+identities_resolved     a1b2c3d  PASS  satisfied
+independently_approved  a1b2c3d  FAIL  value
+pr_attestation_present  a1b2c3d  PASS  satisfied
+pull_request_found      a1b2c3d  PASS  satisfied
+commit_identified       a1b2c3d  PASS  satisfied
+```
+
+One failure; the other five say what *was* verified — the attestation was there,
+the PR was found, the identity resolved. That's the distinction beat 2 is about
+to name, already answerable from the output.
+
+**This is the beat the whole talk rests on, and it needs no vocabulary** — the
+room can just see it. Don't stop to explain the `$`-prefixed rows: they're the
+library asserting on the *policy* rather than on the commit, and beat 4 covers
+them. If asked, one line — two of each because this policy declares two
+requirements, `commit_reviewed` and `commits_present` — then move on. Every
+other check name reads as English.
+
+---
+
+## Beat 2 — What the string alone can't say  ·  slide 5  ·  1 min
+
+The room has just seen that there *is* more. This slide names what the string on
+its own couldn't carry:
 
 - **Which** values it read is unknown. You can't recompute that verdict from the
   output — you can only re-run it. That's the difference between auditable and
@@ -139,14 +199,14 @@ That is the right verdict, and a serviceable string. What isn't there:
   a policy that read nothing and passed vacuously.
 - Every control invents its own output shape, so nothing downstream is generic.
 
-The claim: the interesting artefact isn't the boolean — it's the table of
-evidence behind it, and that table can be produced generically.
+The claim, now demonstrated rather than asserted: the interesting artefact isn't
+the boolean — it's the table of evidence behind it, and that table can be
+produced generically.
 
-This same input document comes back in beat 5.
 
 ---
 
-## Beat 2 — Declare a policy instead  ·  slide 4  ·  3 min, tab A
+## Beat 3 — Declare a policy instead  ·  slide 6  ·  3 min, tab A
 
 The rule is declared as data: the things being checked, and the checks that
 apply to them. `demo/deployments.json` — three deployments, one not in
@@ -182,7 +242,7 @@ Five things in that file:
    the report's `requirements` block — it rides on **every row**, including the
    requirement-level `$well_formed` and `$min_subjects` rows, which carry
    `{"id": null, "type": "deployment"}`. That's what lets a consumer interpret
-   rows without the policy, and it's why beat 4's message reads `deployment d-2`
+   rows without the policy, and it's why beat 5's message reads `deployment d-2`
    rather than bare `d-2`. Omit it and rows say `subject d-2` — a tell that
    nobody named the thing being judged.
 2. **`requirements` is data.** An object. No rules, no loops, no `allow`.
@@ -217,7 +277,7 @@ false
 
 ---
 
-## Beat 3 — Read the report  ·  slides 5–8  ·  4 min, tab A
+## Beat 4 — Read the report  ·  slides 7–10  ·  4 min, tab A
 
 `d-1`, `d-2`, `d-3` are the three deployments' `name` fields — the path the
 requirement's `"id": ["name"]` names. One subject is one deployment, and
@@ -278,7 +338,7 @@ Nine rows from twelve lines of declaration:
 Rows 8 and 9 are the `absent`/`value` pair — the single most useful thing in
 the report.
 
-### The other half of the report — slide 6
+### The other half of the report — slide 8
 
 The report has two halves, and everything above is one of them. Check
 **definitions** live once per `(requirement, check)` pair under
@@ -318,7 +378,7 @@ on each row and the `subjects: {total, matching}` counts.)
 
 ---
 
-## Beat 4 — Two functions  ·  slide 9  ·  1.5 min, tab A
+## Beat 5 — Two functions  ·  slide 11  ·  1.5 min, tab A
 
 The library has exactly two entry points, and the second takes the **report**,
 not the input:
@@ -372,7 +432,7 @@ Three properties worth naming:
 - **Selection is generic; wording is yours.** It returns structured entries and
   never a formatted string, because the message is the genuinely
   policy-specific part. The `deployment` in each line above is
-  `subject.type` — declared once as `subject_type` back in beat 2, carried on
+  `subject.type` — declared once as `subject_type` back in beat 3, carried on
   every row, and read straight out of the row here.
 - `allow := report.compliant` and `violations` are **independent derivations**.
   The verdict never reads rows, so a bug in a message projection can mislead but
@@ -381,56 +441,7 @@ Three properties worth naming:
 
 ---
 
-## Beat 5 — The same input, through the real port  ·  slides 10–15  ·  3 min, tab B
-
-Now bring back beat 1's document. `examples/control_43.rego` expresses the same
-control with this library, modelled per commit. Same input, same query:
-
-```sh
-opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
-  -i demo/trail_self_approved.json --format=json 'data.control43' \
-  | jq '.result[0].expressions[0].value | {allow, violations}'
-```
-
-```json
-{
-  "allow": false,
-  "violations": [
-    "Commit a1b2c3d: no independent approval after latest code commit"
-  ]
-}
-```
-
-**Identical** — same verdict, same string, byte for byte. Slide 10 stacks the two
-outputs rather than setting them side by side, so the lines align and the
-sameness is visible instead of asserted. The interface out is unchanged, so
-stages 1, 2, 3 and 5 are untouched. What came with it:
-
-```sh
-opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
-  -i demo/trail_self_approved.json --format=json 'data.control43.report' \
-  | jq -r '.result[0].expressions[0].value.results[]
-           | "\(.check)\t\(.subject.id // "—")\t\(if .passed then "PASS" else "FAIL" end)\t\(.cause)"' \
-  | column -t -s$'\t'
-```
-
-```
-$well_formed            —        PASS  satisfied
-$well_formed            —        PASS  satisfied
-$min_subjects           —        PASS  satisfied
-$min_subjects           —        PASS  satisfied
-identities_resolved     a1b2c3d  PASS  satisfied
-independently_approved  a1b2c3d  FAIL  value
-pr_attestation_present  a1b2c3d  PASS  satisfied
-pull_request_found      a1b2c3d  PASS  satisfied
-commit_identified       a1b2c3d  PASS  satisfied
-```
-
-One failure; the other five say what *was* verified — the attestation was there,
-the PR was found, the identity resolved. That is the "reviewed by the wrong
-person" vs. "the collector never ran" distinction from beat 1, now answerable
-from the output. Two `$well_formed` and two `$min_subjects` rows because the
-policy declares two requirements: `commit_reviewed` and `commits_present`.
+## Beat 6 — Inside the failing row, and what parity found  ·  slides 12–15  ·  3 min, tab B
 
 The failing row's `inputs`:
 
@@ -544,7 +555,7 @@ bet: 61 lines, **no custom op** — `any_of` covered it. Two caveats:
 
 ---
 
-## Beat 6 — Where it plugs in, and the one blocker  ·  slides 16–17  ·  1.5 min
+## Beat 7 — Where it plugs in, and the one blocker  ·  slides 16–17  ·  1.5 min
 
 Five stages; four of them are control-agnostic:
 
@@ -554,7 +565,7 @@ gathers       records    builds input       decides    attests
 ```
 
 **All per-control work is stage 4, and this library only ever touches stage 4.**
-Stages 1, 2, 3 and 5 never learn about it — which beat 5 just showed, since the
+Stages 1, 2, 3 and 5 never learn about it — which beat 1 just showed, since the
 interface out was byte-identical.
 
 Where it stands:
@@ -585,7 +596,7 @@ Three ways past it:
 
 ---
 
-## Beat 7 — What we have not run  ·  slide 18  ·  1 min
+## Beat 8 — What we have not run  ·  slide 18  ·  1 min
 
 Put this before the close, not after — end on the plan, not the caveats. Every
 item is tracked in the repo, not remembered:
@@ -707,20 +718,20 @@ Point at `README.md` for the vocabulary and operator reference,
 
 ## If you're running long
 
-Cut in this order. Beats 2–4 are the demo itself.
+Cut in this order. Beats 1 and 4 are the load-bearing ones.
 
-1. **Beat 7 (open questions)** — the material is in `INTEGRATION.md` and
+1. **Beat 8 (open questions)** — the material is in `INTEGRATION.md` and
    `BRIEF_OPEN_QUESTIONS.md`, and the Q&A section below covers it if asked
    (saves ~60s). Keep it if anyone in the room owns the decision.
-2. **Beat 5's `inputs` block** — the row table above it already makes the
+2. **Beat 6's `inputs` block** — the row table above it already makes the
    point (saves ~45s).
-3. **Beat 6's three doors** — say "it's blocked, three ways past it, ask me"
+3. **Beat 7's three doors** — say "it's blocked, three ways past it, ask me"
    (saves ~50s).
-4. **Beat 5's two control-1068 caveats** — keep the row on slide 15, since it
+4. **Beat 6's two control-1068 caveats** — keep the row on slide 15, since it
    carries the argument; just say "it's half a control, ask me why" (saves ~35s).
 5. **Beat 1's `cat`** — describe the input instead of showing it (saves ~20s).
 
-Beat 3 carries the most weight; spare time goes there.
+Beat 4 carries the most weight; spare time goes there.
 
 ---
 
@@ -747,7 +758,7 @@ never sideways or up — calling `report` or `check_passed` from a custom op sto
 the *library* compiling. `CONTRIBUTING.md` has the layer stack.
 
 **"How do you know the library is right?"**
-410 tests across `src` and `examples`. But the differential harness in beat 5 is
+410 tests across `src` and `examples`. But the differential harness in beat 6 is
 the stronger evidence: the hand-written policy sits next to the port and the
 build breaks when they disagree.
 
@@ -817,7 +828,7 @@ somebody has to answer *why* without re-running anything.
 
 ## Claims that don't hold
 
-- That the evidence report reaches production today. It does not — beat 6.
+- That the evidence report reaches production today. It does not — beat 7.
 - That the port is smaller than the policy it replaces. It isn't.
 - That control 43 alone justifies adoption. It doesn't, and saying so out loud
   is what makes the rest credible.
