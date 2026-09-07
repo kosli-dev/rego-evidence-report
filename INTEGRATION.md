@@ -369,8 +369,13 @@ The short version:
   carries the full JSON *with or without* `--no-assert`, because the printer runs
   before the deny error — the flag keeps a forced denial from failing the workflow
   step, which is still a reason to pass it, just not the reason given.
-- **One call, not two, if you want the input as well**: `--show-input` folds the
-  input document into the same response as `violations`.
+- **`--show-input` does not help here**, and it is worth saying so because it looks
+  like it should. It adds the *input document* to the response; the report comes out
+  through `violations`. The two calls above are the gate and the evidence pass —
+  one must report the real verdict, the other must force a denial — so nothing
+  merges them. Where `--show-input` earns its keep is the `opa`-in-the-image route,
+  which needs exactly that captured document. Its only use to the hack is optional
+  provenance: storing *what was judged* beside the report without a third call.
 - Call B's output still must not land where call A's does.
   `four-eyes-result-schema.json` expects one human-readable string per failing
   commit, so the evidence pass needs its own attestation name.
