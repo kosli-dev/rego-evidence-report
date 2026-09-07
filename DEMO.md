@@ -509,11 +509,24 @@ all three the original **allows or crashes**:
 | two `pull_request` attestations | `eval_conflict_error` | denied, with a row naming the check |
 
 Three of **four defects found and reproduced** — not inferred — in a policy
-whose own 37 tests all pass. The first two are one class of bug: Rego's `>` is
-total across types, so `"1000005" > 1000010` is **true**, and an approval
-semantically *before* the last commit counts. The library removes that class by
-construction — `compare_time` takes two RFC3339 strings or two epoch numbers and
-never a mixed pair.
+whose own 37 tests all pass. The fourth is one commit producing two violation
+strings, which isn't a verdict difference, so it isn't in the table.
+
+Each has its own mechanism:
+
+1. Rego's `>` is total across types and numbers sort below strings, so
+   `"1000005" > 1000010` is **true** and an approval semantically *before* the
+   last commit counts. The library removes this class by construction —
+   `compare_time` takes two RFC3339 strings or two epoch numbers, never a mixed
+   pair.
+2. `latest_commit_ts` is `max()` over a comprehension, and a comprehension skips
+   elements whose body is undefined — so a commit with no `timestamp` is dropped
+   from the maximum and cannot raise the cutoff.
+3. `pr_attest(trail)` is a *function* selecting on
+   `attestation_type == "pull_request"`. Two matching attestations mean two
+   return values, and OPA raises `eval_conflict_error` rather than a verdict —
+   reachable in normal operation, since the collector's attestation name is
+   configurable via `KOSLI_ATTESTATION_NAME`.
 
 ### The cost
 
