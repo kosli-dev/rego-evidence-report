@@ -21,7 +21,9 @@ rewrite split collection from judgement, which is what makes a policy library
 possible at all (see [INTEGRATION.md](INTEGRATION.md)), and in doing so left
 nothing emitting a spreadsheet, because `{allow, violations}` has no columns.
 One uniform report per control is how that capability comes back — once, rather
-than as a bespoke exporter per control.
+than as a bespoke exporter per control. The report and its
+[schema](schema/evidence-report.schema.json) are in place; **the CSV/Excel
+exporter itself is not built yet.**
 
 **New here?** Read [Vocabulary](#vocabulary), then follow
 [Your first policy](#your-first-policy) with a terminal open. The

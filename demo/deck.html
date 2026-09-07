@@ -981,18 +981,20 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
   </section>
 
   <!-- 20 -->
-  <section class="slide" data-label="Next"
-    data-say="1068: a sketch against synthetic input, not a port &mdash; no Rego to port (its rule is TypeScript, checkBusinessRequirements.ts), and its evidence goes to a factstore, not through kosli evaluate. Ticket half only: the collector flattens commit messages to a Set of ticket ids and the ticket model carries no commit backref, so the link is gone before any evidence exists. A collector change, not a library one; does not block the cost measurement. Shadow mode: a second kosli evaluate with the port bundle and --no-assert, verdict compared but gating nothing &mdash; or kosli evaluate input over the --show-input document, which needs no API call. Both available on that image today (at least 2.18.0). four-eyes.rego is itself in shadow mode, so this is one shadow evaluation beside another."
+  <section class="slide dense" data-label="Next"
+    data-say="Excel and CSV: the slide 2 ask, and the one thing on this list that is not started. The report is the input it needs, and schema/evidence-report.schema.json already ships (draft 2020-12) &mdash; both the prod_deploy and control 43 reports validate against it, so an exporter can be written against the schema rather than against a policy. That is the whole point of the uniform shape: a projection, a statistic or a report is written once and runs for every control, because row shape does not vary by control. Row order is deterministic too, so a diff between two runs is meaningful. 1068: a sketch against synthetic input, not a port &mdash; no Rego to port (its rule is TypeScript, checkBusinessRequirements.ts), and its evidence goes to a factstore, not through kosli evaluate. Ticket half only: the collector flattens commit messages to a Set of ticket ids and the ticket model carries no commit backref, so the link is gone before any evidence exists. A collector change, not a library one; does not block the cost measurement. Shadow mode: a second kosli evaluate with the port bundle and --no-assert, verdict compared but gating nothing &mdash; or kosli evaluate input over the --show-input document, which needs no API call. Both available on that image today (at least 2.18.0). four-eyes.rego is itself in shadow mode, so this is one shadow evaluation beside another."
     data-cmd="">
     <div class="tag"><span class="n">09</span><span>Next</span></div>
     <div class="lines">
+      <div><strong>Excel and CSV</strong> &mdash; the slide 2 ask, still to build</div>
       <div><strong>Control 1068</strong> &mdash; what a second control costs</div>
-      <div><strong>Shadow mode</strong> &mdash; the port beside four-eyes.rego, on real trails</div>
+      <div><strong>Shadow mode</strong> &mdash; the port on real trails, gating nothing</div>
     </div>
-    <p class="sub">The harness compares 23 synthetic cases.<br>Shadow mode compares <em>real trails</em> &mdash; and gates nothing.</p>
+    <p class="sub">Same shape from every control, and a JSON Schema for it already ships &mdash;<br>so a projection, a statistic or a report is written <em>once</em> and runs against all of them.</p>
     <div class="term sm"><span class="dim">README.md</span>       vocabulary, operators
 <span class="dim">INTEGRATION.md</span>  the pipeline, and a status-of-claims list
-<span class="dim">DEMO.md</span>         this walkthrough, with every command</div>
+<span class="dim">DEMO.md</span>         this walkthrough, with every command
+<span class="dim">schema/</span>         evidence-report.schema.json, draft 2020-12</div>
   </section>
 
   <!-- 21 -->

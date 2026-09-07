@@ -766,9 +766,32 @@ Two decisions, previously mistaken for one:
 - **Evidence.** Needs one of the three doors above. Buys the hashable,
   attestable report — the thing an auditor can recompute.
 
-Two next steps:
+Three next steps, and the first one is the one the whole thing was for:
 
-**1. Control 1068 — what a second control costs.** Correctness is already
+**1. Excel and CSV out of the report — the slide 2 ask, and not started.**
+The founding requirement is still unmet. What's already in place is everything
+an exporter needs to be written *against*:
+
+- **The report is the input.** Uniform across controls, and row order is
+  deterministic and independent of how the policy object was written, so a diff
+  between two runs is meaningful rather than noise.
+- **`schema/evidence-report.schema.json` already ships** — JSON Schema, draft
+  2020-12. Both reports in the appendix validate against it; I checked, rather
+  than trusting the doc. So an exporter is written against the *schema*, not
+  against a policy, and it doesn't break when a policy changes.
+
+**The general form is the point, and it's worth saying out loud:** because every
+control emits the same shape, a projection, a statistic or a report is written
+**once** and runs against every control. A per-control breach rate, a
+which-checks-fail-most table, a quarter-over-quarter trend, an auditor's
+spreadsheet — none of them need to know which control produced the rows. That is
+what the uniform shape buys, and it's the difference between one exporter and one
+exporter *per control*.
+
+Be straight that this is unbuilt. The deck opens by promising the spreadsheet
+gets built once; it hasn't been built yet at all.
+
+**2. Control 1068 — what a second control costs.** Correctness is already
 settled; that was the parity harness. Cost isn't, and control 43 is the wrong
 control to measure it on. 1068 is the candidate because the sketch already
 exists: **61 lines, no custom op**, which is the shape the bet predicts. Two
@@ -780,7 +803,7 @@ things to have ready, since slide 16's third row invites both:
   stop flattening commit messages to a set of ticket ids. That's a collector
   change, not a library one, and it doesn't block the cost measurement.
 
-**2. Shadow mode in the real workflow.** Run the port alongside
+**3. Shadow mode in the real workflow.** Run the port alongside
 `four-eyes.rego` on real trails, comparing verdicts and gating nothing. Two ways,
 both available on that image today (it's at least 2.18.0):
 
@@ -791,15 +814,16 @@ both available on that image today (it's at least 2.18.0):
 
 This is the one gap the parity harness cannot close by itself: it compares 23
 synthetic cases against a **vendored copy**, and cannot see that copy drifting
-from the policy actually deployed. On 2026-09-07 it had drifted, and the harness
-caught one of five differences. Shadow mode compares against real trails,
+from the policy actually deployed. It had drifted at the last refresh, and the
+harness caught one of five differences. Shadow mode compares against real trails,
 continuously, at no risk — because it decides nothing. Worth being precise in
 the room: `four-eyes.rego` is itself in shadow mode rather than deciding
 anything, so this is one shadow evaluation beside another.
 
 Point at `README.md` for the vocabulary and operator reference,
-`INTEGRATION.md` for the pipeline and the full status-of-claims list, and
-`CONTRIBUTING.md` for anyone who wants to touch the library itself.
+`INTEGRATION.md` for the pipeline and the full status-of-claims list,
+`schema/evidence-report.schema.json` for anyone who wants to build the exporter,
+and `CONTRIBUTING.md` for anyone who wants to touch the library itself.
 
 ---
 
@@ -850,6 +874,17 @@ without the real control.
 
 So: **control 43 carries the claim (slides 3–6, 13–16), prod_deploy carries the
 vocabulary (6–11).** Both reports are in the appendix, one slide each.
+
+**"So what can we actually build on top of this?"**
+Anything that reads rows, written once for all controls. The report is uniform
+across controls, so a consumer never branches on which control produced it: a
+per-control breach rate, a which-checks-fail-most table, a trend over quarters,
+an auditor's spreadsheet. Two properties make that safe rather than hopeful —
+**`schema/evidence-report.schema.json`** is the contract (JSON Schema, draft
+2020-12; both appendix reports validate against it), and **row order is
+deterministic**, independent of how the policy object was written, so two runs
+diff meaningfully. The honest part: **the Excel/CSV exporter is not built.** The
+inputs for it exist; the thing itself doesn't.
 
 **"Isn't this just OPA with extra steps?"**
 The engine *is* OPA. What's added is that the rule is data and the output is a
