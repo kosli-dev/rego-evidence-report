@@ -154,11 +154,16 @@
   .tag .n { color: var(--muted); letter-spacing: .1em; font-variant-numeric: tabular-nums; }
 
   /* one short line under a headline - never a paragraph */
+  /* Closing lines take the column as their measure, not an em cap -- an em cap
+     resolves against each element's own font-size, which gave .sub and .punch
+     four different effective widths across normal and dense slides. Wrap only
+     when the text does not fit, and balance it when it does. */
   .sub {
     font-family: "IBM Plex Serif", Georgia, serif;
     font-size: 1.15em;
     color: var(--muted);
-    max-width: 30em;
+    max-width: none;
+    text-wrap: balance;
     margin: 0;
     line-height: 1.35;
   }
@@ -350,7 +355,7 @@
     line-height: 1.2;
     letter-spacing: -.01em;
     text-wrap: balance;
-    max-width: 28em;
+    max-width: none;
     margin: 0;
   }
   .punch em { font-style: italic; color: var(--accent); }
@@ -382,7 +387,7 @@
     margin: 0;
     line-height: 1;
   }
-  .title .sub { font-size: 1.3em; color: var(--ink-soft); max-width: none; text-wrap: balance; }
+  .title .sub { font-size: 1.3em; color: var(--ink-soft); }
   .title .foot {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-size: .82em;
