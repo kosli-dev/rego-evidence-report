@@ -45,7 +45,7 @@ the projector. Arrows in either window move both, over `BroadcastChannel` (a
 browser API for messaging between same-origin tabs) with a `localStorage`
 fallback. `p` is deliberately local, so the projector window never shows notes.
 
-19 presented slides plus an appendix — a headline and at most one artefact each, so
+19 presented slides plus two appendix slides — a headline and at most one artefact each, so
 the room listens instead of reads. `←` `→` to move; `n` toggles a presenter bar
 carrying that slide's talking point and the command to run; the rail under the
 stage jumps anywhere. **The prose lives here, not on the slides** — the
@@ -647,37 +647,60 @@ control. The other two are cost, not direction.
 
 ---
 
-## Appendix — the whole report, live  ·  slide 20  ·  on demand
+## Appendix — both reports, live  ·  slides 20–21  ·  on demand
 
-**Not in the linear path.** It sits after the close, so you only reach it
-deliberately: press `End`, or click the last tick on the rail. Then press
-`Home` (or the first tick) to come back.
+**Not in the linear path.** They sit after the close, so you only reach them
+deliberately: press `End` for A2, or click either of the last two ticks on the
+rail. Then press `Home` (or the first tick) to come back.
 
-The real report for `demo/deployments.json` — 2.8 KB, 205 lines pretty-printed —
-embedded as a collapsible tree, so a question about the structure gets answered
-by opening it rather than described. Every collapsed node previews its first few
+Two slides, because the deck uses two policies and a question is usually about
+one of them:
+
+| | report | for questions about |
+| --- | --- | --- |
+| **A1** | `prod_deploy` on `demo/deployments.json` — 2.8 KB, 205 lines | the vocabulary, slides 6–11 |
+| **A2** | `control_43` on `demo/trail_self_approved.json` — 14.8 KB, 506 lines | the spine, slides 2–5 and 12 |
+
+**A2 is where `pr_attestation_present` and the rest of slide 5's check names
+live.** They appear nowhere in A1, because A1 is a different policy — the toy
+declares `approved` and `ci_green` and nothing else.
+
+Both are embedded as collapsible trees, so a question about the structure gets
+answered by opening it rather than described. Every collapsed node previews its first few
 scalar fields, so a row reads as `4: {6} cause: value check: $applies passed:
 false` without expanding it.
 
 `Expand all` / `Collapse` are there for when someone asks to see everything;
 fully expanded it's 3,500px of tree in a well that scrolls on its own.
 
-Three things worth opening if asked:
+Worth opening if asked:
 
-| open | to show |
-| --- | --- |
-| `requirements.prod_deploy.checks` | definitions live once, with the rendered `expression` |
-| `results` | nine rows carrying only what differs per subject |
-| any row's `inputs` | the values echoed back, which is what makes the row recomputable |
+| slide | open | to show |
+| --- | --- | --- |
+| A1 | `requirements.prod_deploy.checks` | definitions live once, with the rendered `expression` |
+| A1 | `results` | nine rows carrying only what differs per subject |
+| A1 | any row's `inputs` | the values echoed back, which is what makes the row recomputable |
+| A2 | `results[5]` | the failing `independently_approved` row — the one slide 12 dissects |
+| A2 | `requirements` | two of them, `commit_reviewed` and `commits_present`, which is why the `$`-checks appear twice |
 
-Clicks and `space` inside the tree belong to the tree, not the deck — expanding
-a node won't advance the slide.
+A2 opens showing all nine rows without expanding anything, so
+`independently_approved` / `cause: value` / `passed: false` is on screen the
+moment you arrive.
 
-The same document from the terminal, if you'd rather:
+Clicks and `space` inside a tree belong to the tree, not the deck — expanding
+a node won't advance the slide. Each slide's `Expand all` / `Collapse` acts only
+on its own tree.
+
+The same documents from the terminal, if you'd rather:
 
 ```sh
+# A1
 opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
   --format=json 'data.demo.report' | jq .
+
+# A2
+opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
+  -i demo/trail_self_approved.json --format=json 'data.control43.report' | jq .
 ```
 
 ---
@@ -748,6 +771,27 @@ Beat 4 carries the most weight; spare time goes there.
 ---
 
 ## Q&A ammunition
+
+**"Why a toy policy in the middle? Why not use control 43 throughout?"**
+Because control 43 on this trail structurally can't teach the vocabulary. It has
+**one subject** (the trail carries one commit), and that removes five things the
+middle slides need:
+
+| what the slide needs | `control_43` here | `prod_deploy` |
+| --- | --- | --- |
+| repetition to avoid — slide 8, "definitions live once" | 1 subject, nothing repeats | 3 subjects |
+| `applies_to` and scope — slides 6–7 | **zero** `$applies` rows | 3 |
+| `absent` ≠ `value` — slide 9 | only `satisfied` and `value`; **`absent` never occurs** | all three |
+| rows for `violations` to filter — slide 11 | 1 failing row | 3 |
+| a requirements block that fits a slide — slide 6 | **124 lines** | 19 |
+
+That last one decides it on its own: slide 6 holds 17 lines. And it doesn't run
+the other way either — prod_deploy can't be the spine, because nobody is
+impressed that a toy ports. There's no parity, no defects and no cost story
+without the real control.
+
+So: **control 43 carries the claim (slides 2–5, 12–15), prod_deploy carries the
+vocabulary (6–11).** Both reports are in the appendix, one slide each.
 
 **"Isn't this just OPA with extra steps?"**
 The engine *is* OPA. What's added is that the rule is data and the output is a
