@@ -543,7 +543,7 @@
 
   <!-- 4 -->
   <section class="slide dense" data-label="Declare"
-    data-say="The slide omits the two `description` strings for space; the file has them. `subject_type` is the first field and the easiest to skim past: it labels what kind of thing a row judges, it rides on EVERY row rather than living once in the report's definition block, and it is why the message on the violations slide reads 'deployment d-2' rather than just 'd-2'. It defaults to the literal string subject, so a policy that omits it produces rows saying subject d-2, which is a tell that nobody named the thing being judged. `from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
+    data-say="The slide omits the two `description` strings for space; the file has them. `id` is the identity path WITHIN a subject -- where the library looks inside one subject for the value that identifies it. It resolves to subject.id on every row, which is how a row points back at the thing it judged. The keyword is id; the path is whatever the data calls that field. Here it is [name]; control 43 also uses [name], because a trail's identifying field is its name, which IS the commit sha -- that is why slide 11's first input path reads name. If the path does not resolve, subject.id is null and the row still exists. `subject_type` is the first field and the easiest to skim past: it labels what kind of thing a row judges, it rides on EVERY row rather than living once in the report's definition block, and it is why the message on the violations slide reads 'deployment d-2' rather than just 'd-2'. It defaults to the literal string subject, so a policy that omits it produces rows saying subject d-2, which is a tell that nobody named the thing being judged. `from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
     data-cmd="cat demo/deployments.json
 cat demo/prod_deploy.rego
 opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
@@ -553,7 +553,7 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
     <div class="term sm">requirements := {<span class="key">"prod_deploy"</span>: {
     <span class="key">"subject_type"</span>: <span class="dim">"deployment"</span>,
     <span class="key">"from"</span>: [<span class="dim">"deployments"</span>],
-    <span class="key">"id"</span>: [<span class="dim">"id"</span>],
+    <span class="key">"id"</span>: [<span class="dim">"name"</span>],
     <span class="key">"applies_to"</span>: {<span class="dim">"is_prod"</span>: {<span class="key">"op"</span>: <span class="dim">"equals"</span>, <span class="key">"path"</span>: [<span class="dim">"environment"</span>], <span class="key">"value"</span>: <span class="dim">"prod"</span>}},
     <span class="key">"checks"</span>: {
         <span class="dim">"approved"</span>: {
@@ -581,10 +581,10 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
     <div class="tag"><span class="n">03</span><span>The report</span></div>
     <div class="io">
       <span class="iolabel">in</span>
-      <div class="term sm">{<span class="key">"id"</span>: <span class="dim">"d-1"</span>, <span class="key">"environment"</span>: <span class="dim">"prod"</span>, <span class="key">"approved_by"</span>: <span class="dim">"bob"</span>, <span class="key">"ci_checks"</span>: [{<span class="key">"conclusion"</span>: <span class="dim">"success"</span>}]},
-{<span class="key">"id"</span>: <span class="dim">"d-2"</span>, <span class="key">"environment"</span>: <span class="dim">"prod"</span>,    <span class="no">&lt;- no approved_by at all</span>
+      <div class="term sm">{<span class="key">"name"</span>: <span class="dim">"d-1"</span>, <span class="key">"environment"</span>: <span class="dim">"prod"</span>, <span class="key">"approved_by"</span>: <span class="dim">"bob"</span>, <span class="key">"ci_checks"</span>: [{<span class="key">"conclusion"</span>: <span class="dim">"success"</span>}]},
+{<span class="key">"name"</span>: <span class="dim">"d-2"</span>, <span class="key">"environment"</span>: <span class="dim">"prod"</span>,    <span class="no">&lt;- no approved_by at all</span>
  <span class="key">"ci_checks"</span>: [{<span class="key">"conclusion"</span>: <span class="dim">"success"</span>}, {<span class="key">"conclusion"</span>: <span class="no">"failure"</span>}]},
-{<span class="key">"id"</span>: <span class="dim">"d-3"</span>, <span class="key">"environment"</span>: <span class="no">"staging"</span>, <span class="key">"approved_by"</span>: <span class="dim">"eve"</span>, <span class="key">"ci_checks"</span>: []}</div>
+{<span class="key">"name"</span>: <span class="dim">"d-3"</span>, <span class="key">"environment"</span>: <span class="no">"staging"</span>, <span class="key">"approved_by"</span>: <span class="dim">"eve"</span>, <span class="key">"ci_checks"</span>: []}</div>
     </div>
     <div class="io">
       <span class="iolabel">out</span>

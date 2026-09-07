@@ -6,7 +6,7 @@ import rego.v1
 requirements := {"prod_deploy": {
 	"subject_type": "deployment",
 	"from": ["deployments"],
-	"id": ["id"],
+	"id": ["name"],
 	"applies_to": {"is_prod": {"op": "equals", "path": ["environment"], "value": "prod"}},
 	"checks": {
 		"approved": {

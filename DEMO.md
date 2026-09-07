@@ -159,11 +159,11 @@ cat demo/deployments.json
 ```json
 {
   "deployments": [
-    {"id": "d-1", "environment": "prod", "approved_by": "bob",
+    {"name": "d-1", "environment": "prod", "approved_by": "bob",
      "ci_checks": [{"conclusion": "success"}]},
-    {"id": "d-2", "environment": "prod",
+    {"name": "d-2", "environment": "prod",
      "ci_checks": [{"conclusion": "success"}, {"conclusion": "failure"}]},
-    {"id": "d-3", "environment": "staging", "approved_by": "eve", "ci_checks": []}
+    {"name": "d-3", "environment": "staging", "approved_by": "eve", "ci_checks": []}
   ]
 }
 ```
@@ -186,8 +186,16 @@ Five things in that file:
    rather than bare `d-2`. Omit it and rows say `subject d-2` — a tell that
    nobody named the thing being judged.
 2. **`requirements` is data.** An object. No rules, no loops, no `allow`.
-3. **`from` vs `path`.** `from` locates the collection in the *input document*;
-   a check's `path` locates a field within *one subject*.
+3. **`from` vs `path` vs `id`.** `from` locates the collection in the *input
+   document*; a check's `path` locates a field within *one subject*; and **`id`
+   is the identity path within a subject** — where to look, inside one
+   deployment, for the value that identifies it. It resolves to `subject.id` on
+   every row, which is how a row points back at what it judged. The keyword is
+   `id`; the path is whatever the data happens to call that field. Here it's
+   `["name"]`, and `control_43.rego` also uses `["name"]` because a trail's
+   identifying field is its `name` — which *is* the commit sha. That's why slide
+   11's first input path reads `name`. If the path doesn't resolve, `subject.id`
+   is `null` and the row still exists.
 4. **`applies_to` is scope, not a check.** `d-3` is on staging, so it isn't in
    breach of a production control — it is simply not a subject of it.
 5. **`ci_green` reaches into a nested array** with `all`. That's the shape
@@ -211,8 +219,8 @@ false
 
 ## Beat 3 — Read the report  ·  slides 5–7  ·  3.5 min, tab A
 
-`d-1`, `d-2`, `d-3` are the three deployments' `id` fields — the path the
-requirement's `"id": ["id"]` names. One subject is one deployment, and
+`d-1`, `d-2`, `d-3` are the three deployments' `name` fields — the path the
+requirement's `"id": ["name"]` names. One subject is one deployment, and
 `subject.id` is how a row points back at what it judged.
 
 Two things worth knowing here. `d-2` has **no `approved_by` key at all**, which
