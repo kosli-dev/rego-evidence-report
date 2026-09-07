@@ -359,6 +359,9 @@
     margin: 0;
   }
   .punch em { font-style: italic; color: var(--accent); }
+  /* an explicit <br> marks a sentence boundary; balance then only has to even
+     out whichever half still needs to wrap */
+  .punch br, .sub br { content: ""; }
 
   /* Kosli lockup, from kosli.com/media. The official light and dark files differ
      only by swapping these two fills, so binding them to tokens reproduces each
@@ -657,7 +660,7 @@
       <div>No record of what passed</div>
       <div>Every control, its own shape</div>
     </div>
-    <p class="punch">The verdict was never the artefact. The <em>table of evidence</em> is.</p>
+    <p class="punch">The verdict was never the artefact.<br>The <em>table of evidence</em> is.</p>
   </section>
 
   <!-- 6 -->
@@ -820,7 +823,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
         </tbody>
       </table>
     </div>
-    <p class="sub">Out of scope is not in breach. A failing <code class="inline">$min_subjects</code> <em>is</em> &mdash; no production deployment at all is exactly what that guard reports.</p>
+    <p class="sub">Out of scope is not in breach.<br>A failing <code class="inline">$min_subjects</code> <em>is</em> &mdash; no production deployment at all is exactly what that guard reports.</p>
   </section>
 
   <!-- 12 -->
@@ -843,7 +846,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
         </tbody>
       </table>
     </div>
-    <p class="sub">The outer array is one entry per pull request &mdash; flatten it and <em>some</em> pull request fully approved becomes unanswerable.</p>
+    <p class="sub">The outer array is one entry per pull request &mdash;<br>flatten it and <em>some</em> pull request fully approved becomes unanswerable.</p>
     <p class="punch">Same name in both rows. You can <em>see</em> alice approving alice.</p>
   </section>
 
@@ -856,7 +859,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
 test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="dim">(416.5ms)</span>
 <span class="dim">&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;</span>
 <span class="yes">PASS: 2/2</span></div>
-    <p class="punch"><code>four-eyes.rego</code> vendored beside the port. The build <em>breaks</em> when they disagree.</p>
+    <p class="punch"><code>four-eyes.rego</code> vendored beside the port.<br>The build <em>breaks</em> when they disagree.</p>
   </section>
 
   <!-- 14 -->
@@ -893,7 +896,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
         </tbody>
       </table>
     </div>
-    <p class="punch">The custom op was one-time. <em>Control #2</em> is where the cost shows.</p>
+    <p class="punch">The custom op was one-time.<br><em>Control #2</em> is where the cost shows.</p>
   </section>
 
   <!-- 16 -->
@@ -943,8 +946,8 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
         </tbody>
       </table>
     </div>
-    <p class="sub">Three of the four need data or access this repo doesn't have. The fourth is a property of differential testing, not a bug in it.</p>
-    <p class="punch">None is a reason not to start. Each is a reason not to claim more than we ran.</p>
+    <p class="sub">Three of the four need data or access this repo doesn't have.<br>The fourth is a property of differential testing, not a bug in it.</p>
+    <p class="punch">None is a reason not to start.<br>Each is a reason not to claim more than we ran.</p>
   </section>
 
   <!-- 19 -->
@@ -956,7 +959,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
       <div><strong>Control 1068</strong> &mdash; what a second control costs</div>
       <div><strong>Shadow mode</strong> &mdash; the port beside four-eyes.rego, on real trails</div>
     </div>
-    <p class="sub">The harness compares 23 synthetic cases. Shadow mode compares <em>real trails</em> &mdash; and gates nothing.</p>
+    <p class="sub">The harness compares 23 synthetic cases.<br>Shadow mode compares <em>real trails</em> &mdash; and gates nothing.</p>
     <div class="term sm"><span class="dim">README.md</span>       vocabulary, operators
 <span class="dim">INTEGRATION.md</span>  the pipeline, and a status-of-claims list
 <span class="dim">DEMO.md</span>         this walkthrough, with every command</div>
