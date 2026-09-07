@@ -45,7 +45,7 @@ the projector. Arrows in either window move both, over `BroadcastChannel` (a
 browser API for messaging between same-origin tabs) with a `localStorage`
 fallback. `p` is deliberately local, so the projector window never shows notes.
 
-17 deliberately sparse slides — a headline and at most one artefact each, so
+18 deliberately sparse slides — a headline and at most one artefact each, so
 the room listens instead of reads. `←` `→` to move; `n` toggles a presenter bar
 carrying that slide's talking point and the command to run; the rail under the
 stage jumps anywhere. **The prose lives here, not on the slides** — the
@@ -539,7 +539,46 @@ Three ways past it:
 
 ---
 
-## Close  ·  slide 17  ·  1 min
+## Beat 7 — What we have not run  ·  slide 17  ·  1 min
+
+Put this before the close, not after — end on the plan, not the caveats. Every
+item is tracked in the repo, not remembered:
+
+| open question | state | where |
+| --- | --- | --- |
+| the per-author rule on a real two-author PR | synthetic input only | `BRIEF_OPEN_QUESTIONS.md` inv. 1 |
+| a real initial-commit trail on the wire | never observed | inv. 2 |
+| server-side schema validation + jq of the report | dry-run only | inv. 3 |
+| drift between the vendored copy and the branch | invisible to the harness | `INTEGRATION.md` |
+
+Detail worth having, in the order someone will ask:
+
+1. **The per-author rule is the core four-eyes behaviour and it has met only
+   synthetic input** — both captured pull requests resolve to one author or
+   none. The synthetic `two_author_mutual` case passes in both policies, which
+   is exactly where the per-author reading and the "approver who authored
+   nothing" reading would have parted company. So the corpus cannot settle it.
+2. **The substitute has never met data nobody here wrote.** No real trail
+   carrying `initial-commit-by-verified-committer` has been seen through
+   `--show-input`. It already shipped one defect — matching `attestation_type`
+   `custom` instead of `custom:<name>` — caught by reading the server's type
+   model rather than by any test.
+3. **The report's destination is dry-run only.** No HTTP request has reached a
+   deployed Kosli, so auth, routing and persistence are unexercised. What is
+   verified is the validation and evaluation *logic*, by calling the server's own
+   modules.
+4. **The harness compares against a vendored copy**, so drift in the
+   `four-eyes.rego` branch is invisible to it. On 2026-09-07 it caught one of
+   five verdict-level differences. That's the limit of differential testing, not
+   a defect in it — and it's the argument for shadow mode.
+
+If asked which of these would change the decision: **3 failing** would kill the
+evidence path as designed, and **1 disagreeing** would mean the port isn't the
+control. The other two are cost, not direction.
+
+---
+
+## Close  ·  slide 18  ·  1 min
 
 Two decisions, previously mistaken for one:
 
@@ -589,13 +628,16 @@ Point at `README.md` for the vocabulary and operator reference,
 
 Cut in this order. Beats 2–4 are the demo itself.
 
-1. **Beat 5's `inputs` block** — the row table above it already makes the
+1. **Beat 7 (open questions)** — the material is in `INTEGRATION.md` and
+   `BRIEF_OPEN_QUESTIONS.md`, and the Q&A section below covers it if asked
+   (saves ~60s). Keep it if anyone in the room owns the decision.
+2. **Beat 5's `inputs` block** — the row table above it already makes the
    point (saves ~45s).
-2. **Beat 6's three doors** — say "it's blocked, three ways past it, ask me"
+3. **Beat 6's three doors** — say "it's blocked, three ways past it, ask me"
    (saves ~50s).
-3. **Beat 5's two control-1068 caveats** — keep the row on slide 14, since it
+4. **Beat 5's two control-1068 caveats** — keep the row on slide 14, since it
    carries the argument; just say "it's half a control, ask me why" (saves ~35s).
-4. **Beat 1's `cat`** — describe the input instead of showing it (saves ~20s).
+5. **Beat 1's `cat`** — describe the input instead of showing it (saves ~20s).
 
 Beat 3 carries the most weight; spare time goes there.
 

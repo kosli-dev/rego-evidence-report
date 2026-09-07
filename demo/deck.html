@@ -790,10 +790,30 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
   </section>
 
   <!-- 17 -->
+  <section class="slide dense" data-label="Unknowns"
+    data-say="All four are tracked in the repo rather than remembered. 1: the per-author rule -- for every author, some approver who is not that author -- has met only synthetic input, because both captured pull requests resolve to one author or none. It is the core four-eyes behaviour and the one thing the corpus cannot settle by itself; the synthetic two_author_mutual case passes in both policies, which is where the per-author reading and the approver-who-authored-nothing reading would have parted. 2: no real trail carrying initial-commit-by-verified-committer has been seen through --show-input, so the substitute has never met data nobody here wrote -- and it already shipped one defect, matching attestation_type custom instead of custom:name, caught by reading the server type model rather than by a test. 3: the report has only been dry-run to the attestation endpoint. No HTTP request has reached a deployed Kosli, so auth, routing and persistence are unexercised, and server-side schema validation and jq evaluation are untested. 4: the harness compares against a vendored copy, so drift in the four-eyes.rego branch is invisible to it; on 2026-09-07 it caught one of five verdict-level differences. If asked what would change the decision: item 3 failing would kill the evidence path as designed, and item 1 disagreeing would mean the port is not the control."
+    data-cmd="">
+    <div class="tag"><span class="n">07</span><span>What we have not run</span></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>open question</th><th>state</th></tr></thead>
+        <tbody>
+          <tr><td>the per-author rule on a real two-author PR</td><td class="v-fail">synthetic input only</td></tr>
+          <tr><td>a real initial-commit trail on the wire</td><td class="v-fail">never observed</td></tr>
+          <tr><td>server-side schema validation + jq of the report</td><td class="v-fail">dry-run only</td></tr>
+          <tr><td>drift between the vendored copy and the branch</td><td class="v-fail">invisible to the harness</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">Three of the four need data or access this repo doesn't have. The fourth is a property of differential testing, not a bug in it.</p>
+    <p class="punch">None is a reason not to start. Each is a reason not to claim more than we ran.</p>
+  </section>
+
+  <!-- 18 -->
   <section class="slide" data-label="Next"
     data-say="1068: a sketch against synthetic input, not a port &mdash; it has no Rego to port, its rule is TypeScript (checkBusinessRequirements.ts), and its evidence goes to a factstore rather than through kosli evaluate. It expresses the ticket half only, because the collector flattens commit messages to a Set of ticket ids and the ticket model carries no commit backref, so the link is gone before any evidence exists. That is a collector change, not a library one, and it does not block the cost measurement. Shadow mode: a second kosli evaluate call with the port bundle and --no-assert, whose verdict is compared but gates nothing &mdash; or kosli evaluate input over the document already captured with --show-input, which needs no API call. Both are available on that image today, since it is at least 2.18.0. This is the gap the parity harness cannot close by itself: it compares 23 synthetic cases against a vendored copy, and cannot see that copy drifting from the four-eyes.rego branch it cannot read. On 2026-09-07 it had. Note that four-eyes.rego is itself in shadow mode rather than deciding anything, so this is one shadow evaluation beside another."
     data-cmd="">
-    <div class="tag"><span class="n">07</span><span>Next</span></div>
+    <div class="tag"><span class="n">08</span><span>Next</span></div>
     <div class="lines">
       <div><strong>Control 1068</strong> &mdash; what a second control costs</div>
       <div><strong>Shadow mode</strong> &mdash; the port beside four-eyes.rego, on real trails</div>
@@ -815,7 +835,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
 
 <div class="chrome">
   <div class="rail" id="rail" role="tablist" aria-label="Slides"></div>
-  <span class="count" id="count">1 / 17</span>
+  <span class="count" id="count">1 / 18</span>
   <span class="hint"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> move &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>p</kbd> presenter</span>
 </div>
 
