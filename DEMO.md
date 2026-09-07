@@ -91,7 +91,7 @@ reimplemented.
 
 ---
 
-## Beat 1 — Same output, and then some  ·  slides 2–4  ·  2.5 min, tab B
+## Beat 1 — Same output  ·  slides 2–3  ·  1.5 min, tab B
 
 Control 43 (`RCTLDEF0000043`, four-eyes) is **the only Rego policy in `sdlc-workflows`** — every other control
 is workflow wiring. 182 code lines, hand-written by colleagues working with the
@@ -144,7 +144,32 @@ opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_
 **Identical** — same verdict, same string, byte for byte. Slide 3 stacks the two
 outputs rather than setting them side by side, so the lines align and the
 sameness is visible instead of asserted. The interface out is unchanged, so
-stages 1, 2, 3 and 5 are untouched. What came with it:
+stages 1, 2, 3 and 5 are untouched.
+
+---
+
+## Beat 2 — What the string can't say, and what the report says  ·  slides 4–5  ·  2 min, tab B
+
+The room has just seen two runs agree to the byte. Slide 4 names what that
+agreement doesn't buy you — what the string on its own can't carry:
+
+- **Which** values it read is unknown. You can't recompute that verdict from the
+  output — you can only re-run it. That's the difference between auditable and
+  merely logged. The values themselves are not gone: `--show-input` dumps the
+  input document, and control 43's workflow already captures it. The
+  Q&A section below has the full distinction.
+- The string is one someone wrote. To learn *why* it failed you re-read 182
+  lines of Rego.
+- **There's no record of what passed.** Nothing says the PR attestation was
+  present, the PR was found, and the author's identity resolved cleanly — so you
+  can't tell "reviewed by the wrong person" from "the collector never ran", and
+  those go to different teams. Run it on a *compliant* trail and you get
+  `{"allow": true, "violations": []}` — zero information, indistinguishable from
+  a policy that read nothing and passed vacuously.
+- Every control invents its own output shape, so nothing downstream is generic.
+
+The interesting artefact was never the boolean — it's the table of evidence
+behind it. Slide 5 is that table, from the same input, no new vocabulary:
 
 ```sh
 opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
@@ -167,8 +192,8 @@ commit_identified       a1b2c3d  PASS  satisfied
 ```
 
 One failure; the other five say what *was* verified — the attestation was there,
-the PR was found, the identity resolved. That's the distinction beat 2 is about
-to name, already answerable from the output.
+the PR was found, the identity resolved. Every bullet on slide 4 is answered by
+the column beside it.
 
 **This is the beat the whole talk rests on, and it needs no vocabulary** — the
 room can just see it. Don't stop to explain the `$`-prefixed rows: they're the
@@ -176,32 +201,6 @@ library asserting on the *policy* rather than on the commit, and beat 4 covers
 them. If asked, one line — two of each because this policy declares two
 requirements, `commit_reviewed` and `commits_present` — then move on. Every
 other check name reads as English.
-
----
-
-## Beat 2 — What the string alone can't say  ·  slide 5  ·  1 min
-
-The room has just seen that there *is* more. This slide names what the string on
-its own couldn't carry:
-
-- **Which** values it read is unknown. You can't recompute that verdict from the
-  output — you can only re-run it. That's the difference between auditable and
-  merely logged. The values themselves are not gone: `--show-input` dumps the
-  input document, and control 43's workflow already captures it. The
-  Q&A section below has the full distinction.
-- The string is one someone wrote. To learn *why* it failed you re-read 182
-  lines of Rego.
-- **There's no record of what passed.** Nothing says the PR attestation was
-  present, the PR was found, and the author's identity resolved cleanly — so you
-  can't tell "reviewed by the wrong person" from "the collector never ran", and
-  those go to different teams. Run it on a *compliant* trail and you get
-  `{"allow": true, "violations": []}` — zero information, indistinguishable from
-  a policy that read nothing and passed vacuously.
-- Every control invents its own output shape, so nothing downstream is generic.
-
-The claim, now demonstrated rather than asserted: the interesting artefact isn't
-the boolean — it's the table of evidence behind it, and that table can be
-produced generically.
 
 
 ---

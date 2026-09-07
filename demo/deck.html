@@ -625,14 +625,28 @@
   </section>
 
   <!-- 4 -->
+  <section class="slide" data-label="Gap"
+    data-say="Straight off the identical output: this is what that string cannot carry, and the next slide is it carried. A compliant trail returns {allow: true, violations: []} &mdash; indistinguishable from a policy that read nothing and passed vacuously. On --show-input: it dumps the input document, and control 43's workflow already captures that document. It does not say which fields a check consulted; it supports re-running (needs OPA plus the exact policy and library version), not recomputing; cause is a property of the evaluation, not the document, so no input dump separates a selector that matched nothing from one that matched twice; and nothing binds the dump to the verdict or records which policy version ran."
+    data-cmd="">
+    <div class="tag"><span class="n">02</span><span>What the string alone can't say</span></div>
+    <div class="lines">
+      <div>Which values it read &mdash; unknown</div>
+      <div>Re-runnable, not recomputable</div>
+      <div>No record of what passed</div>
+      <div>Every control, its own shape</div>
+    </div>
+    <p class="punch">The verdict was never the artefact.<br>The <em>table of evidence</em> is.</p>
+  </section>
+
+  <!-- 5 -->
   <section class="slide" data-label="The rows"
-    data-say="This is the payoff of the whole talk and it arrives before any vocabulary, on purpose. One check failed; the other five say what WAS verified -- the attestation was there, the pull request was found, the identity resolved. That is the difference between reviewed by the wrong person and the collector never ran, and it is the thing a single string cannot carry. Do NOT explain the $-prefixed rows here: they are the library asserting on the policy itself rather than on the commit, and slide 7 covers them. If asked, one line -- there are two of each because this policy declares two requirements, commit_reviewed and commits_present -- then move on. Nothing else on this slide needs defining: every check name reads as English."
+    data-say="This is the payoff of the whole talk and it arrives before any vocabulary, on purpose. The previous slide named the gap; this is the same input, answering it. One check failed; the other five say what WAS verified -- the attestation was there, the pull request was found, the identity resolved. That is the difference between reviewed by the wrong person and the collector never ran. Do NOT explain the $-prefixed rows here: they are the library asserting on the policy itself rather than on the commit, and slide 7 covers them. If asked, one line -- there are two of each because this policy declares two requirements, commit_reviewed and commits_present -- then move on. Nothing else on this slide needs defining: every check name reads as English."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43.report' \
   | jq -r '.result[0].expressions[0].value.results[]
            | &quot;\(.check)\t\(.subject.id // &quot;&mdash;&quot;)\t\(if .passed then &quot;PASS&quot; else &quot;FAIL&quot; end)\t\(.cause)&quot;' \
   | column -t -s$'\t'">
-    <div class="tag"><span class="n">01</span><span>&hellip;and look what came with it</span></div>
+    <div class="tag"><span class="n">02</span><span>What the report says instead</span></div>
     <div class="tablewrap">
       <table>
         <tbody>
@@ -647,20 +661,6 @@
       </table>
     </div>
     <p class="punch">One failure. Five things <em>verified</em>. Same verdict as before.</p>
-  </section>
-
-  <!-- 5 -->
-  <section class="slide" data-label="Gap"
-    data-say="A compliant trail returns {allow: true, violations: []} &mdash; indistinguishable from a policy that read nothing and passed vacuously. On --show-input: it dumps the input document, and control 43's workflow already captures that document. It does not say which fields a check consulted; it supports re-running (needs OPA plus the exact policy and library version), not recomputing; cause is a property of the evaluation, not the document, so no input dump separates a selector that matched nothing from one that matched twice; and nothing binds the dump to the verdict or records which policy version ran."
-    data-cmd="">
-    <div class="tag"><span class="n">02</span><span>What the string alone can't say</span></div>
-    <div class="lines">
-      <div>Which values it read &mdash; unknown</div>
-      <div>Re-runnable, not recomputable</div>
-      <div>No record of what passed</div>
-      <div>Every control, its own shape</div>
-    </div>
-    <p class="punch">The verdict was never the artefact.<br>The <em>table of evidence</em> is.</p>
   </section>
 
   <!-- 6 -->
@@ -828,7 +828,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
 
   <!-- 12 -->
   <section class="slide dense" data-label="The row"
-    data-say="This is the inputs array of slide 4's failing row, one entry per path the check read. On the double brackets: the check declares that input as {path: pull_requests, each: [approvers]}, a projection, which the row renders as pull_requests[].approvers. The outer array is one entry per pull request -- the [] in the name -- and the inner one is that pull request's own approvers array. One PR with one approver is why it collapses to [[{...}]]; with two PRs the outer array has two entries. The nesting is load-bearing: the rule is 'some pull_request: every author: some approver != author', so flattening would lose which approver belonged to which pull request and 'some PR fully approved' could not be answered. The first path is literally `name` because a trail's name IS the commit sha -- that is how the collector records it, one trail per commit. The last entry is the substitute the check looked for and did not find: a root commit has no parent to open a pull request against, so an initial-commit attestation can discharge the check instead. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
+    data-say="This is the inputs array of slide 5's failing row, one entry per path the check read. On the double brackets: the check declares that input as {path: pull_requests, each: [approvers]}, a projection, which the row renders as pull_requests[].approvers. The outer array is one entry per pull request -- the [] in the name -- and the inner one is that pull request's own approvers array. One PR with one approver is why it collapses to [[{...}]]; with two PRs the outer array has two entries. The nesting is load-bearing: the rule is 'some pull_request: every author: some approver != author', so flattening would lose which approver belonged to which pull request and 'some PR fully approved' could not be answered. The first path is literally `name` because a trail's name IS the commit sha -- that is how the collector records it, one trail per commit. The last entry is the substitute the check looked for and did not find: a root commit has no parent to open a pull request against, so an initial-commit attestation can discharge the check instead. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43.report' \
   | jq '.result[0].expressions[0].value.results[]
