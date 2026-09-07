@@ -107,11 +107,16 @@ Run the production policy on it:
 ```sh
 opa eval -d examples/four-eyes.vendored.rego -i demo/trail_self_approved.json \
   --format=json 'data.four_eyes_vendored' \
-  | jq -c '.result[0].expressions[0].value | {allow, violations}'
+  | jq '.result[0].expressions[0].value | {allow, violations}'
 ```
 
 ```json
-{"allow":false,"violations":["Commit a1b2c3d: no independent approval after latest code commit"]}
+{
+  "allow": false,
+  "violations": [
+    "Commit a1b2c3d: no independent approval after latest code commit"
+  ]
+}
 ```
 
 That is the right verdict, and a serviceable string. What isn't there:

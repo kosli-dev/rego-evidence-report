@@ -466,12 +466,15 @@
     data-say="examples/four-eyes.vendored.rego is the production policy, body byte-for-byte, renamed package. 182 code lines, and the only Rego policy in sdlc-workflows &mdash; every other control is workflow wiring. Input: one commit, one merged PR, alice as both author and approver. The verdict is correct."
     data-cmd="opa eval -d examples/four-eyes.vendored.rego -i demo/trail_self_approved.json \
   --format=json 'data.four_eyes_vendored' \
-  | jq -c '.result[0].expressions[0].value | {allow, violations}'">
+  | jq '.result[0].expressions[0].value | {allow, violations}'">
     <div class="tag"><span class="n">01</span><span>What a policy returns today</span></div>
     <h2>182 lines of Rego, and this comes out</h2>
-    <div class="term">{<span class="key">"allow"</span>: <span class="no">false</span>,
- <span class="key">"violations"</span>: [<span class="dim">"Commit a1b2c3d: no independent approval
-              after latest code commit"</span>]}</div>
+    <div class="term">{
+  <span class="key">"allow"</span>: <span class="no">false</span>,
+  <span class="key">"violations"</span>: [
+    <span class="dim">"Commit a1b2c3d: no independent approval after latest code commit"</span>
+  ]
+}</div>
     <p class="sub">Correct verdict. Decent string.</p>
   </section>
 
