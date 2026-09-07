@@ -274,6 +274,17 @@
     border-bottom: 1px solid var(--rule);
   }
 
+  /* two results stacked so identical shapes line up column-for-column */
+  .stack { display: flex; flex-direction: column; gap: .55em; }
+  .stack .colhead { margin-bottom: 0; padding-bottom: .35em; }
+  .stack .colhead:not(:first-child) { margin-top: .5em; }
+  .colhead .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--ink-soft);
+  }
+
   /* ---------- pipeline ---------- */
   .pipe { display: flex; font-size: .8em; }
   .pipe .st {
@@ -457,7 +468,7 @@
     data-cmd="opa test src examples --ignore '*.json'   # PASS: 410/410">
     <div class="bar"></div>
     <h1>kosli.evidence</h1>
-    <p class="sub">Policy evaluation that returns evidence, not a boolean.</p>
+    <p class="sub">Control policies that return evidence, not a boolean.</p>
     <div class="foot">Rego library &middot; OPA unchanged &middot; 410 tests</div>
   </section>
 
@@ -493,8 +504,8 @@
   </section>
 
   <!-- 4 -->
-  <section class="slide" data-label="Declare"
-    data-say="`from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
+  <section class="slide dense" data-label="Declare"
+    data-say="The slide omits the two `description` strings for space; the file has them. `from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
     data-cmd="cat demo/deployments.json
 cat demo/prod_deploy.rego
 opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
@@ -502,13 +513,22 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
     <div class="tag"><span class="n">02</span><span>Declare it instead</span></div>
     <h2>The rule is <em>data</em></h2>
     <div class="term sm">requirements := {<span class="key">"prod_deploy"</span>: {
-  <span class="key">"subject_type"</span>: <span class="dim">"deployment"</span>,
-  <span class="key">"from"</span>: [<span class="dim">"deployments"</span>],   <span class="key">"id"</span>: [<span class="dim">"id"</span>],
-  <span class="key">"applies_to"</span>: {<span class="dim">"is_prod"</span>: {<span class="key">"op"</span>: <span class="dim">"equals"</span>, <span class="key">"path"</span>: [<span class="dim">"environment"</span>], <span class="key">"value"</span>: <span class="dim">"prod"</span>}},
-  <span class="key">"checks"</span>: {
-    <span class="dim">"approved"</span>:     {<span class="key">"op"</span>: <span class="dim">"non_empty_string"</span>, <span class="key">"path"</span>: [<span class="dim">"approved_by"</span>]},
-    <span class="dim">"ci_green"</span>:     {<span class="key">"op"</span>: <span class="dim">"all"</span>, <span class="key">"path"</span>: [<span class="dim">"ci_checks"</span>],
-                     <span class="key">"check"</span>: {<span class="key">"op"</span>: <span class="dim">"equals"</span>, <span class="key">"path"</span>: [<span class="dim">"conclusion"</span>], <span class="key">"value"</span>: <span class="dim">"success"</span>}}}}}</div>
+    <span class="key">"subject_type"</span>: <span class="dim">"deployment"</span>,
+    <span class="key">"from"</span>: [<span class="dim">"deployments"</span>],
+    <span class="key">"id"</span>: [<span class="dim">"id"</span>],
+    <span class="key">"applies_to"</span>: {<span class="dim">"is_prod"</span>: {<span class="key">"op"</span>: <span class="dim">"equals"</span>, <span class="key">"path"</span>: [<span class="dim">"environment"</span>], <span class="key">"value"</span>: <span class="dim">"prod"</span>}},
+    <span class="key">"checks"</span>: {
+        <span class="dim">"approved"</span>: {
+            <span class="key">"op"</span>: <span class="dim">"non_empty_string"</span>,
+            <span class="key">"path"</span>: [<span class="dim">"approved_by"</span>],
+        },
+        <span class="dim">"ci_green"</span>: {
+            <span class="key">"op"</span>: <span class="dim">"all"</span>,
+            <span class="key">"path"</span>: [<span class="dim">"ci_checks"</span>],
+            <span class="key">"check"</span>: {<span class="key">"op"</span>: <span class="dim">"equals"</span>, <span class="key">"path"</span>: [<span class="dim">"conclusion"</span>], <span class="key">"value"</span>: <span class="dim">"success"</span>},
+        },
+    },
+}}</div>
     <p class="sub">No loop. No <code class="inline">allow</code> rule. No violation strings.</p>
   </section>
 
@@ -615,25 +635,27 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
   </section>
 
   <!-- 9 -->
-  <section class="slide" data-label="Parity"
+  <section class="slide dense" data-label="Parity"
     data-say="Same input document as slide 2. Only stage 4 changes, so the collector, Kosli, kosli evaluate and the consumer are untouched."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43' \
-  | jq -c '.result[0].expressions[0].value | {allow, violations}'">
+  | jq '.result[0].expressions[0].value | {allow, violations}'">
     <div class="tag"><span class="n">05</span><span>Same input, the real port</span></div>
-    <div class="cols">
-      <div>
-        <div class="colhead">production</div>
-        <div class="term sm">{<span class="key">"allow"</span>: <span class="no">false</span>,
- <span class="key">"violations"</span>: [<span class="dim">"Commit a1b2c3d:
-   no independent approval&hellip;"</span>]}</div>
-      </div>
-      <div>
-        <div class="colhead">the port</div>
-        <div class="term sm">{<span class="key">"allow"</span>: <span class="no">false</span>,
- <span class="key">"violations"</span>: [<span class="dim">"Commit a1b2c3d:
-   no independent approval&hellip;"</span>]}</div>
-      </div>
+    <div class="stack">
+      <div class="colhead">production &nbsp;<span class="mono">four-eyes.rego</span></div>
+      <div class="term sm">{
+  <span class="key">"allow"</span>: <span class="no">false</span>,
+  <span class="key">"violations"</span>: [
+    <span class="dim">"Commit a1b2c3d: no independent approval after latest code commit"</span>
+  ]
+}</div>
+      <div class="colhead">the port &nbsp;<span class="mono">control_43.rego + kosli.evidence</span></div>
+      <div class="term sm">{
+  <span class="key">"allow"</span>: <span class="no">false</span>,
+  <span class="key">"violations"</span>: [
+    <span class="dim">"Commit a1b2c3d: no independent approval after latest code commit"</span>
+  ]
+}</div>
     </div>
     <p class="punch">Identical. Byte for byte.</p>
   </section>
@@ -664,18 +686,31 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
   </section>
 
   <!-- 11 -->
-  <section class="slide" data-label="The row"
+  <section class="slide dense" data-label="The row"
     data-say="The fourth input is the substitute it looked for and did not find: a root commit has no parent to open a PR against, so an initial-commit attestation can discharge the check. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43.report' \
   | jq '.result[0].expressions[0].value.results[]
         | select(.check==&quot;independently_approved&quot;) | .inputs'">
     <div class="tag"><span class="n">05</span><span>That row's <code>inputs</code></span></div>
-    <div class="term sm">[{<span class="key">"name"</span>: <span class="dim">"&hellip;pull_requests[].approvers"</span>,
-  <span class="key">"value"</span>: [[{<span class="key">"username"</span>: <span class="no">"alice"</span>, <span class="key">"state"</span>: <span class="dim">"APPROVED"</span>, <span class="key">"timestamp"</span>: 1000050}]]},
- {<span class="key">"name"</span>: <span class="dim">"&hellip;pull_requests[].commits"</span>,
-  <span class="key">"value"</span>: [[{<span class="key">"author_username"</span>: <span class="no">"alice"</span>, <span class="key">"sha1"</span>: <span class="dim">"c0ffee1"</span>, <span class="key">"timestamp"</span>: 1000000}]]},
- {<span class="key">"name"</span>: <span class="dim">"&hellip;[custom:initial-commit-&hellip;].is_compliant"</span>, <span class="key">"value"</span>: <span class="dim">null</span>}]</div>
+    <div class="term sm">[
+  {
+    <span class="key">"name"</span>:  <span class="dim">"name"</span>,
+    <span class="key">"value"</span>: <span class="dim">"a1b2c3d"</span>
+  },
+  {
+    <span class="key">"name"</span>:  <span class="dim">"&hellip;[attestation_type==pull_request].pull_requests[].approvers"</span>,
+    <span class="key">"value"</span>: [[{<span class="key">"username"</span>: <span class="no">"alice"</span>, <span class="key">"state"</span>: <span class="dim">"APPROVED"</span>, <span class="key">"timestamp"</span>: 1000050}]]
+  },
+  {
+    <span class="key">"name"</span>:  <span class="dim">"&hellip;[attestation_type==pull_request].pull_requests[].commits"</span>,
+    <span class="key">"value"</span>: [[{<span class="key">"author_username"</span>: <span class="no">"alice"</span>, <span class="key">"sha1"</span>: <span class="dim">"c0ffee1"</span>, <span class="key">"timestamp"</span>: 1000000}]]
+  },
+  {
+    <span class="key">"name"</span>:  <span class="dim">"&hellip;[attestation_type==custom:initial-commit-&hellip;].is_compliant"</span>,
+    <span class="key">"value"</span>: <span class="dim">null</span>
+  }
+]</div>
     <p class="punch">You can <em>see</em> alice approving alice.</p>
   </section>
 

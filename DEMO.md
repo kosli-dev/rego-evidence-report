@@ -80,12 +80,14 @@ first parse of `library.rego` is the slowest thing you'll do on stage.
 
 ## Beat 0 — What this is  ·  slide 1  ·  30s
 
-> A Rego library that turns policy evaluation into a structured, hashable
-> **evidence report**, instead of a bare `allow`/`deny` plus hand-written
-> violation strings.
+> A Rego library for writing **control policies** that return a structured,
+> hashable **evidence report**, instead of a bare `allow`/`deny` plus
+> hand-written violation strings.
 
-The library is 549 code lines in `package kosli.evidence`. The engine is OPA
-itself — nothing is reimplemented.
+The unit is a **control policy**: one policy expresses one control, and the
+library gives every one of them the same output shape. The library is 549 code
+lines in `package kosli.evidence`, and the engine is OPA itself — nothing is
+reimplemented.
 
 ---
 
@@ -330,15 +332,22 @@ production policy, modelled per commit. Same input, same query:
 ```sh
 opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43' \
-  | jq -c '.result[0].expressions[0].value | {allow, violations}'
+  | jq '.result[0].expressions[0].value | {allow, violations}'
 ```
 
 ```json
-{"allow":false,"violations":["Commit a1b2c3d: no independent approval after latest code commit"]}
+{
+  "allow": false,
+  "violations": [
+    "Commit a1b2c3d: no independent approval after latest code commit"
+  ]
+}
 ```
 
-**Identical** — same verdict, same string, byte for byte. The interface out is
-unchanged, so stages 1, 2, 3 and 5 are untouched. What came with it:
+**Identical** — same verdict, same string, byte for byte. Slide 9 stacks the two
+outputs rather than setting them side by side, so the lines align and the
+sameness is visible instead of asserted. The interface out is unchanged, so
+stages 1, 2, 3 and 5 are untouched. What came with it:
 
 ```sh
 opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
