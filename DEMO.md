@@ -112,8 +112,7 @@ reimplemented.
 ### Where the requirement came from — slide 2
 
 **This predates the library, and it isn't an engineering preference.** The ask
-was compliance reporting in spreadsheets — CSV and Excel — which Deutsche Bank
-already works from.
+was compliance reporting in Excel, which Deutsche Bank already works from.
 
 The arc in three steps, and the middle one is the twist:
 
@@ -768,7 +767,7 @@ Two decisions, previously mistaken for one:
 
 Three next steps, and the first one is the one the whole thing was for:
 
-**1. Excel and CSV out of the report — the slide 2 ask, and not started.**
+**1. Excel out of the report — the slide 2 ask, and not started.**
 The founding requirement is still unmet. What's already in place is everything
 an exporter needs to be written *against*:
 
@@ -883,7 +882,7 @@ an auditor's spreadsheet. Two properties make that safe rather than hopeful —
 **`schema/evidence-report.schema.json`** is the contract (JSON Schema, draft
 2020-12; both appendix reports validate against it), and **row order is
 deterministic**, independent of how the policy object was written, so two runs
-diff meaningfully. The honest part: **the Excel/CSV exporter is not built.** The
+diff meaningfully. The honest part: **the Excel exporter is not built.** The
 inputs for it exist; the thing itself doesn't.
 
 **"Isn't this just OPA with extra steps?"**

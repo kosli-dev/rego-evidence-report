@@ -82,9 +82,9 @@ rule into Rego. Without that separation, no policy library is possible.
 **And that separation is also what created the requirement this library answers.**
 The legacy generation produced the spreadsheet directly. The Rego generation gave
 that up and put nothing in its place: `{allow, violations}` has no columns, so
-CSV and Excel reporting — which is how compliance is actually reported — has
-nothing to read. A uniform report per control is how it comes back, once, instead
-of one bespoke exporter per control. This is the founding requirement, and it
+Excel reporting — which is how compliance is actually reported — has nothing to
+read. A uniform report per control is how it comes back, once, instead of one
+bespoke exporter per control. This is the founding requirement, and it
 predates the library.
 
 ### 2. Kosli — the record

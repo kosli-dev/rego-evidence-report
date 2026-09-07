@@ -14,16 +14,16 @@ The practical difference: a hand-written policy fails with a string someone
 wrote. This library fails with a row naming the thing that failed, the named
 check that failed, and the input values it read.
 
-**Where the requirement came from.** Compliance is reported in spreadsheets —
-CSV and Excel — and that reporting is what the uniform shape is *for*. Control
-43's legacy generation emitted `xlsx` itself, judging in TypeScript; the Rego
+**Where the requirement came from.** Compliance is reported in Excel, and that
+reporting is what the uniform shape is *for*. Control 43's legacy generation
+emitted `xlsx` itself, judging in TypeScript; the Rego
 rewrite split collection from judgement, which is what makes a policy library
 possible at all (see [INTEGRATION.md](INTEGRATION.md)), and in doing so left
 nothing emitting a spreadsheet, because `{allow, violations}` has no columns.
 One uniform report per control is how that capability comes back — once, rather
 than as a bespoke exporter per control. The report and its
-[schema](schema/evidence-report.schema.json) are in place; **the CSV/Excel
-exporter itself is not built yet.**
+[schema](schema/evidence-report.schema.json) are in place; **the Excel exporter
+itself is not built yet.**
 
 **New here?** Read [Vocabulary](#vocabulary), then follow
 [Your first policy](#your-first-policy) with a terminal open. The
