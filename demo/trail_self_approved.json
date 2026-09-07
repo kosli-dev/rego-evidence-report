@@ -1,0 +1,19 @@
+{
+  "trails": [
+    {
+      "name": "a1b2c3d",
+      "git_commit_info": {"author": "alice <alice@example.com>", "sha1": "a1b2c3d", "timestamp": 1000100},
+      "compliance_status": {"attestations_statuses": {"pr-review": {
+        "attestation_type": "pull_request",
+        "pull_requests": [{
+          "url": "https://github.com/kosli-dev/app/pull/42",
+          "merge_commit": "a1b2c3d",
+          "author": "alice",
+          "state": "MERGED",
+          "commits": [{"sha1": "c0ffee1", "author_username": "alice", "timestamp": 1000000}],
+          "approvers": [{"username": "alice", "timestamp": 1000050, "state": "APPROVED"}]
+        }]
+      }}}
+    }
+  ]
+}

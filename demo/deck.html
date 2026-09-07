@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* stands in for the reset the Artifact runtime injects, so this file renders
+     identically whether it is opened locally or served from claude.ai */
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>kosli.evidence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  :root {
+    --ground:    #e6e9ed;
+    --stagebg:   #f8f9fb;
+    --panel:     #eef0f4;
+    --ink:       #14171c;
+    --ink-soft:  #3d444f;
+    --muted:     #6b7482;
+    --rule:      #cdd2da;
+    --rule-soft: #dde1e7;
+    --accent:    #8a5c14;
+    --accent-bg: #f1e5cd;
+    --pass:      #2c6141;
+    --fail:      #9c3535;
+    --term-bg:   #1b1f26;
+    --term-ink:  #d7dbe2;
+    --term-dim:  #7f8895;
+    --shadow:    0 1px 2px rgba(20,23,28,.07), 0 12px 32px -12px rgba(20,23,28,.22);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:    #0f1216;
+      --stagebg:   #181c22;
+      --panel:     #1f242b;
+      --ink:       #e9ebef;
+      --ink-soft:  #c2c8d1;
+      --muted:     #8d97a4;
+      --rule:      #333a44;
+      --rule-soft: #272d35;
+      --accent:    #d9a441;
+      --accent-bg: #3329138f;
+      --pass:      #63b183;
+      --fail:      #e08585;
+      --term-bg:   #0b0e12;
+      --term-ink:  #d7dbe2;
+      --term-dim:  #78818e;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 16px 40px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:    #0f1216;
+    --stagebg:   #181c22;
+    --panel:     #1f242b;
+    --ink:       #e9ebef;
+    --ink-soft:  #c2c8d1;
+    --muted:     #8d97a4;
+    --rule:      #333a44;
+    --rule-soft: #272d35;
+    --accent:    #d9a441;
+    --accent-bg: #3329138f;
+    --pass:      #63b183;
+    --fail:      #e08585;
+    --term-bg:   #0b0e12;
+    --term-ink:  #d7dbe2;
+    --term-dim:  #78818e;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 16px 40px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 18px 18px 12px;
+  }
+
+  /* ---------- stage ---------- */
+  .stage {
+    width: min(1240px, 100%);
+    aspect-ratio: 16 / 9;
+    max-height: 78vh;
+    background: var(--stagebg);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    box-shadow: var(--shadow);
+    container-type: size;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    padding: 6cqw 7cqw;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1.6em;
+    font-size: 1.75cqw;
+    line-height: 1.45;
+    overflow: hidden;
+  }
+  .slide.on { display: flex; animation: rise .2s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .slide.on { animation: none; } }
+  .slide > * { flex: none; min-height: 0; }
+  /* slides carrying an input block AND a report table need a shorter measure */
+  .slide.dense { font-size: 1.46cqw; gap: 1.05em; padding: 4.6cqw 7cqw; }
+  .slide.dense td { padding-top: .28em; padding-bottom: .28em; }
+
+  /* ---------- headline ---------- */
+  h2 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+    font-size: 2.3em;
+    line-height: 1.1;
+    letter-spacing: -.015em;
+  }
+  h2 .soft { color: var(--muted); font-weight: 400; font-style: italic; }
+  h2 em { font-style: italic; color: var(--accent); }
+  h2 code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .8em;
+    font-weight: 500;
+    letter-spacing: -.01em;
+  }
+
+  .tag {
+    font-size: .78em;
+    font-weight: 600;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex;
+    gap: .9em;
+    align-items: baseline;
+  }
+  .tag .n { color: var(--muted); letter-spacing: .1em; font-variant-numeric: tabular-nums; }
+
+  /* one short line under a headline - never a paragraph */
+  .sub {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 1.15em;
+    color: var(--muted);
+    max-width: 30em;
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  /* ---------- stacked short phrases ---------- */
+  .lines {
+    display: flex;
+    flex-direction: column;
+    gap: .5em;
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 1.55em;
+    line-height: 1.25;
+  }
+  .lines div { display: flex; gap: .7em; align-items: baseline; color: var(--ink); }
+  .lines div::before {
+    content: "";
+    width: .42em;
+    height: .42em;
+    flex: none;
+    margin-top: .42em;
+    background: var(--accent);
+  }
+  .lines .off { color: var(--muted); }
+
+  /* ---------- terminal ---------- */
+  .term {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--term-bg);
+    color: var(--term-ink);
+    border-radius: 3px;
+    padding: 1em 1.2em;
+    font-size: .92em;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    tab-size: 2;
+  }
+  .term.sm { font-size: .78em; }
+  .term .dim { color: var(--term-dim); }
+  .term .key { color: #d9a441; }
+  .term .no  { color: #e08585; }
+  .term .yes { color: #7fc79b; }
+
+  code.inline {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .9em;
+    background: var(--panel);
+    border: 1px solid var(--rule-soft);
+    border-radius: 2px;
+    padding: .04em .3em;
+  }
+
+  /* ---------- tables ---------- */
+  .tablewrap { overflow-x: auto; }
+  table {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    border-collapse: collapse;
+    font-size: .88em;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+  th {
+    text-align: left;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-weight: 600;
+    font-size: .88em;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 1.2em .5em 0;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  td {
+    padding: .36em 1.2em .36em 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: baseline;
+    white-space: nowrap;
+    color: var(--ink-soft);
+  }
+  td:first-child { color: var(--ink); }
+  tr:last-child td { border-bottom: none; }
+  .v-pass { color: var(--pass); font-weight: 500; }
+  .v-fail { color: var(--fail); font-weight: 500; }
+  .meta td:first-child { color: var(--muted); }
+  .spot { background: var(--accent-bg); }
+  .spot td:first-child { color: var(--ink); font-weight: 500; }
+
+  /* in / out gutter, so the input has a visible relationship to the report */
+  .io { display: grid; grid-template-columns: 2.2em 1fr; gap: .8em; align-items: start; }
+  .io > .tablewrap, .io > .term { min-width: 0; }
+  .iolabel {
+    font-size: .78em;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: right;
+    padding-top: .5em;
+  }
+
+  /* ---------- two-up ---------- */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5em; align-items: start; }
+  .cols > * { min-width: 0; }
+  .colhead {
+    font-size: .8em;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-bottom: .5em;
+    margin-bottom: .7em;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  /* ---------- pipeline ---------- */
+  .pipe { display: flex; font-size: .8em; }
+  .pipe .st {
+    flex: 1;
+    padding: .85em .8em;
+    border: 1px solid var(--rule);
+    border-right: none;
+  }
+  .pipe .st:last-child { border-right: 1px solid var(--rule); }
+  .pipe .st b {
+    display: block;
+    font-size: .92em;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .pipe .st.hot { background: var(--accent-bg); border-color: var(--accent); border-right: 1px solid var(--accent); }
+  .pipe .st.hot + .st { border-left: none; }
+  .pipe .st.hot b { color: var(--accent); }
+
+  /* ---------- verdict pair ---------- */
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4em; }
+  .verdict {
+    border-left: 2px solid var(--rule);
+    padding-left: 1em;
+    display: flex;
+    flex-direction: column;
+    gap: .3em;
+  }
+  .verdict.ok { border-color: var(--pass); }
+  .verdict.no { border-color: var(--fail); }
+  .verdict b {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 1.5em;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+  .verdict.ok b { color: var(--pass); }
+  .verdict.no b { color: var(--fail); }
+  .verdict span { color: var(--muted); font-size: .95em; }
+
+  /* ---------- big number pair ---------- */
+  .nums { display: flex; gap: 3.2em; align-items: flex-end; }
+  .num { display: flex; flex-direction: column; gap: .1em; }
+  .num b {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 3.4em;
+    font-weight: 600;
+    line-height: .95;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .num span { font-size: .88em; color: var(--muted); letter-spacing: .04em; }
+  .num.hot b { color: var(--accent); }
+  .arrow { font-family: "IBM Plex Serif", serif; font-size: 2.4em; color: var(--rule); line-height: 1.2; }
+
+  /* ---------- punch ---------- */
+  .punch {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 1.9em;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+    max-width: 28em;
+    margin: 0;
+  }
+  .punch em { font-style: italic; color: var(--accent); }
+
+  .title { gap: 1.1em; }
+  .title h1 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 3.4em;
+    font-weight: 500;
+    letter-spacing: -.03em;
+    margin: 0;
+    line-height: 1;
+  }
+  .title .bar { width: 4em; height: 2px; background: var(--accent); }
+  .title .sub { font-size: 1.35em; color: var(--ink-soft); max-width: 26em; }
+  .title .foot { font-size: .85em; color: var(--muted); font-family: "IBM Plex Mono", monospace; }
+
+  /* ---------- chrome ---------- */
+  .chrome {
+    width: min(1240px, 100%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .rail { display: flex; gap: 3px; flex: 1; }
+  .rail button {
+    flex: 1; height: 16px; padding: 0;
+    background: none; border: none; cursor: pointer; position: relative;
+  }
+  .rail button::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 7px;
+    height: 2px; background: var(--rule);
+  }
+  .rail button[aria-current="true"]::after { background: var(--accent); height: 3px; top: 6.5px; }
+  .rail button:hover::after { background: var(--ink-soft); }
+  .rail button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .count { font-variant-numeric: tabular-nums; white-space: nowrap; font-family: "IBM Plex Mono", monospace; }
+  .hint { white-space: nowrap; }
+  .hint kbd {
+    font-family: "IBM Plex Mono", monospace;
+    border: 1px solid var(--rule); border-radius: 2px;
+    padding: 0 .32em; font-size: 11px; color: var(--ink-soft);
+  }
+
+  .notes {
+    width: min(1240px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-left: 2px solid var(--accent);
+    border-radius: 3px;
+    padding: 11px 14px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    display: none;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .notes.on { display: flex; }
+  .notes b {
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent);
+  }
+  .notes pre {
+    margin: 0; background: var(--term-bg); color: var(--term-ink);
+    padding: 8px 10px; border-radius: 2px; overflow-x: auto;
+    font-size: 12px; line-height: 1.5;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .notes .say { color: var(--ink); }
+
+  /* ---------- presenter view (press p; use on the laptop screen) ---------- */
+  body.presenting { justify-content: flex-start; padding-top: 14px; }
+  body.presenting .stage { width: min(720px, 100%); max-height: 42vh; }
+  body.presenting .notes { display: flex; }
+  body.presenting .pmeta { display: flex; }
+  body.presenting .hint { display: none; }
+
+  .pmeta {
+    width: min(1240px, 100%);
+    display: none;
+    align-items: baseline;
+    gap: 1.4em;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .pmeta .badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--stagebg);
+    background: var(--accent);
+    padding: .25em .6em;
+    border-radius: 2px;
+  }
+  .pmeta .now { color: var(--ink); font-weight: 600; }
+  .pmeta .next { margin-left: auto; font-family: "IBM Plex Mono", monospace; }
+  .pmeta .link { color: var(--muted); }
+
+  @media (max-width: 700px) {
+    .stage { max-height: none; }
+    .cols, .pair { grid-template-columns: 1fr; }
+    .nums { gap: 1.6em; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+
+  <!-- 1 -->
+  <section class="slide title on" data-label="Title"
+    data-say="Library: 549 code lines, `package kosli.evidence`. 410 tests across src and examples. Engine is OPA itself &mdash; nothing is reimplemented."
+    data-cmd="opa test src examples --ignore '*.json'   # PASS: 410/410">
+    <div class="bar"></div>
+    <h1>kosli.evidence</h1>
+    <p class="sub">Policy evaluation that returns evidence, not a boolean.</p>
+    <div class="foot">Rego library &middot; OPA unchanged &middot; 410 tests</div>
+  </section>
+
+  <!-- 2 -->
+  <section class="slide" data-label="Today"
+    data-say="examples/four-eyes.vendored.rego is the production policy, body byte-for-byte, renamed package. 182 code lines, and the only Rego policy in sdlc-workflows &mdash; every other control is workflow wiring. Input: one commit, one merged PR, alice as both author and approver. The verdict is correct."
+    data-cmd="opa eval -d examples/four-eyes.vendored.rego -i demo/trail_self_approved.json \
+  --format=json 'data.four_eyes_vendored' \
+  | jq -c '.result[0].expressions[0].value | {allow, violations}'">
+    <div class="tag"><span class="n">01</span><span>What a policy returns today</span></div>
+    <h2>182 lines of Rego, and this comes out</h2>
+    <div class="term">{<span class="key">"allow"</span>: <span class="no">false</span>,
+ <span class="key">"violations"</span>: [<span class="dim">"Commit a1b2c3d: no independent approval
+              after latest code commit"</span>]}</div>
+    <p class="sub">Correct verdict. Decent string.</p>
+  </section>
+
+  <!-- 3 -->
+  <section class="slide" data-label="Gap"
+    data-say="A compliant trail returns {allow: true, violations: []} &mdash; indistinguishable from a policy that read nothing and passed vacuously. On --show-input: it dumps the input document, and for control 43 that document is already captured in production. It does not say which fields a check consulted; it supports re-running (needs OPA plus the exact policy and library version), not recomputing; cause is a property of the evaluation, not the document, so no input dump separates a selector that matched nothing from one that matched twice; and nothing binds the dump to the verdict or records which policy version ran."
+    data-cmd="">
+    <div class="tag"><span class="n">01</span><span>What isn't in it</span></div>
+    <div class="lines">
+      <div>Which values it read &mdash; unknown</div>
+      <div>Re-runnable, not recomputable</div>
+      <div>No record of what passed</div>
+      <div>Every control, its own shape</div>
+    </div>
+    <p class="punch">The artefact isn't the boolean. It's the <em>table of evidence</em> behind it.</p>
+  </section>
+
+  <!-- 4 -->
+  <section class="slide" data-label="Declare"
+    data-say="`from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
+    data-cmd="cat demo/deployments.json
+cat demo/prod_deploy.rego
+opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
+  --format=pretty 'data.demo.report.compliant'">
+    <div class="tag"><span class="n">02</span><span>Declare it instead</span></div>
+    <h2>The rule is <em>data</em></h2>
+    <div class="term sm">requirements := {<span class="key">"prod_deploy"</span>: {
+  <span class="key">"subject_type"</span>: <span class="dim">"deployment"</span>,
+  <span class="key">"from"</span>: [<span class="dim">"deployments"</span>],   <span class="key">"id"</span>: [<span class="dim">"id"</span>],
+  <span class="key">"applies_to"</span>: {<span class="dim">"is_prod"</span>: {<span class="key">"op"</span>: <span class="dim">"equals"</span>, <span class="key">"path"</span>: [<span class="dim">"environment"</span>], <span class="key">"value"</span>: <span class="dim">"prod"</span>}},
+  <span class="key">"checks"</span>: {
+    <span class="dim">"approved"</span>:     {<span class="key">"op"</span>: <span class="dim">"non_empty_string"</span>, <span class="key">"path"</span>: [<span class="dim">"approved_by"</span>]},
+    <span class="dim">"ci_green"</span>:     {<span class="key">"op"</span>: <span class="dim">"all"</span>, <span class="key">"path"</span>: [<span class="dim">"ci_checks"</span>],
+                     <span class="key">"check"</span>: {<span class="key">"op"</span>: <span class="dim">"equals"</span>, <span class="key">"path"</span>: [<span class="dim">"conclusion"</span>], <span class="key">"value"</span>: <span class="dim">"success"</span>}}}}}</div>
+    <p class="sub">No loop. No <code class="inline">allow</code> rule. No violation strings.</p>
+  </section>
+
+  <!-- 5 -->
+  <section class="slide dense" data-label="The report"
+    data-say="Every row carries the value it read, so the verdict is recomputable from the row alone. The $-checks assert on the policy rather than the input: $min_subjects catches a typo in `from` that would otherwise pass vacuously (it defaults to 1), and $well_formed catches a requirement that asserts nothing. Passing rows are kept deliberately. Row order is deterministic and independent of how the policy object was written, which is what makes the report hashable."
+    data-cmd="opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
+  --format=json 'data.demo.report' \
+  | jq -r '.result[0].expressions[0].value.results[]
+           | &quot;\(.check)\t\(.subject.id // &quot;&mdash;&quot;)\t\(if .passed then &quot;PASS&quot; else &quot;FAIL&quot; end)\t\(.cause)\t\(.inputs | map(&quot;\(.name)=\(.value|tojson)&quot;) | join(&quot;, &quot;))&quot;' \
+  | column -t -s$'\t'">
+    <div class="tag"><span class="n">03</span><span>The report</span></div>
+    <div class="io">
+      <span class="iolabel">in</span>
+      <div class="term sm">{<span class="key">"id"</span>: <span class="dim">"d-1"</span>, <span class="key">"environment"</span>: <span class="dim">"prod"</span>, <span class="key">"approved_by"</span>: <span class="dim">"bob"</span>, <span class="key">"ci_checks"</span>: [{<span class="key">"conclusion"</span>: <span class="dim">"success"</span>}]},
+{<span class="key">"id"</span>: <span class="dim">"d-2"</span>, <span class="key">"environment"</span>: <span class="dim">"prod"</span>,    <span class="no">&lt;- no approved_by at all</span>
+ <span class="key">"ci_checks"</span>: [{<span class="key">"conclusion"</span>: <span class="dim">"success"</span>}, {<span class="key">"conclusion"</span>: <span class="no">"failure"</span>}]},
+{<span class="key">"id"</span>: <span class="dim">"d-3"</span>, <span class="key">"environment"</span>: <span class="no">"staging"</span>, <span class="key">"approved_by"</span>: <span class="dim">"eve"</span>, <span class="key">"ci_checks"</span>: []}</div>
+    </div>
+    <div class="io">
+      <span class="iolabel">out</span>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>check</th><th>subject</th><th></th><th>cause</th><th>inputs</th></tr></thead>
+        <tbody>
+          <tr class="meta"><td>$well_formed</td><td>&mdash;</td><td class="v-pass">PASS</td><td>satisfied</td><td>count(checks)=2, require="every"</td></tr>
+          <tr class="meta"><td>$min_subjects</td><td>&mdash;</td><td class="v-pass">PASS</td><td>satisfied</td><td>count(matching(deployments))=2</td></tr>
+          <tr><td>$applies</td><td>d-1</td><td class="v-pass">PASS</td><td>satisfied</td><td>environment="prod"</td></tr>
+          <tr><td>$applies</td><td>d-2</td><td class="v-pass">PASS</td><td>satisfied</td><td>environment="prod"</td></tr>
+          <tr><td>$applies</td><td>d-3</td><td class="v-fail">FAIL</td><td>value</td><td>environment="staging"</td></tr>
+          <tr><td>approved</td><td>d-1</td><td class="v-pass">PASS</td><td>satisfied</td><td>approved_by="bob"</td></tr>
+          <tr><td>ci_green</td><td>d-1</td><td class="v-pass">PASS</td><td>satisfied</td><td>ci_checks[].conclusion=["success"]</td></tr>
+          <tr class="spot"><td>approved</td><td>d-2</td><td class="v-fail">FAIL</td><td>absent</td><td>approved_by=null</td></tr>
+          <tr class="spot"><td>ci_green</td><td>d-2</td><td class="v-fail">FAIL</td><td>value</td><td>ci_checks[].conclusion=["success","failure"]</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <p class="sub">3 deployments in. 9 rows out.</p>
+  </section>
+
+  <!-- 6 -->
+  <section class="slide" data-label="absent &ne; value"
+    data-say="Every operator is fail-closed: a missing, null or wrong-typed field makes a check fail rather than vanish or pass by accident. `equals` treats absent and explicitly-null as different &mdash; only the latter satisfies &quot;value&quot;: null."
+    data-cmd="">
+    <div class="tag"><span class="n">03</span><span>Two failures, two problems</span></div>
+    <div class="tablewrap">
+      <table>
+        <tbody>
+          <tr class="spot"><td>approved</td><td class="v-fail">FAIL</td><td>absent</td><td>approved_by=null</td></tr>
+          <tr class="spot"><td>ci_green</td><td class="v-fail">FAIL</td><td>value</td><td>["success","failure"]</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pair">
+      <div class="verdict no"><b>absent</b><span>no evidence was recorded</span></div>
+      <div class="verdict no"><b>value</b><span>the evidence is bad</span></div>
+    </div>
+    <p class="sub">Different team. Different fix.</p>
+  </section>
+
+  <!-- 7 -->
+  <section class="slide" data-label="Causes"
+    data-say="Precedence runs top to bottom, computed over every path the check reads &mdash; a row names the most fundamental problem with its inputs, not the first. For a custom op the paths are the ones in its declared `inputs`. For all/any the path read is the collection, so a defect inside one element reports as value."
+    data-cmd="">
+    <div class="tag"><span class="n">03</span><span>The <code>cause</code> vocabulary</span></div>
+    <div class="tablewrap">
+      <table>
+        <tbody>
+          <tr><td><span class="v-pass">satisfied</span></td><td>the check held</td></tr>
+          <tr><td><span class="v-pass">substituted</span></td><td>its declared substitute held instead</td></tr>
+          <tr class="spot"><td><span class="v-fail">ambiguous</span></td><td>selector matched more than one</td></tr>
+          <tr class="spot"><td><span class="v-fail">unmatched</span></td><td>selector matched nothing</td></tr>
+          <tr class="spot"><td><span class="v-fail">absent</span></td><td>path not present at all</td></tr>
+          <tr class="spot"><td><span class="v-fail">null</span></td><td>path present and null</td></tr>
+          <tr><td><span class="v-fail">value</span></td><td>read cleanly; assertion is false</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">All four highlighted rows echo <code class="inline">null</code>. Four different fixes.</p>
+  </section>
+
+  <!-- 8 -->
+  <section class="slide dense" data-label="Violations"
+    data-say="Two entry points, and violations takes the report rather than the input &mdash; it is a pure function of the report, no input document and no policy, so it can run anywhere the report travels. It drops passing rows, $applies rows, and rows of a requirement that another subject satisfied under require: some. It keeps $min_subjects and $well_formed failures: too few in-scope subjects, or a malformed requirement, are real breaches. allow and violations are independent derivations &mdash; the verdict never reads rows, so a bug in a message projection can mislead but cannot let a bad trail through. That is also why the report is the hashable, attestable artefact and violations is not."
+    data-cmd="opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
+  --format=json 'data.demo.breaches' \
+  | jq -r '.result[0].expressions[0].value[]
+           | &quot;\(.subject.type) \(.subject.id // &quot;(requirement-level)&quot;): \(.check) &mdash; \(.description) [\(.cause)]&quot;'">
+    <div class="tag"><span class="n">04</span><span>Two functions</span></div>
+    <div class="term sm">evidence.report(input, requirements)   <span class="dim">&rarr;</span>  9 rows, <span class="no">3 failing</span>
+evidence.violations(report)            <span class="dim">&rarr;</span>  <span class="no">2 breaches</span></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>failing row</th><th>subject</th><th>a breach?</th><th></th></tr></thead>
+        <tbody>
+          <tr class="spot"><td>$applies</td><td>d-3</td><td class="v-pass">no</td><td>out of scope &mdash; never evaluated</td></tr>
+          <tr><td>approved</td><td>d-2</td><td class="v-fail">yes</td><td>this subject breached this check</td></tr>
+          <tr><td>ci_green</td><td>d-2</td><td class="v-fail">yes</td><td>this subject breached this check</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">Out of scope is not in breach. A failing <code class="inline">$min_subjects</code> <em>is</em> &mdash; no production deployment at all is exactly what that guard reports.</p>
+  </section>
+
+  <!-- 9 -->
+  <section class="slide" data-label="Parity"
+    data-say="Same input document as slide 2. Only stage 4 changes, so the collector, Kosli, kosli evaluate and the consumer are untouched."
+    data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
+  -i demo/trail_self_approved.json --format=json 'data.control43' \
+  | jq -c '.result[0].expressions[0].value | {allow, violations}'">
+    <div class="tag"><span class="n">05</span><span>Same input, the real port</span></div>
+    <div class="cols">
+      <div>
+        <div class="colhead">production</div>
+        <div class="term sm">{<span class="key">"allow"</span>: <span class="no">false</span>,
+ <span class="key">"violations"</span>: [<span class="dim">"Commit a1b2c3d:
+   no independent approval&hellip;"</span>]}</div>
+      </div>
+      <div>
+        <div class="colhead">the port</div>
+        <div class="term sm">{<span class="key">"allow"</span>: <span class="no">false</span>,
+ <span class="key">"violations"</span>: [<span class="dim">"Commit a1b2c3d:
+   no independent approval&hellip;"</span>]}</div>
+      </div>
+    </div>
+    <p class="punch">Identical. Byte for byte.</p>
+  </section>
+
+  <!-- 10 -->
+  <section class="slide" data-label="The rows"
+    data-say="The passing rows are what separate &quot;reviewed by the wrong person&quot; from &quot;the collector never ran&quot;. Two $well_formed and two $min_subjects rows because the policy declares two requirements: commit_reviewed and commits_present."
+    data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
+  -i demo/trail_self_approved.json --format=json 'data.control43.report' \
+  | jq -r '.result[0].expressions[0].value.results[]
+           | &quot;\(.check)\t\(.subject.id // &quot;&mdash;&quot;)\t\(if .passed then &quot;PASS&quot; else &quot;FAIL&quot; end)\t\(.cause)&quot;' \
+  | column -t -s$'\t'">
+    <div class="tag"><span class="n">05</span><span>&hellip;and this came with it</span></div>
+    <div class="tablewrap">
+      <table>
+        <tbody>
+          <tr class="meta"><td>$well_formed &times;2</td><td class="v-pass">PASS</td><td>satisfied</td></tr>
+          <tr class="meta"><td>$min_subjects &times;2</td><td class="v-pass">PASS</td><td>satisfied</td></tr>
+          <tr><td>commit_identified</td><td class="v-pass">PASS</td><td>satisfied</td></tr>
+          <tr><td>pr_attestation_present</td><td class="v-pass">PASS</td><td>satisfied</td></tr>
+          <tr><td>pull_request_found</td><td class="v-pass">PASS</td><td>satisfied</td></tr>
+          <tr><td>identities_resolved</td><td class="v-pass">PASS</td><td>satisfied</td></tr>
+          <tr class="spot"><td>independently_approved</td><td class="v-fail">FAIL</td><td>value</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">One failure. Five things verified.</p>
+  </section>
+
+  <!-- 11 -->
+  <section class="slide" data-label="The row"
+    data-say="The fourth input is the substitute it looked for and did not find: a root commit has no parent to open a PR against, so an initial-commit attestation can discharge the check. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
+    data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
+  -i demo/trail_self_approved.json --format=json 'data.control43.report' \
+  | jq '.result[0].expressions[0].value.results[]
+        | select(.check==&quot;independently_approved&quot;) | .inputs'">
+    <div class="tag"><span class="n">05</span><span>That row's <code>inputs</code></span></div>
+    <div class="term sm">[{<span class="key">"name"</span>: <span class="dim">"&hellip;pull_requests[].approvers"</span>,
+  <span class="key">"value"</span>: [[{<span class="key">"username"</span>: <span class="no">"alice"</span>, <span class="key">"state"</span>: <span class="dim">"APPROVED"</span>, <span class="key">"timestamp"</span>: 1000050}]]},
+ {<span class="key">"name"</span>: <span class="dim">"&hellip;pull_requests[].commits"</span>,
+  <span class="key">"value"</span>: [[{<span class="key">"author_username"</span>: <span class="no">"alice"</span>, <span class="key">"sha1"</span>: <span class="dim">"c0ffee1"</span>, <span class="key">"timestamp"</span>: 1000000}]]},
+ {<span class="key">"name"</span>: <span class="dim">"&hellip;[custom:initial-commit-&hellip;].is_compliant"</span>, <span class="key">"value"</span>: <span class="dim">null</span>}]</div>
+    <p class="punch">You can <em>see</em> alice approving alice.</p>
+  </section>
+
+  <!-- 12 -->
+  <section class="slide" data-label="Harness"
+    data-say="Production vendored byte-for-byte beside the port, both fed one 23-case corpus, declared-divergence list empty. Limit: it proves only the axes it varies, and cannot see the vendored copy drifting from a policy it can't read. On 2026-09-07 that had happened &mdash; it caught one of five verdict-level differences; the original eight-case corpus was blind to the other four."
+    data-cmd="opa test src examples --ignore '*.json' --run 'parity' -v">
+    <div class="tag"><span class="n">05</span><span>Parity is a test, not a claim</span></div>
+    <div class="term sm">test_corpus_is_populated:            <span class="yes">PASS</span> <span class="dim">(11.8ms)</span>
+test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="dim">(416.5ms)</span>
+<span class="dim">&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;</span>
+<span class="yes">PASS: 2/2</span></div>
+    <p class="punch">Production vendored beside the port. The build <em>breaks</em> when they disagree.</p>
+  </section>
+
+  <!-- 13 -->
+  <section class="slide" data-label="Defects"
+    data-say="Four defects found by probing and reproduced, not inferred, in a policy whose own 37 tests all pass. The first two are one class: Rego's > is total across types, numbers sort below strings. The second is that max() over a comprehension silently skips commits with no timestamp, so an untimestamped commit cannot raise the cutoff. compare_time takes two RFC3339 strings or two epoch numbers, never a mixed pair."
+    data-cmd="">
+    <div class="tag"><span class="n">05</span><span>What that found</span></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>case</th><th>production</th><th>the port</th></tr></thead>
+        <tbody>
+          <tr><td>approver timestamp is a string</td><td class="v-fail">allow: true</td><td class="v-pass">denied</td></tr>
+          <tr><td>a commit carries no timestamp</td><td class="v-fail">allow: true</td><td class="v-pass">denied</td></tr>
+          <tr><td>two pull_request attestations</td><td class="v-fail">eval_conflict_error</td><td class="v-pass">denied</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="punch">In Rego, <code class="inline">"1000005" &gt; 1000010</code> is <em>true</em>.</p>
+  </section>
+
+  <!-- 14 -->
+  <section class="slide" data-label="Cost"
+    data-say="Control 43 can't measure the bet for two reasons: it is the hardest control &mdash; the four-eyes condition compares approvers against commit authors across two nested collections, which no operator over a single path expresses &mdash; and it already works, so the port buys evidence rather than less code. The 86 lines are a one-time cost; 1068 needed none, with any_of covering it."
+    data-cmd="">
+    <div class="tag"><span class="n">05</span><span>Be straight about the cost</span></div>
+    <h2>The port is <em>bigger</em></h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th>hand-written</th><th>declared</th><th>custom op</th><th>total</th></tr></thead>
+        <tbody>
+          <tr><td>control 43 &mdash; production</td><td>182</td><td>&mdash;</td><td>&mdash;</td><td>182</td></tr>
+          <tr class="spot"><td>control 43 &mdash; the port</td><td>&mdash;</td><td>151</td><td>86</td><td>237</td></tr>
+          <tr><td>control 1068 &mdash; sketch</td><td>&mdash;</td><td>61</td><td class="v-pass">none</td><td>61</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="punch">The custom op was one-time. <em>Control #2</em> is where the cost shows.</p>
+  </section>
+
+  <!-- 15 -->
+  <section class="slide" data-label="The seam"
+    data-say="kosli evaluate runs exactly two queries: data.policy.allow, and data.policy.violations on a denial. Everything else the policy computes is discarded. Still true on main at v2.39.x, so not a version problem. The gate was verified end to end through kosli evaluate against a stub API: RESULT DENIED, one violation string, exit 1."
+    data-cmd="">
+    <div class="tag"><span class="n">06</span><span>Where it plugs in</span></div>
+    <div class="pipe">
+      <div class="st"><b>1 Collector</b>gathers</div>
+      <div class="st"><b>2 Kosli</b>records</div>
+      <div class="st"><b>3 evaluate</b>builds input</div>
+      <div class="st hot"><b>4 Policy</b>judges</div>
+      <div class="st"><b>5 Consumer</b>attests</div>
+    </div>
+    <div class="pair">
+      <div class="verdict ok"><b>Gate: works today</b><span>verified end to end through <code class="inline">kosli evaluate</code></span></div>
+      <div class="verdict no"><b>Evidence: blocked</b><span>the CLI reads two rules, discards the rest</span></div>
+    </div>
+  </section>
+
+  <!-- 16 -->
+  <section class="slide" data-label="Doors"
+    data-say="1: OPA is already linked into the kosli binary as a Go library (internal/evaluate/rego.go), so this is one more query on a document it already evaluates. 2: the input document is already captured with --show-input and the result JSON already re-attested. 3: violations is uncapped, the payload limit is 10 MB (~2,290 commits), and a real report validates against the server's own validator with the jq rules giving the right verdict both ways."
+    data-cmd="">
+    <div class="tag"><span class="n">06</span><span>Three ways past it</span></div>
+    <div class="lines">
+      <div>The CLI surfaces one more query</div>
+      <div>Add <code class="inline">opa</code> to the image</div>
+      <div class="off">Smuggle the report through <code class="inline">violations</code></div>
+    </div>
+    <p class="sub">1 is the destination. 2 is the middle. 3 needs nothing from anybody &mdash; and works.</p>
+  </section>
+
+  <!-- 17 -->
+  <section class="slide" data-label="Next"
+    data-say="1068: a sketch against synthetic input, not a port &mdash; it has no Rego to port, its rule is TypeScript (checkBusinessRequirements.ts), and its evidence goes to a factstore rather than through kosli evaluate. It expresses the ticket half only, because the collector flattens commit messages to a Set of ticket ids and the ticket model carries no commit backref, so the link is gone before any evidence exists. That is a collector change, not a library one, and it does not block the cost measurement. Shadow mode: a second kosli evaluate call with the port bundle and --no-assert, whose verdict is compared but gates nothing &mdash; or kosli evaluate input over the document already captured with --show-input, which needs no API call. Both are available on that image today, since it is at least 2.18.0. This is the gap the parity harness cannot close by itself: it compares 23 synthetic cases against a vendored copy, and cannot see that copy drifting from the policy actually deployed. On 2026-09-07 it had drifted."
+    data-cmd="">
+    <div class="tag"><span class="n">07</span><span>Next</span></div>
+    <div class="lines">
+      <div><strong>Control 1068</strong> &mdash; what a second control costs</div>
+      <div><strong>Shadow mode</strong> &mdash; the port beside four-eyes.rego, on real trails</div>
+    </div>
+    <p class="sub">The harness compares 23 synthetic cases. Shadow mode compares production &mdash; and gates nothing.</p>
+    <div class="term sm"><span class="dim">README.md</span>       vocabulary, operators
+<span class="dim">INTEGRATION.md</span>  the pipeline, and a status-of-claims list
+<span class="dim">DEMO.md</span>         this walkthrough, with every command</div>
+  </section>
+
+</div>
+
+<div class="pmeta">
+  <span class="badge">Presenter</span>
+  <span class="now" id="p-now"></span>
+  <span class="link" id="p-sync"></span>
+  <span class="next" id="p-next"></span>
+</div>
+
+<div class="chrome">
+  <div class="rail" id="rail" role="tablist" aria-label="Slides"></div>
+  <span class="count" id="count">1 / 17</span>
+  <span class="hint"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> move &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>p</kbd> presenter</span>
+</div>
+
+<div class="notes" id="notes">
+  <b>Presenter</b>
+  <div class="say" id="note-say"></div>
+  <pre id="note-cmd"></pre>
+</div>
+
+<script>
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var rail = document.getElementById('rail');
+  var count = document.getElementById('count');
+  var notes = document.getElementById('notes');
+  var noteSay = document.getElementById('note-say');
+  var noteCmd = document.getElementById('note-cmd');
+  var at = 0;
+
+  slides.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.title = (i + 1) + '. ' + (s.dataset.label || '');
+    b.addEventListener('click', function () { go(i); });
+    rail.appendChild(b);
+  });
+
+  function go(i, quiet) {
+    at = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach(function (s, j) { s.classList.toggle('on', j === at); });
+    Array.prototype.forEach.call(rail.children, function (b, j) {
+      b.setAttribute('aria-current', j === at ? 'true' : 'false');
+    });
+    count.textContent = (at + 1) + ' / ' + slides.length;
+    var d = slides[at].dataset;
+    noteSay.textContent = d.say || '';
+    noteCmd.textContent = d.cmd || '';
+    noteCmd.style.display = d.cmd ? '' : 'none';
+    try { location.hash = '#' + (at + 1); } catch (e) {}
+    paintMeta();
+    if (!quiet) publish(at);
+  }
+
+  // ---- cross-window sync, so a presenter window and an audience window agree ----
+  var KEY = 'kosli-deck-slide';
+  var chan = null;
+  try { chan = new BroadcastChannel('kosli-deck'); } catch (e) { chan = null; }
+
+  function publish(i) {
+    try { if (chan) chan.postMessage({ slide: i }); } catch (e) {}
+    try { localStorage.setItem(KEY, i + ':' + Date.now()); } catch (e) {}
+  }
+
+  function follow(i) {
+    if (typeof i === 'number' && !isNaN(i) && i !== at) go(i, true);
+  }
+
+  if (chan) {
+    chan.onmessage = function (e) { if (e && e.data) follow(e.data.slide); };
+  }
+  window.addEventListener('storage', function (e) {
+    if (e.key !== KEY || !e.newValue) return;
+    follow(parseInt(String(e.newValue).split(':')[0], 10));
+  });
+
+  function setPresenting(on) {
+    document.body.classList.toggle('presenting', on);
+    notes.classList.toggle('on', on);
+    var s = 'synced across windows';
+    if (!chan) { s = 'syncing via storage events'; }
+    document.getElementById('p-sync').textContent = s;
+    paintMeta();
+  }
+
+  function paintMeta() {
+    if (!document.body.classList.contains('presenting')) return;
+    var cur = slides[at].dataset.label || '';
+    var nxt = at + 1 < slides.length ? (slides[at + 1].dataset.label || '') : '(end)';
+    document.getElementById('p-now').textContent = (at + 1) + '/' + slides.length + '  ' + cur;
+    document.getElementById('p-next').textContent = 'next: ' + nxt;
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'j') { go(at + 1); e.preventDefault(); }
+    else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'k') { go(at - 1); e.preventDefault(); }
+    else if (k === 'Home') { go(0); e.preventDefault(); }
+    else if (k === 'End') { go(slides.length - 1); e.preventDefault(); }
+    else if (k === 'n' || k === 'N') { notes.classList.toggle('on'); e.preventDefault(); }
+    else if (k === 'p' || k === 'P') {
+      setPresenting(!document.body.classList.contains('presenting'));
+      e.preventDefault();
+    }
+  });
+
+  document.getElementById('stage').addEventListener('click', function (e) {
+    if (e.target.closest('.term, table, a')) return;
+    var mid = this.getBoundingClientRect().left + this.clientWidth / 2;
+    go(e.clientX < mid ? at - 1 : at + 1);
+  });
+
+  function fromHash() {
+    var n = parseInt((location.hash || '').slice(1), 10);
+    return isNaN(n) ? 0 : n - 1;
+  }
+
+  window.addEventListener('hashchange', function () {
+    if (fromHash() !== at) go(fromHash());
+  });
+
+  go(fromHash(), true);
+</script>
+
+</body>
+</html>
