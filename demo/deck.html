@@ -204,6 +204,7 @@
 
   code.inline {
     font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
     font-size: .9em;
     background: var(--panel);
     border: 1px solid var(--rule-soft);
@@ -543,7 +544,7 @@
 
   <!-- 4 -->
   <section class="slide dense" data-label="Declare"
-    data-say="The slide omits the two `description` strings for space; the file has them. `id` is the identity path WITHIN a subject -- where the library looks inside one subject for the value that identifies it. It resolves to subject.id on every row, which is how a row points back at the thing it judged. The keyword is id; the path is whatever the data calls that field. Here it is [name]; control 43 also uses [name], because a trail's identifying field is its name, which IS the commit sha -- that is why slide 11's first input path reads name. If the path does not resolve, subject.id is null and the row still exists. `subject_type` is the first field and the easiest to skim past: it labels what kind of thing a row judges, it rides on EVERY row rather than living once in the report's definition block, and it is why the message on the violations slide reads 'deployment d-2' rather than just 'd-2'. It defaults to the literal string subject, so a policy that omits it produces rows saying subject d-2, which is a tell that nobody named the thing being judged. `from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
+    data-say="The slide omits the two `description` strings for space; the file has them. `id` is the identity path WITHIN a subject -- where the library looks inside one subject for the value that identifies it. It resolves to subject.id on every row, which is how a row points back at the thing it judged. The keyword is id; the path is whatever the data calls that field. Here it is [name]; control 43 also uses [name], because a trail's identifying field is its name, which IS the commit sha -- that is why slide 12's first input path reads name. If the path does not resolve, subject.id is null and the row still exists. `subject_type` is the first field and the easiest to skim past: it labels what kind of thing a row judges, it rides on EVERY row rather than living once in the report's definition block, and it is why the message on the violations slide reads 'deployment d-2' rather than just 'd-2'. It defaults to the literal string subject, so a policy that omits it produces rows saying subject d-2, which is a tell that nobody named the thing being judged. `from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
     data-cmd="cat demo/deployments.json
 cat demo/prod_deploy.rego
 opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
@@ -609,6 +610,38 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
   </section>
 
   <!-- 6 -->
+  <section class="slide dense" data-label="Definitions"
+    data-say="The report has two halves and the demo has only been showing one. Check definitions live once per (requirement, check) pair under requirements[name].checks; rows carry only what differs per subject. So a check run against 2,000 commits does not repeat its description and expression 2,000 times. Look a check up by the PAIR, not by name alone -- two requirements may reuse a name for unrelated checks. The expression field is the part worth pointing at: the library renders it from the spec, so a human-readable form of every check comes out for free, and it is what makes a row interpretable without reading the .rego. You only write it yourself for a custom op, where the library cannot derive it. Note also what is NOT here: from, id and min_subjects are nowhere in the report, so a consumer can recompute a check but cannot tell where in the input the subjects came from. Identity is in the report; provenance is not."
+    data-cmd="opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
+  --format=json 'data.demo.report' \
+  | jq '.result[0].expressions[0].value.requirements.prod_deploy.checks.ci_green'">
+    <div class="tag"><span class="n">03</span><span>The other half of the report</span></div>
+    <div class="io">
+      <span class="iolabel">once</span>
+      <div class="term sm"><span class="dim">requirements.prod_deploy.checks.ci_green</span>
+{
+  <span class="key">"op"</span>: <span class="dim">"all"</span>,   <span class="key">"path"</span>: [<span class="dim">"ci_checks"</span>],
+  <span class="key">"check"</span>: {<span class="key">"op"</span>: <span class="dim">"equals"</span>, <span class="key">"path"</span>: [<span class="dim">"conclusion"</span>], <span class="key">"value"</span>: <span class="dim">"success"</span>},
+  <span class="key">"description"</span>: <span class="dim">"Every CI check on the deployment passed"</span>,
+  <span class="key">"expression"</span>:  <span class="yes">"every ci_checks: conclusion == success"</span>   <span class="no">&lt;- you did not write this</span>
+}</div>
+    </div>
+    <div class="io">
+      <span class="iolabel">rows</span>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>requirement</th><th>subject</th><th>check</th><th></th><th>cause</th></tr></thead>
+        <tbody>
+          <tr><td>prod_deploy</td><td>d-1</td><td>ci_green</td><td class="v-pass">PASS</td><td>satisfied</td></tr>
+          <tr class="spot"><td>prod_deploy</td><td>d-2</td><td>ci_green</td><td class="v-fail">FAIL</td><td>value</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <p class="sub">One definition, however many subjects. A row's <code class="inline">(requirement, check)</code> pair is the lookup.</p>
+  </section>
+
+  <!-- 7 -->
   <section class="slide" data-label="absent &ne; value"
     data-say="Every operator is fail-closed: a missing, null or wrong-typed field makes a check fail rather than vanish or pass by accident. `equals` treats absent and explicitly-null as different &mdash; only the latter satisfies &quot;value&quot;: null."
     data-cmd="">
@@ -628,7 +661,7 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
     <p class="sub">Different team. Different fix.</p>
   </section>
 
-  <!-- 7 -->
+  <!-- 8 -->
   <section class="slide" data-label="Causes"
     data-say="Precedence runs top to bottom, computed over every path the check reads &mdash; a row names the most fundamental problem with its inputs, not the first. For a custom op the paths are the ones in its declared `inputs`. For all/any the path read is the collection, so a defect inside one element reports as value."
     data-cmd="">
@@ -649,7 +682,7 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
     <p class="sub">All four highlighted rows echo <code class="inline">null</code>. Four different fixes.</p>
   </section>
 
-  <!-- 8 -->
+  <!-- 9 -->
   <section class="slide dense" data-label="Violations"
     data-say="Two entry points, and violations takes the report rather than the input &mdash; it is a pure function of the report, no input document and no policy, so it can run anywhere the report travels. It drops passing rows, $applies rows, and rows of a requirement that another subject satisfied under require: some. It keeps $min_subjects and $well_formed failures: too few in-scope subjects, or a malformed requirement, are real breaches. allow and violations are independent derivations &mdash; the verdict never reads rows, so a bug in a message projection can mislead but cannot let a bad trail through. That is also why the report is the hashable, attestable artefact and violations is not."
     data-cmd="opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
@@ -672,7 +705,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
     <p class="sub">Out of scope is not in breach. A failing <code class="inline">$min_subjects</code> <em>is</em> &mdash; no production deployment at all is exactly what that guard reports.</p>
   </section>
 
-  <!-- 9 -->
+  <!-- 10 -->
   <section class="slide dense" data-label="Parity"
     data-say="Same input document as slide 2. Only stage 4 changes, so the collector, Kosli, kosli evaluate and the consumer are untouched."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
@@ -698,7 +731,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
     <p class="punch">Identical. Byte for byte.</p>
   </section>
 
-  <!-- 10 -->
+  <!-- 11 -->
   <section class="slide" data-label="The rows"
     data-say="The passing rows are what separate &quot;reviewed by the wrong person&quot; from &quot;the collector never ran&quot;. Two $well_formed and two $min_subjects rows because the policy declares two requirements: commit_reviewed and commits_present."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
@@ -723,9 +756,9 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
     <p class="sub">One failure. Five things verified.</p>
   </section>
 
-  <!-- 11 -->
+  <!-- 12 -->
   <section class="slide dense" data-label="The row"
-    data-say="This is the inputs array of slide 10's failing row, one entry per path the check read. On the double brackets: the check declares that input as {path: pull_requests, each: [approvers]}, a projection, which the row renders as pull_requests[].approvers. The outer array is one entry per pull request -- the [] in the name -- and the inner one is that pull request's own approvers array. One PR with one approver is why it collapses to [[{...}]]; with two PRs the outer array has two entries. The nesting is load-bearing: the rule is 'some pull_request: every author: some approver != author', so flattening would lose which approver belonged to which pull request and 'some PR fully approved' could not be answered. The first path is literally `name` because a trail's name IS the commit sha -- that is how the collector records it, one trail per commit. The last entry is the substitute the check looked for and did not find: a root commit has no parent to open a pull request against, so an initial-commit attestation can discharge the check instead. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
+    data-say="This is the inputs array of slide 11's failing row, one entry per path the check read. On the double brackets: the check declares that input as {path: pull_requests, each: [approvers]}, a projection, which the row renders as pull_requests[].approvers. The outer array is one entry per pull request -- the [] in the name -- and the inner one is that pull request's own approvers array. One PR with one approver is why it collapses to [[{...}]]; with two PRs the outer array has two entries. The nesting is load-bearing: the rule is 'some pull_request: every author: some approver != author', so flattening would lose which approver belonged to which pull request and 'some PR fully approved' could not be answered. The first path is literally `name` because a trail's name IS the commit sha -- that is how the collector records it, one trail per commit. The last entry is the substitute the check looked for and did not find: a root commit has no parent to open a pull request against, so an initial-commit attestation can discharge the check instead. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43.report' \
   | jq '.result[0].expressions[0].value.results[]
@@ -747,7 +780,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
     <p class="punch">Same name in both rows. You can <em>see</em> alice approving alice.</p>
   </section>
 
-  <!-- 12 -->
+  <!-- 13 -->
   <section class="slide" data-label="Harness"
     data-say="four-eyes.rego vendored byte-for-byte beside the port, both fed one 23-case corpus, declared-divergence list empty. Limit: it proves only the axes it varies, and cannot see the vendored copy drifting from the four-eyes.rego branch it can't read. On 2026-09-07 that had happened &mdash; it caught one of five verdict-level differences; the original eight-case corpus was blind to the other four."
     data-cmd="opa test src examples --ignore '*.json' --run 'parity' -v">
@@ -759,7 +792,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
     <p class="punch"><code>four-eyes.rego</code> vendored beside the port. The build <em>breaks</em> when they disagree.</p>
   </section>
 
-  <!-- 13 -->
+  <!-- 14 -->
   <section class="slide" data-label="Defects"
     data-say="Four defects found by probing and reproduced, not inferred, in four-eyes.rego, whose own 37 tests all pass. The first two are one class: Rego's > is total across types, numbers sort below strings. The second is that max() over a comprehension silently skips commits with no timestamp, so an untimestamped commit cannot raise the cutoff. compare_time takes two RFC3339 strings or two epoch numbers, never a mixed pair."
     data-cmd="">
@@ -777,7 +810,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
     <p class="punch">In Rego, <code class="inline">"1000005" &gt; 1000010</code> is <em>true</em>.</p>
   </section>
 
-  <!-- 14 -->
+  <!-- 15 -->
   <section class="slide" data-label="Cost"
     data-say="Control 43 can't measure the bet for two reasons: it is the hardest control &mdash; the four-eyes condition compares approvers against commit authors across two nested collections, which no operator over a single path expresses &mdash; and it already works, so the port buys evidence rather than less code. The 86 lines are a one-time cost; 1068 needed none, with any_of covering it."
     data-cmd="">
@@ -796,7 +829,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
     <p class="punch">The custom op was one-time. <em>Control #2</em> is where the cost shows.</p>
   </section>
 
-  <!-- 15 -->
+  <!-- 16 -->
   <section class="slide" data-label="The seam"
     data-say="kosli evaluate runs exactly two queries: data.policy.allow, and data.policy.violations on a denial. Everything else the policy computes is discarded. Still true on main at v2.39.x, so not a version problem. The gate was verified end to end through kosli evaluate against a stub API: RESULT DENIED, one violation string, exit 1."
     data-cmd="">
@@ -814,7 +847,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
     </div>
   </section>
 
-  <!-- 16 -->
+  <!-- 17 -->
   <section class="slide" data-label="Doors"
     data-say="1: OPA is already linked into the kosli binary as a Go library (internal/evaluate/rego.go), so this is one more query on a document it already evaluates. 2: the input document is already captured with --show-input and the result JSON already re-attested. 3: violations is uncapped, the payload limit is 10 MB (~2,290 commits), and a real report validates against the server's own validator with the jq rules giving the right verdict both ways."
     data-cmd="">
@@ -827,7 +860,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
     <p class="sub">1 is the destination. 2 is the middle. 3 needs nothing from anybody &mdash; and works.</p>
   </section>
 
-  <!-- 17 -->
+  <!-- 18 -->
   <section class="slide dense" data-label="Unknowns"
     data-say="All four are tracked in the repo rather than remembered. 1: the per-author rule -- for every author, some approver who is not that author -- has met only synthetic input, because both captured pull requests resolve to one author or none. It is the core four-eyes behaviour and the one thing the corpus cannot settle by itself; the synthetic two_author_mutual case passes in both policies, which is where the per-author reading and the approver-who-authored-nothing reading would have parted. 2: no real trail carrying initial-commit-by-verified-committer has been seen through --show-input, so the substitute has never met data nobody here wrote -- and it already shipped one defect, matching attestation_type custom instead of custom:name, caught by reading the server type model rather than by a test. 3: the report has only been dry-run to the attestation endpoint. No HTTP request has reached a deployed Kosli, so auth, routing and persistence are unexercised, and server-side schema validation and jq evaluation are untested. 4: the harness compares against a vendored copy, so drift in the four-eyes.rego branch is invisible to it; on 2026-09-07 it caught one of five verdict-level differences. If asked what would change the decision: item 3 failing would kill the evidence path as designed, and item 1 disagreeing would mean the port is not the control."
     data-cmd="">
@@ -847,7 +880,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
     <p class="punch">None is a reason not to start. Each is a reason not to claim more than we ran.</p>
   </section>
 
-  <!-- 18 -->
+  <!-- 19 -->
   <section class="slide" data-label="Next"
     data-say="1068: a sketch against synthetic input, not a port &mdash; it has no Rego to port, its rule is TypeScript (checkBusinessRequirements.ts), and its evidence goes to a factstore rather than through kosli evaluate. It expresses the ticket half only, because the collector flattens commit messages to a Set of ticket ids and the ticket model carries no commit backref, so the link is gone before any evidence exists. That is a collector change, not a library one, and it does not block the cost measurement. Shadow mode: a second kosli evaluate call with the port bundle and --no-assert, whose verdict is compared but gates nothing &mdash; or kosli evaluate input over the document already captured with --show-input, which needs no API call. Both are available on that image today, since it is at least 2.18.0. This is the gap the parity harness cannot close by itself: it compares 23 synthetic cases against a vendored copy, and cannot see that copy drifting from the four-eyes.rego branch it cannot read. On 2026-09-07 it had. Note that four-eyes.rego is itself in shadow mode rather than deciding anything, so this is one shadow evaluation beside another."
     data-cmd="">
@@ -873,7 +906,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
 
 <div class="chrome">
   <div class="rail" id="rail" role="tablist" aria-label="Slides"></div>
-  <span class="count" id="count">1 / 18</span>
+  <span class="count" id="count">1 / 19</span>
   <span class="hint"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> move &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>p</kbd> presenter</span>
 </div>
 

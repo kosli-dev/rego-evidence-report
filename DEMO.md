@@ -45,7 +45,7 @@ the projector. Arrows in either window move both, over `BroadcastChannel` (a
 browser API for messaging between same-origin tabs) with a `localStorage`
 fallback. `p` is deliberately local, so the projector window never shows notes.
 
-18 deliberately sparse slides — a headline and at most one artefact each, so
+19 deliberately sparse slides — a headline and at most one artefact each, so
 the room listens instead of reads. `←` `→` to move; `n` toggles a presenter bar
 carrying that slide's talking point and the command to run; the rail under the
 stage jumps anywhere. **The prose lives here, not on the slides** — the
@@ -194,7 +194,7 @@ Five things in that file:
    `id`; the path is whatever the data happens to call that field. Here it's
    `["name"]`, and `control_43.rego` also uses `["name"]` because a trail's
    identifying field is its `name` — which *is* the commit sha. That's why slide
-   11's first input path reads `name`. If the path doesn't resolve, `subject.id`
+   12's first input path reads `name`. If the path doesn't resolve, `subject.id`
    is `null` and the row still exists.
 4. **`applies_to` is scope, not a check.** `d-3` is on staging, so it isn't in
    breach of a production control — it is simply not a subject of it.
@@ -217,7 +217,7 @@ false
 
 ---
 
-## Beat 3 — Read the report  ·  slides 5–7  ·  3.5 min, tab A
+## Beat 3 — Read the report  ·  slides 5–8  ·  4 min, tab A
 
 `d-1`, `d-2`, `d-3` are the three deployments' `name` fields — the path the
 requirement's `"id": ["name"]` names. One subject is one deployment, and
@@ -278,9 +278,47 @@ Nine rows from twelve lines of declaration:
 Rows 8 and 9 are the `absent`/`value` pair — the single most useful thing in
 the report.
 
+### The other half of the report — slide 6
+
+The report has two halves, and everything above is one of them. Check
+**definitions** live once per `(requirement, check)` pair under
+`requirements[<name>].checks`; rows carry only what differs per subject:
+
+```sh
+opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
+  --format=json 'data.demo.report' \
+  | jq '.result[0].expressions[0].value.requirements.prod_deploy.checks.ci_green'
+```
+
+```json
+{
+  "op": "all",  "path": ["ci_checks"],
+  "check": {"op": "equals", "path": ["conclusion"], "value": "success"},
+  "description": "Every CI check on the deployment passed",
+  "expression":  "every ci_checks: conclusion == success"
+}
+```
+
+Three things:
+
+- **`expression` is rendered by the library** from the check spec. You didn't
+  write it, and it's what makes a row interpretable without reading the `.rego`.
+  You only write it yourself for a custom op, where the library can't derive it.
+- **Definitions don't repeat per row.** A check run against 2,000 commits
+  carries its description and expression once, not 2,000 times.
+- **Look a check up by the pair, not the name.** Two requirements may reuse a
+  name for unrelated checks.
+
+Worth knowing what is **not** in there, if someone asks: `from`, `id` and
+`min_subjects` appear nowhere in the report. So a consumer can recompute a
+check's verdict, but can't tell where in the input the subjects came from or how
+their identity was derived. Identity is in the report; provenance isn't. (There
+is no subject definition block — subjects are described only by `subject.type`
+on each row and the `subjects: {total, matching}` counts.)
+
 ---
 
-## Beat 4 — Two functions  ·  slide 8  ·  1.5 min, tab A
+## Beat 4 — Two functions  ·  slide 9  ·  1.5 min, tab A
 
 The library has exactly two entry points, and the second takes the **report**,
 not the input:
@@ -343,7 +381,7 @@ Three properties worth naming:
 
 ---
 
-## Beat 5 — The same input, through the real port  ·  slides 9–14  ·  3 min, tab B
+## Beat 5 — The same input, through the real port  ·  slides 10–15  ·  3 min, tab B
 
 Now bring back beat 1's document. `examples/control_43.rego` expresses the same
 control with this library, modelled per commit. Same input, same query:
@@ -363,7 +401,7 @@ opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_
 }
 ```
 
-**Identical** — same verdict, same string, byte for byte. Slide 9 stacks the two
+**Identical** — same verdict, same string, byte for byte. Slide 10 stacks the two
 outputs rather than setting them side by side, so the lines align and the
 sameness is visible instead of asserted. The interface out is unchanged, so
 stages 1, 2, 3 and 5 are untouched. What came with it:
@@ -506,7 +544,7 @@ bet: 61 lines, **no custom op** — `any_of` covered it. Two caveats:
 
 ---
 
-## Beat 6 — Where it plugs in, and the one blocker  ·  slides 15–16  ·  1.5 min
+## Beat 6 — Where it plugs in, and the one blocker  ·  slides 16–17  ·  1.5 min
 
 Five stages; four of them are control-agnostic:
 
@@ -547,7 +585,7 @@ Three ways past it:
 
 ---
 
-## Beat 7 — What we have not run  ·  slide 17  ·  1 min
+## Beat 7 — What we have not run  ·  slide 18  ·  1 min
 
 Put this before the close, not after — end on the plan, not the caveats. Every
 item is tracked in the repo, not remembered:
@@ -586,7 +624,7 @@ control. The other two are cost, not direction.
 
 ---
 
-## Close  ·  slide 18  ·  1 min
+## Close  ·  slide 19  ·  1 min
 
 Two decisions, previously mistaken for one:
 
@@ -601,7 +639,7 @@ Two next steps:
 settled; that was the parity harness. Cost isn't, and control 43 is the wrong
 control to measure it on. 1068 is the candidate because the sketch already
 exists: **61 lines, no custom op**, which is the shape the bet predicts. Two
-things to have ready, since slide 14's third row invites both:
+things to have ready, since slide 15's third row invites both:
 
 - It's a **sketch against synthetic input, not a port** — 1068 has no Rego to
   port, its rule is TypeScript.
@@ -643,7 +681,7 @@ Cut in this order. Beats 2–4 are the demo itself.
    point (saves ~45s).
 3. **Beat 6's three doors** — say "it's blocked, three ways past it, ask me"
    (saves ~50s).
-4. **Beat 5's two control-1068 caveats** — keep the row on slide 14, since it
+4. **Beat 5's two control-1068 caveats** — keep the row on slide 15, since it
    carries the argument; just say "it's half a control, ask me why" (saves ~35s).
 5. **Beat 1's `cat`** — describe the input instead of showing it (saves ~20s).
 
@@ -703,7 +741,7 @@ that for the `opa`-in-the-image route. Four things it still doesn't do:
   No input dump distinguishes a selector that matched nothing (`unmatched`) from
   one that matched twice (`ambiguous`), because that depends on what the check's
   selector was. In the original policy, two `pull_request` attestations don't
-  even fail — they crash (`eval_conflict_error`, slide 13).
+  even fail — they crash (`eval_conflict_error`, slide 14).
 - **Nothing binds the dump to the verdict.** Two artifacts, two flags, neither
   referencing the other, and neither recording which policy version ran. The
   report is one deterministic hashable document binding subject + check + values
