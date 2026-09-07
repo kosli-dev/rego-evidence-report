@@ -175,14 +175,22 @@ a named approver and green CI.*
 cat demo/prod_deploy.rego
 ```
 
-Four things in that file:
+Five things in that file:
 
-1. **`requirements` is data.** An object. No rules, no loops, no `allow`.
-2. **`from` vs `path`.** `from` locates the collection in the *input document*;
+1. **`subject_type` labels what a row judges.** It's the first field, and the
+   easiest to skim past. Unlike the check definitions, it does *not* live once in
+   the report's `requirements` block — it rides on **every row**, including the
+   requirement-level `$well_formed` and `$min_subjects` rows, which carry
+   `{"id": null, "type": "deployment"}`. That's what lets a consumer interpret
+   rows without the policy, and it's why beat 4's message reads `deployment d-2`
+   rather than bare `d-2`. Omit it and rows say `subject d-2` — a tell that
+   nobody named the thing being judged.
+2. **`requirements` is data.** An object. No rules, no loops, no `allow`.
+3. **`from` vs `path`.** `from` locates the collection in the *input document*;
    a check's `path` locates a field within *one subject*.
-3. **`applies_to` is scope, not a check.** `d-3` is on staging, so it isn't in
+4. **`applies_to` is scope, not a check.** `d-3` is on staging, so it isn't in
    breach of a production control — it is simply not a subject of it.
-4. **`ci_green` reaches into a nested array** with `all`. That's the shape
+5. **`ci_green` reaches into a nested array** with `all`. That's the shape
    of most real checks: every commit, every CI run, every approver.
 
 Then run it:
@@ -317,7 +325,9 @@ Three properties worth naming:
   document, no policy — so it runs anywhere the report travels.
 - **Selection is generic; wording is yours.** It returns structured entries and
   never a formatted string, because the message is the genuinely
-  policy-specific part.
+  policy-specific part. The `deployment` in each line above is
+  `subject.type` — declared once as `subject_type` back in beat 2, carried on
+  every row, and read straight out of the row here.
 - `allow := report.compliant` and `violations` are **independent derivations**.
   The verdict never reads rows, so a bug in a message projection can mislead but
   **cannot let a bad trail through**. That's also why the *report* is the

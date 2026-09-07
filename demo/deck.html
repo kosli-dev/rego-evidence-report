@@ -505,7 +505,7 @@
 
   <!-- 4 -->
   <section class="slide dense" data-label="Declare"
-    data-say="The slide omits the two `description` strings for space; the file has them. `from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
+    data-say="The slide omits the two `description` strings for space; the file has them. `subject_type` is the first field and the easiest to skim past: it labels what kind of thing a row judges, it rides on EVERY row rather than living once in the report's definition block, and it is why the message on the violations slide reads 'deployment d-2' rather than just 'd-2'. It defaults to the literal string subject, so a policy that omits it produces rows saying subject d-2, which is a tell that nobody named the thing being judged. `from` locates the collection in the input document; a check's `path` locates a field within one subject. `applies_to` is scope, not an assertion &mdash; a subject failing it produces an $applies row and no check rows. `all` requires a non-empty array; an empty ci_checks fails with cause value."
     data-cmd="cat demo/deployments.json
 cat demo/prod_deploy.rego
 opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
