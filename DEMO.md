@@ -51,8 +51,8 @@ carrying that slide's talking point and the command to run; the rail under the
 stage jumps anywhere. **The prose lives here, not on the slides** — the
 mapping from beats to slide numbers is in each beat's heading below.
 
-The spine of the talk is one input document evaluated twice — once by the live
-production policy, once by this library — so the room sees the *same verdict*
+The spine of the talk is one input document evaluated twice — once by
+hand-written `four-eyes.rego`, once by this library — so the room sees the *same verdict*
 with two different amounts of evidence behind it.
 
 ---
@@ -93,9 +93,10 @@ reimplemented.
 
 ## Beat 1 — What a policy tells you today  ·  slides 2–3  ·  2 min, tab B
 
-Control 43 (`RCTLDEF0000043`, four-eyes) is today **the only Rego policy in
-`sdlc-workflows`** — every other control is workflow wiring. 182 code lines,
-hand-written. `examples/four-eyes.vendored.rego` is its body byte-for-byte with
+Control 43 (`RCTLDEF0000043`, four-eyes) is **the only Rego policy in `sdlc-workflows`** — every other control
+is workflow wiring. 182 code lines, hand-written by colleagues working with the
+customer, and **itself running in shadow mode rather than deciding anything
+yet**. `examples/four-eyes.vendored.rego` is its body byte-for-byte with
 the package renamed, so this runs the real thing.
 
 The input is one commit, one merged PR — and **alice approved her own commit**:
@@ -104,7 +105,7 @@ The input is one commit, one merged PR — and **alice approved her own commit**
 cat demo/trail_self_approved.json
 ```
 
-Run the production policy on it:
+Run `four-eyes.rego` on it:
 
 ```sh
 opa eval -d examples/four-eyes.vendored.rego -i demo/trail_self_approved.json \
@@ -126,7 +127,7 @@ That is the right verdict, and a serviceable string. What isn't there:
 - **Which** values it read is unknown. You can't recompute that verdict from the
   output — you can only re-run it. That's the difference between auditable and
   merely logged. The values themselves are not gone: `--show-input` dumps the
-  input document, and for control 43 it's already captured in production. The
+  input document, and control 43's workflow already captures it. The
   Q&A section below has the full distinction.
 - The string is one someone wrote. To learn *why* it failed you re-read 182
   lines of Rego.
@@ -326,8 +327,8 @@ Three properties worth naming:
 
 ## Beat 5 — The same input, through the real port  ·  slides 9–14  ·  3 min, tab B
 
-Now bring back beat 1's document. `examples/control_43.rego` is a port of that
-production policy, modelled per commit. Same input, same query:
+Now bring back beat 1's document. `examples/control_43.rego` expresses the same
+control with this library, modelled per commit. Same input, same query:
 
 ```sh
 opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
@@ -414,7 +415,7 @@ data.control43_parity_test.test_verdicts_agree_across_corpus: PASS (416.495416ms
 PASS: 2/2
 ```
 
-The production policy is vendored byte-for-byte next to the port, both are fed
+`four-eyes.rego` is vendored byte-for-byte next to the port, both are fed
 one 23-case corpus, and the test **fails the moment their verdicts part**
 without an entry on a declared-divergence list — which is empty.
 
@@ -423,7 +424,7 @@ without an entry on a declared-divergence list — which is empty.
 Over 27 input documents, **24 of 24 ordinary cases agree**. Three differ, and in
 all three the original **allows or crashes**:
 
-| case | production `four-eyes.rego` | the port |
+| case | `four-eyes.rego` | the port |
 | --- | --- | --- |
 | approver timestamp is a string | `allow: true` | denied |
 | a commit carries no timestamp | `allow: true` | denied |
@@ -442,9 +443,9 @@ The port is **not shorter**:
 
 | | hand-written | declared | custom op | total |
 | --- | --- | --- | --- | --- |
-| control 43 — production | 182 | — | — | 182 |
-| control 43 — the port | — | 151 | 86 | **237** |
-| control 1068 — sketch | — | 61 | **none** | 61 |
+| `four-eyes.rego` | 182 | — | — | 182 |
+| `control_43.rego` | — | 151 | 86 | **237** |
+| `control_1068.rego` | — | 61 | **none** | 61 |
 
 Two reasons control 43 cannot measure the bet:
 
@@ -551,8 +552,10 @@ both available on that image today (it's at least 2.18.0):
 This is the one gap the parity harness cannot close by itself: it compares 23
 synthetic cases against a **vendored copy**, and cannot see that copy drifting
 from the policy actually deployed. On 2026-09-07 it had drifted, and the harness
-caught one of five differences. Shadow mode compares against production itself,
-continuously, at no risk — because it decides nothing.
+caught one of five differences. Shadow mode compares against real trails,
+continuously, at no risk — because it decides nothing. Worth being precise in
+the room: `four-eyes.rego` is itself in shadow mode rather than deciding
+anything, so this is one shadow evaluation beside another.
 
 Point at `README.md` for the vocabulary and operator reference,
 `INTEGRATION.md` for the pipeline and the full status-of-claims list, and
@@ -600,7 +603,7 @@ the *library* compiling. `CONTRIBUTING.md` has the layer stack.
 
 **"How do you know the library is right?"**
 410 tests across `src` and `examples`. But the differential harness in beat 5 is
-the stronger evidence: a real production policy sits next to the port and the
+the stronger evidence: the hand-written policy sits next to the port and the
 build breaks when they disagree.
 
 **"Why is `require: some` interesting?"**
@@ -615,7 +618,7 @@ key order, which is what lets you hash it and attest the hash.
 
 **"Doesn't `--show-input` already give us the values?"**
 It gives the **input document** — the haystack, not the needle — and yes, it's
-already captured in production for control 43; INTEGRATION.md leans on exactly
+already captured by control 43's workflow; INTEGRATION.md leans on exactly
 that for the `opa`-in-the-image route. Four things it still doesn't do:
 
 - **It never says which fields a check consulted.** Getting from ~10 MB of input
@@ -651,7 +654,7 @@ somebody has to answer *why* without re-running anything.
   mistake. The operational tell: a substitute that never once reports
   `substituted` across a whole report is a substitute nobody is reaching.
 - **The parity harness proves the axes it varies, and no more.** It can't notice
-  that the vendored copy has drifted from a production policy it cannot see —
+  that the vendored copy has drifted from the `four-eyes.rego` branch it cannot see —
   and on 2026-09-07 that had happened. It caught **one** of five verdict-level
   differences; the corpus was blind to the other four, because all eight
   original cases had a readable trail author, a resolvable approver and no bot.

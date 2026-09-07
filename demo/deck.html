@@ -474,11 +474,11 @@
 
   <!-- 2 -->
   <section class="slide" data-label="Today"
-    data-say="examples/four-eyes.vendored.rego is the production policy, body byte-for-byte, renamed package. 182 code lines, and the only Rego policy in sdlc-workflows &mdash; every other control is workflow wiring. Input: one commit, one merged PR, alice as both author and approver. The verdict is correct."
+    data-say="examples/four-eyes.vendored.rego is four-eyes.rego's body byte-for-byte, renamed package. 182 code lines, hand-written, and the only Rego policy in sdlc-workflows &mdash; every other control is workflow wiring. Input: one commit, one merged PR, alice as both author and approver. The verdict is correct."
     data-cmd="opa eval -d examples/four-eyes.vendored.rego -i demo/trail_self_approved.json \
   --format=json 'data.four_eyes_vendored' \
   | jq '.result[0].expressions[0].value | {allow, violations}'">
-    <div class="tag"><span class="n">01</span><span>What a policy returns today</span></div>
+    <div class="tag"><span class="n">01</span><span>What four-eyes.rego returns</span></div>
     <h2>182 lines of Rego, and this comes out</h2>
     <div class="term">{
   <span class="key">"allow"</span>: <span class="no">false</span>,
@@ -491,7 +491,7 @@
 
   <!-- 3 -->
   <section class="slide" data-label="Gap"
-    data-say="A compliant trail returns {allow: true, violations: []} &mdash; indistinguishable from a policy that read nothing and passed vacuously. On --show-input: it dumps the input document, and for control 43 that document is already captured in production. It does not say which fields a check consulted; it supports re-running (needs OPA plus the exact policy and library version), not recomputing; cause is a property of the evaluation, not the document, so no input dump separates a selector that matched nothing from one that matched twice; and nothing binds the dump to the verdict or records which policy version ran."
+    data-say="A compliant trail returns {allow: true, violations: []} &mdash; indistinguishable from a policy that read nothing and passed vacuously. On --show-input: it dumps the input document, and control 43's workflow already captures that document. It does not say which fields a check consulted; it supports re-running (needs OPA plus the exact policy and library version), not recomputing; cause is a property of the evaluation, not the document, so no input dump separates a selector that matched nothing from one that matched twice; and nothing binds the dump to the verdict or records which policy version ran."
     data-cmd="">
     <div class="tag"><span class="n">01</span><span>What isn't in it</span></div>
     <div class="lines">
@@ -642,14 +642,14 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
   | jq '.result[0].expressions[0].value | {allow, violations}'">
     <div class="tag"><span class="n">05</span><span>Same input, the real port</span></div>
     <div class="stack">
-      <div class="colhead">production &nbsp;<span class="mono">four-eyes.rego</span></div>
+      <div class="colhead">hand-written &nbsp;<span class="mono">four-eyes.rego</span></div>
       <div class="term sm">{
   <span class="key">"allow"</span>: <span class="no">false</span>,
   <span class="key">"violations"</span>: [
     <span class="dim">"Commit a1b2c3d: no independent approval after latest code commit"</span>
   ]
 }</div>
-      <div class="colhead">the port &nbsp;<span class="mono">control_43.rego + kosli.evidence</span></div>
+      <div class="colhead">declared &nbsp;<span class="mono">control_43.rego + kosli.evidence</span></div>
       <div class="term sm">{
   <span class="key">"allow"</span>: <span class="no">false</span>,
   <span class="key">"violations"</span>: [
@@ -716,24 +716,24 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
 
   <!-- 12 -->
   <section class="slide" data-label="Harness"
-    data-say="Production vendored byte-for-byte beside the port, both fed one 23-case corpus, declared-divergence list empty. Limit: it proves only the axes it varies, and cannot see the vendored copy drifting from a policy it can't read. On 2026-09-07 that had happened &mdash; it caught one of five verdict-level differences; the original eight-case corpus was blind to the other four."
+    data-say="four-eyes.rego vendored byte-for-byte beside the port, both fed one 23-case corpus, declared-divergence list empty. Limit: it proves only the axes it varies, and cannot see the vendored copy drifting from the four-eyes.rego branch it can't read. On 2026-09-07 that had happened &mdash; it caught one of five verdict-level differences; the original eight-case corpus was blind to the other four."
     data-cmd="opa test src examples --ignore '*.json' --run 'parity' -v">
     <div class="tag"><span class="n">05</span><span>Parity is a test, not a claim</span></div>
     <div class="term sm">test_corpus_is_populated:            <span class="yes">PASS</span> <span class="dim">(11.8ms)</span>
 test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="dim">(416.5ms)</span>
 <span class="dim">&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;</span>
 <span class="yes">PASS: 2/2</span></div>
-    <p class="punch">Production vendored beside the port. The build <em>breaks</em> when they disagree.</p>
+    <p class="punch"><code>four-eyes.rego</code> vendored beside the port. The build <em>breaks</em> when they disagree.</p>
   </section>
 
   <!-- 13 -->
   <section class="slide" data-label="Defects"
-    data-say="Four defects found by probing and reproduced, not inferred, in a policy whose own 37 tests all pass. The first two are one class: Rego's > is total across types, numbers sort below strings. The second is that max() over a comprehension silently skips commits with no timestamp, so an untimestamped commit cannot raise the cutoff. compare_time takes two RFC3339 strings or two epoch numbers, never a mixed pair."
+    data-say="Four defects found by probing and reproduced, not inferred, in four-eyes.rego, whose own 37 tests all pass. The first two are one class: Rego's > is total across types, numbers sort below strings. The second is that max() over a comprehension silently skips commits with no timestamp, so an untimestamped commit cannot raise the cutoff. compare_time takes two RFC3339 strings or two epoch numbers, never a mixed pair."
     data-cmd="">
     <div class="tag"><span class="n">05</span><span>What that found</span></div>
     <div class="tablewrap">
       <table>
-        <thead><tr><th>case</th><th>production</th><th>the port</th></tr></thead>
+        <thead><tr><th>case</th><th>four-eyes.rego</th><th>the port</th></tr></thead>
         <tbody>
           <tr><td>approver timestamp is a string</td><td class="v-fail">allow: true</td><td class="v-pass">denied</td></tr>
           <tr><td>a commit carries no timestamp</td><td class="v-fail">allow: true</td><td class="v-pass">denied</td></tr>
@@ -754,9 +754,9 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
       <table>
         <thead><tr><th></th><th>hand-written</th><th>declared</th><th>custom op</th><th>total</th></tr></thead>
         <tbody>
-          <tr><td>control 43 &mdash; production</td><td>182</td><td>&mdash;</td><td>&mdash;</td><td>182</td></tr>
-          <tr class="spot"><td>control 43 &mdash; the port</td><td>&mdash;</td><td>151</td><td>86</td><td>237</td></tr>
-          <tr><td>control 1068 &mdash; sketch</td><td>&mdash;</td><td>61</td><td class="v-pass">none</td><td>61</td></tr>
+          <tr><td>four-eyes.rego</td><td>182</td><td>&mdash;</td><td>&mdash;</td><td>182</td></tr>
+          <tr class="spot"><td>control_43.rego</td><td>&mdash;</td><td>151</td><td>86</td><td>237</td></tr>
+          <tr><td>control_1068.rego</td><td>&mdash;</td><td>61</td><td class="v-pass">none</td><td>61</td></tr>
         </tbody>
       </table>
     </div>
@@ -796,14 +796,14 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
 
   <!-- 17 -->
   <section class="slide" data-label="Next"
-    data-say="1068: a sketch against synthetic input, not a port &mdash; it has no Rego to port, its rule is TypeScript (checkBusinessRequirements.ts), and its evidence goes to a factstore rather than through kosli evaluate. It expresses the ticket half only, because the collector flattens commit messages to a Set of ticket ids and the ticket model carries no commit backref, so the link is gone before any evidence exists. That is a collector change, not a library one, and it does not block the cost measurement. Shadow mode: a second kosli evaluate call with the port bundle and --no-assert, whose verdict is compared but gates nothing &mdash; or kosli evaluate input over the document already captured with --show-input, which needs no API call. Both are available on that image today, since it is at least 2.18.0. This is the gap the parity harness cannot close by itself: it compares 23 synthetic cases against a vendored copy, and cannot see that copy drifting from the policy actually deployed. On 2026-09-07 it had drifted."
+    data-say="1068: a sketch against synthetic input, not a port &mdash; it has no Rego to port, its rule is TypeScript (checkBusinessRequirements.ts), and its evidence goes to a factstore rather than through kosli evaluate. It expresses the ticket half only, because the collector flattens commit messages to a Set of ticket ids and the ticket model carries no commit backref, so the link is gone before any evidence exists. That is a collector change, not a library one, and it does not block the cost measurement. Shadow mode: a second kosli evaluate call with the port bundle and --no-assert, whose verdict is compared but gates nothing &mdash; or kosli evaluate input over the document already captured with --show-input, which needs no API call. Both are available on that image today, since it is at least 2.18.0. This is the gap the parity harness cannot close by itself: it compares 23 synthetic cases against a vendored copy, and cannot see that copy drifting from the four-eyes.rego branch it cannot read. On 2026-09-07 it had. Note that four-eyes.rego is itself in shadow mode rather than deciding anything, so this is one shadow evaluation beside another."
     data-cmd="">
     <div class="tag"><span class="n">07</span><span>Next</span></div>
     <div class="lines">
       <div><strong>Control 1068</strong> &mdash; what a second control costs</div>
       <div><strong>Shadow mode</strong> &mdash; the port beside four-eyes.rego, on real trails</div>
     </div>
-    <p class="sub">The harness compares 23 synthetic cases. Shadow mode compares production &mdash; and gates nothing.</p>
+    <p class="sub">The harness compares 23 synthetic cases. Shadow mode compares <em>real trails</em> &mdash; and gates nothing.</p>
     <div class="term sm"><span class="dim">README.md</span>       vocabulary, operators
 <span class="dim">INTEGRATION.md</span>  the pipeline, and a status-of-claims list
 <span class="dim">DEMO.md</span>         this walkthrough, with every command</div>
