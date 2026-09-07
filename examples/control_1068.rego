@@ -50,9 +50,9 @@ import rego.v1
 # have that flag — so a table that changes is a parameter change rather than a
 # policy change, which is the only arrangement that can stay true.
 #
-# `examples/control_43.rego` reads `data.params.service_account_patterns` the same
-# way. Both fall back to a literal when nothing is passed, so the policy is
-# runnable and testable on its own.
+# `examples/control_43.rego` reads `data.params.web_flow_patterns` the same way.
+# Both fall back to a literal when nothing is passed, so the policy is runnable
+# and testable on its own.
 flavours := tables if {
 	tables := data.params.flavours
 	is_object(tables)

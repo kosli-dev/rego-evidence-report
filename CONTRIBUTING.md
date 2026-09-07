@@ -52,6 +52,45 @@ that flag, a failing row without it.
   scenarios, the violation projection, the `peer_approved` custom op, and
   `data.params` configurability.
 
+## Refreshing the vendored production policy
+
+`examples/four-eyes.vendored.rego` is a copy of a policy this repo does not own,
+and `examples/control_43_parity_test.rego` is the only thing that notices when the
+original moves. It cannot notice on its own — nobody here can read the source it
+came from — so the refresh is manual and worth doing in one order:
+
+1. **Put the new capture in `fieldkit/scratch/c43/`**, which is gitignored, and
+   keep the one it replaces under a dated name. The diff between two captures is
+   the most useful artefact in the whole exercise and it is gone once overwritten.
+2. **Rebuild the vendored copy from it, changing only the `package` line.** Verify
+   that literally: `diff <(tail -n +N examples/four-eyes.vendored.rego) <(tail -n +2
+   <capture>)` should be empty. Update the header's provenance block — a revision
+   if the capture carried one, a content hash and date if it did not.
+3. **Run the suite before touching the port.** Parity failures at this point are
+   the drift, stated as verdicts. Read them before deciding anything.
+4. **Probe what the corpus cannot see**, which is the step it is tempting to skip.
+   A corpus proves parity on the axes it happens to vary; the September 2026
+   refresh found five verdict-level differences and the eight-case corpus caught
+   one. Diff the two captures rule by rule, and for every semantic change, build an
+   input that separates the old behaviour from the new and evaluate both policies
+   over it. If a change is invisible to the corpus, that is a corpus gap to fix in
+   the same pass, not a change to wave through.
+5. **Mutation-test each change you mirrored.** Undo it in a scratch copy and
+   confirm parity fails. A change nothing catches is a change nothing is asserting.
+   Watch for changes that are only visible *somewhere specific* — the anchoring fix
+   is caught by exactly one corpus case, because with the trail exemption gone the
+   patterns are used in one place and the obvious trail-level cases no longer
+   discriminate on them.
+6. **Raise the number in `test_corpus_is_populated`.** `every` over an empty
+   collection is vacuously true, so an emptied or renamed corpus leaves the parity
+   test green while asserting nothing.
+
+Mirror a loosening as readily as a tightening — the port's value is the same
+verdicts with better evidence, and a port that denies what production allows
+blocks releases — but say so in `INTEGRATION.md` where the upstream owners can be
+pointed at it. Where the port stays deliberately stricter, it goes in
+`declared_divergence` with the reason, not in a comment.
+
 ## Invariants worth not breaking
 
 These are pinned by tests, and they're the reason the report is safe to hash and

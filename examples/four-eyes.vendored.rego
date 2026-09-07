@@ -1,12 +1,25 @@
 # VENDORED COPY — DO NOT EDIT THE LOGIC.
 #
 # Origin: production `four-eyes.rego` from the customer's `sdlc-workflows` repo,
-# via the round-2/3 capture that also lives in `fieldkit/scratch/c43/`.
+# hand-carried 2026-09-07.
 #
-# **No upstream revision is recorded** — the capture did not carry one. Until a
-# revision or content hash is pinned here, this file proves parity against *a*
-# version of the production policy rather than against a known one. Fill it in
-# the next time that file crosses.
+# Provenance, as precisely as it is known:
+#
+#   sha256  51d131921a6971dc28e777707df9c0beb2bb5a0efe9946d82ad216c761bcd006
+#   date    captured 2026-09-07
+#   ref     UNRECORDED — an unmerged branch, not yet on the deployed `main`.
+#
+# It is treated here as the **authoritative** version, on the owner's word that
+# the branch is what will be released and that merging simply takes a while. So
+# parity below is measured against what production is *about to* enforce, not
+# against what it enforces today. When this lands on `main`, replace the hash
+# with the merge sha — a content hash proves two files are identical, not which
+# revision either one is.
+#
+# The previous capture (2026-08-24) is kept at
+# `fieldkit/scratch/c43/four-eyes.aug24.rego` (gitignored). Five verdict-level
+# differences between the two are recorded in INTEGRATION.md; four of them are
+# upstream changes and one was a port-side divergence this refresh exposed.
 #
 # The ONLY edit from upstream is the `package` line below; the body is
 # byte-for-byte. Upstream is `package policy`, and so is
@@ -42,21 +55,42 @@ allow if {
 }
 
 # ---------------------------------------------------------------------------
-# Compliance — a trail is compliant if any of these positive conditions hold
+# Compliance - a trail is compliant if any of these positive conditions hold
 # ---------------------------------------------------------------------------
 
-# Service-account commits are exempt from PR review.
+# A compliant initial-commit attestation substitutes for a PR review.
 trail_compliant(trail) if {
-	is_service_account(trail)
+	attest := initial_commit_attest(trail)
+	attest.is_compliant == true
 }
 
-# Human-authored commits are compliant when an associated PR has independent
-# approval covering every author after the latest code commit.
+# Every approver on the PR has a resolvable identity.
+# To be considered resolved, there must be at least one approver, and
+# every approver's username must be a non-empty string and not "ghost".
+all_approvers_resolved(pr) if {
+	count(pr.approvers) > 0
+	every a in pr.approvers {
+		is_string(a.username)
+		a.username != ""
+		a.username != "ghost"
+	}
+}
+
+# Compliance helper: ignore unresolved commit authors if all approvers are resolved.
+authors_resolved_or_approvers_resolved(pr) if {
+	all_authors_resolved(pr)
+}
+
+authors_resolved_or_approvers_resolved(pr) if {
+	all_approvers_resolved(pr)
+}
+
+# Commits are compliant when an associated PR has independent approval
+# covering every author after the latest code commit.
 trail_compliant(trail) if {
-	not is_service_account(trail)
 	attest := pr_attest(trail)
 	some pr in attest.pull_requests
-	all_authors_resolved(pr)
+	authors_resolved_or_approvers_resolved(pr)
 	has_independent_approval(trail, pr)
 }
 
@@ -76,6 +110,12 @@ pr_attest(trail) := attest if {
 	attest.attestation_type == "pull_request"
 }
 
+# Extract initial-commit attestation from a trail.
+initial_commit_attest(trail) := attest if {
+	some attest in trail.compliance_status.attestations_statuses
+	attest.attestation_type == "custom:initial-commit-by-verified-committer"
+}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -93,6 +133,7 @@ approved_approvers_after_cutoff(pr, cutoff) := {a.username |
 	a.state == "APPROVED"
 	is_string(a.username)
 	a.username != ""
+	a.username != "ghost"
 	a.timestamp > cutoff
 }
 
@@ -110,6 +151,7 @@ all_authors_resolved(pr) if {
 author_resolved_or_exempt(c) if {
 	is_string(c.author_username)
 	c.author_username != ""
+	c.author_username != "ghost"
 }
 
 author_resolved_or_exempt(c) if {
@@ -174,23 +216,18 @@ has_independent_approval(trail, pr) if {
 }
 
 # ---------------------------------------------------------------------------
-# Service account exemption
+# Web-flow / bot commit tolerance
 #
-# Matched against trail.git_commit_info.author, which is "Name <email>" format.
-# Patterns work against the full string, e.g.:
-#   "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+# These patterns identify PR-branch commits (not trails) whose author identity
+# cannot be resolved to a GitHub account - e.g. web-flow edits or bot-signed
+# commits made in the course of an otherwise human-authored PR. They do not
+# exempt a trail from the PR-review requirement; every trail must still have
+# an associated PR with independent approval.
 # ---------------------------------------------------------------------------
 
 service_account_patterns := {
-	"svc_.*",
-	".*\\[bot\\]",
-	"noreply@github.com",
-}
-
-# Commit author is a service account (CI, GitHub Actions, dependabot, etc).
-is_service_account(trail) if {
-	some pattern in service_account_patterns
-	regex.match(pattern, trail.git_commit_info.author)
+	"^svc_[a-zA-Z0-9_-]+ <[^>]+>$", # Anchored to svc_ names
+	"^.*?\\[bot\\] <[^>]+>$", # Anchored to bot names
 }
 
 # PR commit author is unresolvable (web-flow edits, Copilot co-auth).
@@ -199,19 +236,23 @@ is_web_flow_commit(c) if {
 	regex.match(pattern, object.get(c, "author", ""))
 }
 
+is_web_flow_commit(c) if {
+	regex.match("^GitHub <noreply@github.com>$", object.get(c, "author", ""))
+}
+
 # ---------------------------------------------------------------------------
-# Violations — human-readable diagnostic output
+# Violations - human-readable diagnostic output
 #
 # These are derived for debugging and reporting only. allow does NOT depend
 # on this set: a sprintf failure here cannot affect the compliance decision.
 # A trail appears in violations if and only if it is not in trail_compliant.
 # ---------------------------------------------------------------------------
 
-violations contains "Policy error: input.trails is missing or not an array — cannot evaluate" if {
+violations contains "Policy error: input.trails is missing or not an array - cannot evaluate" if {
 	not is_array(object.get(input, "trails", null))
 }
 
-violations contains "Policy error: input.trails is empty — nothing to evaluate" if {
+violations contains "Policy error: input.trails is empty - nothing to evaluate" if {
 	is_array(input.trails)
 	count(input.trails) == 0
 }
@@ -221,36 +262,46 @@ violations contains msg if {
 	some trail in input.trails
 	not trail_compliant(trail)
 	not pr_attest(trail)
+	not initial_commit_attest(trail)
 	msg := sprintf("Trail %v: pull_request attestation is missing", [trail.name])
 }
 
+# Non-compliant initial-commit attestation.
+violations contains msg if {
+	some trail in input.trails
+	not trail_compliant(trail)
+	attest := initial_commit_attest(trail)
+	attest.is_compliant != true
+	msg := sprintf("Trail %v: initial-commit-by-verified-committer attestation is non-compliant", [trail.name])
+}
+
 # Unverifiable identity: commit author has no resolvable GitHub account
-# and is not a known service account or web-flow commit.
+# and is not a tolerated web-flow/bot commit.
 # Matches both null and empty string author_username (e.g. GitHub "ghost" users).
 violations contains msg if {
 	some trail in input.trails
 	not trail_compliant(trail)
 	attest := pr_attest(trail)
 	some pr in attest.pull_requests
+	not all_approvers_resolved(pr)
 	some c in pr.commits
 	username := object.get(c, "author_username", null)
-	not is_service_account(trail)
 	not is_web_flow_commit(c)
 	_is_unresolved_username(username)
 	msg := sprintf(
-		"PR %v: commit %v has no linked GitHub account — identity unverifiable",
+		"PR %v: commit %v has no linked GitHub account - identity unverifiable",
 		[pr.url, substring(c.sha1, 0, 7)],
 	)
 }
 
-_is_unresolved_username(u) if { u == null }
-_is_unresolved_username(u) if { u == "" }
+_is_unresolved_username(u) if u == null
+_is_unresolved_username(u) if u == ""
+_is_unresolved_username(u) if u == "ghost"
 
-# Missing PR: non-service-account commit has no associated merged PR.
+# Missing PR: commit has no associated merged PR.
 violations contains msg if {
 	some trail in input.trails
 	not trail_compliant(trail)
-	not is_service_account(trail)
 	attest := pr_attest(trail)
 	count(attest.pull_requests) == 0
 	msg := sprintf("Commit %v: no associated PR found", [substring(trail.name, 0, 7)])
@@ -261,7 +312,6 @@ violations contains msg if {
 violations contains msg if {
 	some trail in input.trails
 	not trail_compliant(trail)
-	not is_service_account(trail)
 	attest := pr_attest(trail)
 	count(attest.pull_requests) > 0
 	not any_pr_fully_approved(trail, attest)
@@ -271,11 +321,11 @@ violations contains msg if {
 	)
 }
 
-# True if any associated PR has both resolved authors and independent approval.
+# True if any associated PR has both resolved authors (or resolved approvers) and independent approval.
 # Used only for violation messaging to distinguish "missing approval" from
 # "unverifiable identity".
 any_pr_fully_approved(trail, attest) if {
 	some pr in attest.pull_requests
-	all_authors_resolved(pr)
+	authors_resolved_or_approvers_resolved(pr)
 	has_independent_approval(trail, pr)
 }

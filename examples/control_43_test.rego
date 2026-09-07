@@ -5,9 +5,15 @@
 # rebuilt here rather than copied: that policy and its tests belong to
 # sdlc-workflows, and the shapes are what matter.
 #
-# The final section is the point of the exercise. Three cases the original suite
-# does not cover, where the original policy passes input it cannot verify and this
-# port refuses it.
+# The final section is the point of the exercise: cases the original suite does
+# not cover, where the original policy passes input it cannot verify and this port
+# refuses it. There were three; there are two, because the third turned out to be
+# a verdict-level divergence rather than extra care — see the note where
+# `author_recorded` used to be asserted in control_43.rego.
+#
+# Refreshed against production's 2026-09-07 branch. The service-account exemption
+# tests are inverted rather than deleted, because the exemption did not move — it
+# was removed, and the shape it used to allow is now the shape that must fail.
 package control43_test
 
 import rego.v1
@@ -15,7 +21,9 @@ import rego.v1
 # ---------- fixtures ----------
 
 # One trail is one commit, and trail.name is the commit sha. `author_str` is git's
-# "Name <email>", which is what the service-account patterns match against.
+# "Name <email>". Nothing reads it at trail level any more — it is kept because
+# real trails carry it, and because the tests below assert that a bot-looking
+# author no longer buys an exemption.
 make_trail(sha, author_str, prs) := {
 	"name": sha,
 	"git_commit_info": {"author": author_str, "sha1": sha, "timestamp": 1000100},
@@ -43,6 +51,9 @@ pr_commit_null_user(sha) := {"sha1": sha, "author_username": null, "timestamp": 
 
 pr_commit_no_user(sha) := {"sha1": sha, "timestamp": 1000000}
 
+# GitHub's placeholder for a deleted account: a login that names nobody.
+pr_commit_ghost(sha) := {"sha1": sha, "author_username": "ghost", "timestamp": 1000000}
+
 # A GitHub web-flow or Copilot co-authored commit: no linked account, and a git
 # author that the service-account patterns recognise.
 pr_commit_web_flow(sha) := {"sha1": sha, "author": "GitHub <noreply@github.com>", "timestamp": 1000000}
@@ -67,29 +78,82 @@ test_missing_attestation_fails if {
 	contains(msg, "pull_request attestation is missing")
 }
 
-# ---------- service account exemption ----------
+# ---------- no trail-level exemption ----------
+#
+# These four used to assert the opposite, name for name. Production's 2026-09-07
+# branch deleted `is_service_account`, so a bot commit is a subject of four-eyes
+# like any other and needs a reviewed pull request. The patterns survive, but only
+# to explain a pull-request commit whose author cannot be resolved.
 
-test_service_account_svc_prefix_passes if {
-	count(violations_for([make_trail("abc1234", "svc_deployer <svc@example.com>", [])])) == 0
+test_svc_prefix_pattern_not_exempt if {
+	v := violations_for([make_trail("abc1234", "svc_deployer <svc@example.com>", [])])
+	some msg in v
+	contains(msg, "no associated PR")
 }
 
-test_service_account_dependabot_passes if {
+# The same commit, once it has a review. This is the half that shows the change
+# is a tightening rather than a ban.
+test_svc_prefix_pattern_passes_with_pr if {
+	pr := make_pr("abc1234", "alice", [pr_commit("sha1", "alice")], [approval("bob", 1000001)])
+	count(violations_for([make_trail("abc1234", "svc_deployer <svc@example.com>", [pr])])) == 0
+}
+
+test_dependabot_bot_pattern_not_exempt if {
 	author := "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>"
-	count(violations_for([make_trail("abc1234", author, [])])) == 0
+	v := violations_for([make_trail("abc1234", author, [])])
+	some msg in v
+	contains(msg, "no associated PR")
 }
 
-test_service_account_github_actions_passes if {
+test_github_actions_bot_pattern_not_exempt if {
 	author := "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
-	count(violations_for([make_trail("abc1234", author, [])])) == 0
+	v := violations_for([make_trail("abc1234", author, [])])
+	some msg in v
+	contains(msg, "no associated PR")
 }
 
-test_service_account_ci_signed_commit_bot_passes if {
+test_ci_signed_commit_bot_pattern_not_exempt if {
 	author := "ci-signed-commit-bot[bot] <247774526+ci-signed-commit-bot[bot]@users.noreply.github.com>"
-	count(violations_for([make_trail("abc1234", author, [])])) == 0
+	v := violations_for([make_trail("abc1234", author, [])])
+	some msg in v
+	contains(msg, "no associated PR")
+}
+
+test_web_flow_trail_author_not_exempt if {
+	v := violations_for([make_trail("abc1234", "GitHub <noreply@github.com>", [])])
+	some msg in v
+	contains(msg, "no associated PR")
 }
 
 test_regular_user_not_exempt if {
 	v := violations_for([make_trail("abc1234", "alice <alice@example.com>", [])])
+	some msg in v
+	contains(msg, "no associated PR")
+}
+
+# ---------- the patterns are anchored ----------
+#
+# Unanchored, `.*\[bot\]` matched a human called `ali[bot]ce` and a bare
+# `noreply@github.com` matched any author string containing it. These three would
+# have passed before the refresh, on both sides, which is the fail-open the
+# anchoring closed. They are asserted at trail level here for the same reason
+# production asserts them: it is where an over-matching pattern used to be worth
+# the most to an attacker.
+
+test_mid_username_bot_tag_not_exempt if {
+	v := violations_for([make_trail("abc1234", "ali[bot]ce <dev@example.com>", [])])
+	some msg in v
+	contains(msg, "no associated PR")
+}
+
+test_substring_developer_email_svc_not_exempt if {
+	v := violations_for([make_trail("abc1234", "Dev Eloper <svc_ops@example.com>", [])])
+	some msg in v
+	contains(msg, "no associated PR")
+}
+
+test_substring_developer_name_bot_not_exempt if {
+	v := violations_for([make_trail("abc1234", "Bot Ticelli <bot@example.com>", [])])
 	some msg in v
 	contains(msg, "no associated PR")
 }
@@ -196,39 +260,81 @@ test_multi_author_only_one_committer_approves_fails if {
 
 # ---------- unresolvable identity ----------
 
-test_null_username_pr_commit_unverifiable if {
-	pr := make_pr("abc1234", "alice", [pr_commit_null_user("sha1")], [approval("bob", 1000001)])
+# Production's 2026-09-07 branch split every one of these in two, because an
+# unresolvable commit author is now tolerated when every approver resolves. That
+# is the branch's only loosening, and the pairs below are how it is pinned: the
+# same unresolvable author fails or passes on the strength of who reviewed it.
+#
+# An unresolved approver is spelled as the empty string rather than omitted,
+# because `all_approvers_resolved` demands at least one approver and an omitted
+# list would fail for that reason instead of the one under test.
+
+test_null_username_pr_commit_fails_if_approver_unresolved if {
+	pr := make_pr("abc1234", "alice", [pr_commit_null_user("sha1")], [approval("", 1000001)])
 	v := violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])
 	some msg in v
 	contains(msg, "identity unverifiable")
 }
 
-# An exempt commit is out of scope, so no check runs against it and no identity
-# complaint is raised.
-test_null_username_service_account_trail_exempt if {
+test_null_username_pr_commit_passes_if_approvers_resolved if {
 	pr := make_pr("abc1234", "alice", [pr_commit_null_user("sha1")], [approval("bob", 1000001)])
-	v := violations_for([make_trail("abc1234", "svc_deployer <svc@example.com>", [pr])])
-	every msg in v {
-		not contains(msg, "identity unverifiable")
-	}
+	count(violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])) == 0
 }
 
-test_all_null_usernames_no_vacuous_pass if {
+test_all_null_usernames_fails_if_approver_unresolved if {
 	pr := make_pr(
 		"abc1234", "alice",
 		[pr_commit_null_user("sha1"), pr_commit_null_user("sha2")],
-		[approval("bob", 1000001)],
+		[approval("", 1000001)],
 	)
 	v := violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])
 	some msg in v
 	contains(msg, "identity unverifiable")
 }
 
-test_absent_username_pr_commit_unverifiable if {
-	pr := make_pr("abc1234", "alice", [pr_commit_no_user("sha1")], [approval("bob", 1000001)])
+test_all_null_usernames_passes_if_approvers_resolved if {
+	pr := make_pr(
+		"abc1234", "alice",
+		[pr_commit_null_user("sha1"), pr_commit_null_user("sha2")],
+		[approval("bob", 1000001)],
+	)
+	count(violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])) == 0
+}
+
+test_absent_username_pr_commit_fails_if_approver_unresolved if {
+	pr := make_pr("abc1234", "alice", [pr_commit_no_user("sha1")], [approval("", 1000001)])
 	v := violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])
 	some msg in v
 	contains(msg, "identity unverifiable")
+}
+
+test_absent_username_pr_commit_passes_if_approvers_resolved if {
+	pr := make_pr("abc1234", "alice", [pr_commit_no_user("sha1")], [approval("bob", 1000001)])
+	count(violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])) == 0
+}
+
+# ---------- "ghost" resolves to nobody ----------
+#
+# GitHub replaces a deleted account with `ghost`, and production added it to every
+# identity test in the same branch. Note the asymmetry, which is production's: a
+# ghost approver cannot satisfy four-eyes, but a ghost *author* still needs
+# somebody else's approval rather than dropping out of the set needing review.
+
+test_ghost_sole_approver_cannot_satisfy_four_eyes if {
+	pr := make_pr("abc1234", "alice", [pr_commit("sha1", "alice")], [approval("ghost", 1000001)])
+	v := violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])
+	some msg in v
+	contains(msg, "independent approval")
+}
+
+test_ghost_author_pr_commit_fails_if_approver_ghost if {
+	pr := make_pr("abc1234", "alice", [pr_commit_ghost("sha1")], [approval("ghost", 1000001)])
+	not out(make_input([make_trail("abc1234", "alice <alice@example.com>", [pr])])).allow
+}
+
+test_ghost_author_pr_commit_passes_if_approvers_resolved if {
+	pr := make_pr("abc1234", "alice", [pr_commit_ghost("sha1")], [approval("bob", 1000001)])
+	count(violations_for([make_trail("abc1234", "alice <alice@example.com>", [pr])])) == 0
 }
 
 test_web_flow_pr_commit_exempt if {
@@ -267,8 +373,12 @@ test_no_pr_with_approval_fails if {
 
 # ---------- several commits, only failures reported ----------
 
+# The passing commit used to be a service-account trail, which passed by being out
+# of scope. Nothing passes by exemption any more, so it earns its pass with a
+# review.
 test_only_failing_commits_reported if {
-	passing := make_trail("aaa1111", "svc_bot <svc@example.com>", [])
+	pr := make_pr("aaa1111", "alice", [pr_commit("sha1", "alice")], [approval("bob", 1000001)])
+	passing := make_trail("aaa1111", "alice <alice@example.com>", [pr])
 	failing := make_trail("bbb2222", "alice <alice@example.com>", [])
 	v := violations_for([passing, failing])
 	count(v) == 1
@@ -463,6 +573,12 @@ test_the_ambiguous_row_names_the_cause if {
 # The case the port false-failed until checks could declare a substitute: the
 # repository's first commit, which no pull request could have reviewed, carrying
 # the alternative evidence production accepts instead.
+#
+# As of the 2026-09-07 branch this is no longer a port-side inference from the
+# collector's source: production's four-eyes.rego carries the rule itself, reading
+# the same type string and the same `is_compliant` off the same status entry. The
+# corpus in control_43_parity_test.rego is where the two are now checked against
+# each other.
 # `custom:<name>` is the type string Kosli emits for a custom attestation type —
 # built-in types are bare, a custom one is referenced by
 # `attestation_type: "custom:<name>"`. The attestation's own *name* is whatever
@@ -546,9 +662,11 @@ test_an_ordinary_commit_is_unaffected_by_the_substitute_path if {
 	contains(msg, "independent approval")
 }
 
-# A pull request recording no commits at all cannot be checked for who wrote
-# them. The identity check now says so, where the custom op it replaced treated
-# an empty commit list as "every commit checks out".
+# A pull request recording no commits at all cannot be checked for who wrote them.
+# The denial now comes from the approval check rather than the identity one: an
+# empty commit list makes the cutoff uncomputable, and DIFFERENCE 1 in
+# control_43_ops.rego refuses to guess it. Production denies this too, by needing
+# at least one author to approve.
 test_a_pull_request_with_no_commits_is_unverifiable if {
 	pr := make_pr("abc1234", "alice", [], [approval("bob", 1000001)])
 	not out(make_input([make_trail("abc1234", "alice <alice@example.com>", [pr])])).allow
@@ -566,26 +684,55 @@ test_report_carries_a_row_per_commit_and_check if {
 		r.passed == true
 	}
 	rows == {
-		"commit_identified", "author_recorded", "$applies",
+		"commit_identified",
 		"pr_attestation_present", "pull_request_found",
 		"identities_resolved", "independently_approved",
 	}
 }
 
-# ---------- the exemption cannot swallow a commit it could not read ----------
+# Two rows that used to be here and are gone, which is worth asserting rather than
+# just omitting: `author_recorded`, because production reads the trail's git author
+# for nothing, and `$applies`, because with no scope filter every commit is a
+# subject and there is no longer a scope decision to record.
+test_no_author_recorded_or_applies_row_remains if {
+	pr := make_pr("abc1234", "alice", [pr_commit("sha1", "alice")], [approval("bob", 1000001)])
+	report := out(make_input([make_trail("abc1234", "alice <alice@example.com>", [pr])])).report
+	every r in report.results {
+		not r.check in {"author_recorded", "$applies"}
+	}
+}
 
-# A scope filter fails permissively: an unreadable author matches no exemption
-# pattern, so the commit falls out of scope and, with min_subjects 0, took the
-# whole requirement with it. Allowed, silently, with no evidence at all — until
-# the author was asserted where nothing can filter it away.
-test_a_commit_with_no_author_is_denied_rather_than_exempted if {
+# ---------- an unreadable author is no longer a special case ----------
+
+# This used to assert "no git author recorded", guarding a fail-open in the port's
+# own scope filter: an unreadable author matched no exemption pattern, fell out of
+# scope, and with min_subjects 0 took the whole requirement with it. The filter is
+# gone, so the fail-open is structurally gone, and the commit is now denied for the
+# reason production denies it — nobody attested a review.
+test_a_commit_with_no_author_is_denied_for_the_missing_attestation if {
 	trail := {
 		"name": "abc1234",
 		"compliance_status": {"attestations_statuses": {}},
 	}
 	not out(make_input([trail])).allow
 	some msg in violations_for([trail])
-	contains(msg, "no git author recorded")
+	contains(msg, "pull_request attestation is missing")
+}
+
+# The other half, and the one that made `author_recorded` a divergence rather than
+# extra care: an unreadable author with a properly approved pull request is
+# compliant, because upstream reads that field for nothing at all.
+test_an_unreadable_author_with_a_good_review_is_compliant if {
+	pr := make_pr("abc1234", "alice", [pr_commit("sha1", "alice")], [approval("bob", 1000001)])
+	trail := {
+		"name": "abc1234",
+		"git_commit_info": {"author": null, "sha1": "abc1234"},
+		"compliance_status": {"attestations_statuses": {"pr-review": {
+			"attestation_type": "pull_request",
+			"pull_requests": [pr],
+		}}},
+	}
+	out(make_input([trail])).allow
 }
 
 test_a_trail_that_names_no_commit_is_denied_out_loud if {

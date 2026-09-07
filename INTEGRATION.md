@@ -478,6 +478,27 @@ and puts the exemption's discriminator in the report where a reader can see it.
 approvers to commit authors across two collections and remains the escape hatch
 working as intended.
 
+> **Superseded on 2026-09-07, and the reasoning is worth keeping anyway.**
+> Production's branch made identity resolution a disjunction of two quantifiers —
+> every commit of *this* pull request resolves, or every approver of it does — and
+> `any_of` cannot say that: its option groups hold leaf checks, and both sides
+> quantify over a collection. So `identities_resolved` went back to being a custom
+> op, and `control_43_ops.rego` hosts two.
+>
+> The honest read is that the ask above diagnosed the blocker correctly for the
+> policy as it stood and the vocabulary is one feature short of the policy as it
+> is now: an `any_of` group that may hold a quantified check. Rego's ban on
+> recursion means that cannot be done by widening `any_of_passed`, since it would
+> reach `element_passed` and come back round — it needs a separate non-recursive
+> path for a quantifier whose own element check is a leaf. That is a real feature
+> and may well be the right one; it was not worth taking on inside a drift fix.
+>
+> Declaring it per pull request also fixed something the `all` form had wrong.
+> Flattening `pull_requests` × `commits` demanded that every commit of *every*
+> pull request resolve, where production asks only that *some* pull request
+> satisfy identities and approval together — which is the "one honest divergence"
+> admitted further down this file, now closed.
+
 One behaviour tightened in passing: the custom op treated a pull request with an
 **empty** `commits` array as "every commit checks out". `each` requires every
 collection on the way down to be non-empty, so that now fails closed.
@@ -641,16 +662,23 @@ Parity was measured rather than asserted: both policies were loaded together and
 run over the same 27 input documents, comparing `allow` and violation counts.
 
 **It is asserted now.** `examples/control_43_parity_test.rego` feeds one corpus
-of eight cases to both policies and fails the moment their verdicts part without
-an entry on a declared-divergence list, which is empty today. The production
+of 23 cases to both policies and fails the moment their verdicts part without
+an entry on a declared-divergence list, which is empty. The production
 policy is vendored as `examples/four-eyes.vendored.rego` — body byte-for-byte,
 renamed to `package four_eyes_vendored` because upstream's `package policy`
 would otherwise merge with `examples/code_review.rego` rather than sit beside
-it. Two things it does not do: it asserts **verdicts** only, leaving cause-level
-differences to `control_43_test.rego` where they belong, and it cannot notice
-that the vendored copy has drifted from a production policy it cannot see. The
-capture carried no upstream revision to pin, so today the harness proves parity
-against *a* version of the production policy rather than a known one.
+it. It asserts **verdicts** only, leaving cause-level differences to
+`control_43_test.rego` where they belong.
+
+It cannot notice that the vendored copy has drifted from a production policy it
+cannot see, and on 2026-09-07 that is exactly what had happened — see [The
+refresh of 2026-09-07](#the-refresh-of-2026-09-07-what-drifted-and-what-the-harness-could-not-see).
+The harness caught one of the five verdict-level differences that had opened up;
+the corpus was blind to the other four. It also carried, until that refresh, the
+claim that the port's extra strictness was cause-level rather than verdict-level,
+which was false when it was written. Both are worth reading as the limits of a
+differential harness rather than as its failure: it proves the axes it varies
+against the version it holds, and no more.
 
 The corpus also gives the still-missing two-author pull request a home: when one
 is finally captured and sanitised it drops in as a ninth case and both policies
@@ -685,9 +713,18 @@ condition itself — approvers compared against commit authors across two nested
 collections — which no operator over a single path can express. That is the
 escape hatch working as intended.
 
-The exemption is expressed as **scope**, not as a passing check: a service-account
-commit produces a `$applies` row and no check rows, because it is not in breach of
-four-eyes, it is not a subject of it.
+The exemption was expressed as **scope**, not as a passing check: a
+service-account commit produced a `$applies` row and no check rows, because it is
+not in breach of four-eyes, it is not a subject of it.
+
+> **The exemption no longer exists.** Production deleted it on the 2026-09-07
+> branch, so there is no `applies_to` on `commit_reviewed`, every commit is a
+> subject, and no commit produces a bare `$applies` row. The rest of this section
+> is the history of a fail-open that was found and closed while the feature was
+> still there — and the ending is better than it looks, because the filter that
+> made it possible is the thing that got deleted. Read on for the hazard that
+> expressing an exemption as scope creates; it is still the right warning for the
+> next policy that wants one.
 
 **That framing had a fail-open edge, and the field report is what exposed it.** A
 scope filter fails *permissively*: a commit whose `git_commit_info.author` cannot
@@ -718,10 +755,12 @@ message — so `commit_identified` could deny a trail while `violations` came ba
 empty, which is a denial nobody can act on. Both `commits_present` checks are in
 the table now, and a test sweeps every check for a message.
 
-One honest divergence: `identities_resolved` is a gating check here, while in the
+One honest divergence: `identities_resolved` was a gating check here, while in the
 original an unresolved identity in one pull request cannot deny a commit that a
-*different* pull request fully covers. The port is stricter in that corner. No test
-in either suite exercises it.
+*different* pull request fully covers. The port was stricter in that corner, and no
+test in either suite exercised it. **Closed on 2026-09-07**: rewriting the check as
+a per-pull-request custom op made it `some pr`, which is production's quantifier,
+so the corner is gone rather than merely still unexercised.
 
 The port has since moved with production rather than staying frozen at parity: the
 initial-commit substitute (production gained it; the port false-failed without it)
@@ -769,6 +808,132 @@ is the very ambiguity `cause` exists to remove, one level over. Two things do ca
 it: a fixture carrying the real type string, which is what should have existed;
 and the operational tell that a substitute never once reporting `substituted`
 across a whole report is a substitute nobody is reaching.
+
+## The refresh of 2026-09-07: what drifted, and what the harness could not see
+
+A colleague mentioned that `four-eyes.rego` moves faster on a branch than on the
+`main` this repo had been reading. The file was hand-carried over — policy and
+test suite, no revision, an unmerged branch that is expected to be released and
+is treated here as **authoritative** on the owner's word. The vendored copy is
+refreshed from it, its header records a content hash and the date because there
+was no ref to record, and the previous capture is kept beside it in
+`fieldkit/scratch/c43/four-eyes.aug24.rego`.
+
+The port had drifted, in **five** ways that change a verdict. Each row was
+measured by loading both policies and evaluating one input, not read off the diff:
+
+| case | 2026-08-24 | branch | port, before | |
+| --- | --- | --- | --- | --- |
+| service-account trail, no PR | allow | **deny** | allow | port too permissive |
+| human named `ali[bot]ce`, no PR | allow | **deny** | allow | port too permissive |
+| sole approver is `ghost` | allow | **deny** | allow | port too permissive |
+| unresolvable author, approvers resolved | deny | **allow** | deny | port too strict |
+| unreadable trail author, good PR | allow | allow | deny | **port never agreed** |
+
+The first four are upstream changes; the port was a faithful mirror of what was
+captured in August and simply went stale. The fifth is the interesting one and it
+is ours.
+
+### The four upstream changes
+
+**1. The trail-level service-account exemption is deleted.** `is_service_account`
+is gone, its patterns' comment now says outright that they "do not exempt a trail
+from the PR-review requirement", and six new tests pin bot commits as in scope —
+including `test_svc_prefix_pattern_passes_with_pr`, the same commit passing once
+it has a review. This is the largest change in the branch: a bot commit now needs
+a reviewed pull request like anyone else.
+
+**2. The patterns are anchored, which closed a real fail-open.** `svc_.*` became
+`^svc_[a-zA-Z0-9_-]+ <[^>]+>$`, `.*\[bot\]` became `^.*?\[bot\] <[^>]+>$`, and bare
+`noreply@github.com` became `^GitHub <noreply@github.com>$`. Unanchored, `.*\[bot\]`
+matches a human called `ali[bot]ce` and `noreply@github.com` matches any author
+string merely containing it — so a person could be waved through as a bot.
+Production pins that with three tests. **This port carried the same hole**, and it
+was not the port's own mistake so much as a faithful copy of one.
+
+**3. `ghost` resolves to nobody.** GitHub replaces a deleted account with the
+login `ghost`, and it is now excluded from approvers, from author resolution, and
+from `_is_unresolved_username`. Before this the policy's comment claimed to handle
+ghost users while the code tested only null and empty string. Note the asymmetry,
+which is deliberate on both sides now: a ghost approver cannot satisfy four-eyes,
+but a ghost *author* still needs somebody else's approval rather than dropping out
+of the set needing review.
+
+**4. One loosening, and it is worth putting to the owners of
+`sdlc-workflows`.** `authors_resolved_or_approvers_resolved` tolerates an
+unresolvable commit author whenever *every* approver resolves. The reasoning is
+sound as far as it goes — a review whose reviewers are all identifiable is still
+attributable — but the effect is that an unattributable commit passes four-eyes on
+the strength of who reviewed it, which is a weaker claim than the control
+otherwise makes. It is mirrored here to hold verdict parity, and flagged rather
+than quietly adopted. It joins the four defects above as something to raise.
+
+### The fifth: `author_recorded`, and a claim that was never true
+
+`commits_present` asserted `git_commit_info.author`, and the parity harness's
+declared-divergence list carried the comment that "the port's extra strictness is
+cause-level, not verdict-level". **That was false when it was written.** Upstream
+reads the trail's git author for nothing at all — not in the August capture and
+not in the branch — so a trail with an unreadable author and a properly approved
+pull request was compliant upstream and denied here, against *both* versions.
+
+The check has been removed rather than declared as a divergence, and the reason it
+can go cleanly is the same reason it existed. It was added to plug a fail-open in
+the port's own scope filter: an unreadable author matched no exemption pattern,
+failed `not_matches_any`, fell out of scope, and with `min_subjects: 0` took the
+whole requirement with it. Change 1 above deletes that filter. The hazard the
+check guarded is structurally gone, so the guard goes with it.
+
+### What the harness caught, and what it did not
+
+`test_verdicts_agree_across_corpus` fired on the first real refresh, which is what
+it was built for. It caught **one** of the five.
+
+That is the more useful finding. The other four were invisible to a corpus whose
+eight cases all had a readable trail author, a resolvable approver and no bot in
+sight. A differential harness is only as good as the shapes it thinks to vary, and
+"we assert parity" quietly became "we assert parity on the axes we happened to
+pick". The corpus is 23 cases now, and the additions are chosen by which changes
+they can see rather than by what looked like a plausible trail:
+
+- bot and service-account authors, with and without a review;
+- the anchoring, twice — at trail level, and again at commit level where the
+  patterns are *still used*, since with the exemption gone the trail-level cases
+  no longer discriminate on it at all;
+- `ghost` as sole approver and as author;
+- an unresolvable author with approvers resolved and unresolved;
+- an unreadable trail author and an absent `git_commit_info`, the two that
+  exposed `author_recorded`;
+- the initial-commit substitute, compliant and not — its first parity coverage.
+
+Each of those five changes was then mutation-tested: unanchor the patterns, drop
+the ghost exclusion, drop the approvers fallback, reinstate the exemption, empty
+the corpus. All five are caught, and the anchoring mutation is caught **only** by
+the commit-level case, which is why it is there.
+
+### Two unwitnessed claims, corroborated from the consuming side
+
+The branch's `four-eyes.rego` now carries the initial-commit substitute itself:
+
+```rego
+trail_compliant(trail) if {
+	attest := initial_commit_attest(trail)
+	attest.is_compliant == true
+}
+
+initial_commit_attest(trail) := attest if {
+	some attest in trail.compliance_status.attestations_statuses
+	attest.attestation_type == "custom:initial-commit-by-verified-committer"
+}
+```
+
+That is the exact type string this port selects on and the exact place it reads
+`is_compliant` — the status entry. Both were settled from Kosli's server source and
+listed as never observed; they are still not observed *on the wire*, but a second
+policy written by someone else now depends on them the same way. It also means
+production trusts the attestation's mere presence as the root-commit
+discriminator, so the port's "a hand-run `attest custom` would fool this" caveat is
+shared with production rather than unique to the port.
 
 ## Control 1068's output contract — no schema, and one fail-open
 
@@ -910,13 +1075,30 @@ TypeScript on a machine with access to them.
   for a single subject. The validator was stdlib rather than `jsonschema`, so it
   enforced the `required` lists and the `cause` enum rather than the full draft —
   a live server is still the real test of shape.
+- **Confirmed by reading production's own 2026-09-07 branch**, hand-carried from a
+  colleague's machine: that the trail-level service-account exemption is deleted;
+  that the pattern set is anchored and matched only against a pull-request commit's
+  git author; that `ghost` is excluded from every identity test; that an
+  unresolvable commit author is tolerated when every approver resolves; and that
+  the branch's own `four-eyes.rego` selects the initial-commit substitute on
+  `attestation_type == "custom:initial-commit-by-verified-committer"` and reads
+  `is_compliant` off the status entry. The capture is an unmerged branch treated as
+  authoritative, pinned by content hash because it carried no revision.
+- **Measured, not reasoned about, in the same refresh:** the five verdict-level
+  differences that had opened up between the port and that branch, each by
+  evaluating both policies over one input; that four were upstream drift and one
+  (`author_recorded`) had never been in parity with *either* version; and that the
+  eight-case corpus could see only one of the five. All five changes are
+  mutation-tested, and the anchoring fix is caught only by the commit-level case.
 - **Still open, needing live Kosli or GitHub access rather than either machine:**
   a real pull request with **two distinct authors** (both captured PRs resolve to
   one author or none, so the per-author rule has met only synthetic input); and a
   real root-commit trail, to *witness* on the wire what round 6 settled from
   source — that `attestation_type` reads `custom:initial-commit-by-verified-committer`
   and that `is_compliant` sits on the status entry as a boolean. Neither is a
-  guess any more; both are unobserved. Round 6 confirmed the restricted machine
+  guess any more; both are unobserved — though as of the 2026-09-07 branch
+  production's own policy reads them the same way, which is corroboration from a
+  second independent reader rather than observation on the wire. Round 6 confirmed the restricted machine
   cannot close them: no `kosli` binary and no mirror, and GitHub unreachable
   behind a proxy returning `407 CONNECT tunnel failed`. A live `kosli attest
   custom` of a report — **server-side** schema validation and jq evaluation —

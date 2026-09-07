@@ -1,32 +1,45 @@
-# The custom operator for control 43, contributed into the kosli.evidence package.
+# The custom operators for control 43, contributed into the kosli.evidence package.
 #
-# One thing exceeds the operator vocabulary, and the reason is specific: it
-# compares a subject's fields *to each other* across two nested collections —
-# approvers against commit authors — which no declarative operator over a single
-# path can express. Identity resolution used to be here too, and is now declared
-# as data: "every commit of every pull request satisfies A or B" is `all` with
-# `each` and an `any_of` element check, which the library gained after this file
-# made the case for it.
+# Two things exceed the operator vocabulary, and the reason is the same for both:
+# they compare a subject's fields *to each other* across two nested collections of
+# one pull request, which no declarative operator over a single path can express.
+#
+#   independently_approved   approvers against commit authors.
+#   identities_resolved      every commit's author, OR every approver's username.
+#
+# The second one used to be declared as data — `all` with `each` over an `any_of`
+# element check — and came back here when production's 2026-09-07 branch made it a
+# disjunction of two quantifiers. `any_of` groups hold leaf checks, so it can no
+# longer say it, and Rego's ban on recursion means the library cannot be widened to
+# nest a quantifier inside a group without a separate non-recursive path. That is
+# a real feature and may still be worth building; it was not worth building inside
+# a drift fix.
 #
 # Helpers are prefixed c43_ because every custom op in every policy shares this
 # one package, so an unprefixed `covered` would eventually collide with someone
 # else's.
 #
 # These mirror four-eyes.rego in sdlc-workflows, with two deliberate differences,
-# both marked below. Neither changes the outcome of any of that policy's 37 tests;
+# both marked below. Neither changes the outcome of any of that policy's tests;
 # both close a case those tests don't cover, where the original passes input it
-# cannot actually verify.
+# cannot actually verify. The vendored copy in examples/ is the version they are
+# measured against, and examples/control_43_parity_test.rego is what proves it.
 package kosli.evidence
 
 import rego.v1
 
-# Whether one commit's author is someone we can hold responsible. Still needed
-# here — `independently_approved` has to know which authors count before it can
-# ask who approved them — but no longer the implementation of a check of its own.
-c43_author_known(c, _) if {
-	is_string(c.author_username)
-	c.author_username != ""
+# A GitHub login that resolves to somebody. "ghost" is GitHub's placeholder for a
+# deleted account, so it is a login that names no one — production added it to
+# every identity test in the 2026-09-07 branch, and before that its comment
+# claimed to handle ghost users while the code tested only null and empty.
+c43_identity_resolved(u) if {
+	is_string(u)
+	u != ""
+	u != "ghost"
 }
+
+# Whether one commit's author is someone we can hold responsible.
+c43_author_known(c, _) if c43_identity_resolved(c.author_username)
 
 # Web-flow and Copilot co-authored commits carry no linked account. They are
 # recognised by the same patterns as service accounts, matched against the git
@@ -50,11 +63,48 @@ op_passed(check, trail) if {
 	c43_independent(trail, pr)
 }
 
-c43_identities_ok(pr, patterns) if {
+# Identity resolution for one pull request, and production's only LOOSENING in
+# the 2026-09-07 branch. An unresolvable commit author used to sink the pull
+# request outright; it is now tolerated when every approver resolves instead, the
+# reasoning being that a review whose reviewers are all identifiable is still
+# attributable even when one commit's author is not.
+#
+# Mirrored here to hold verdict parity, and flagged in INTEGRATION.md as worth
+# putting to whoever owns sdlc-workflows: it lets an unattributable commit through
+# on the strength of who reviewed it, which is a weaker claim than four-eyes
+# otherwise makes.
+c43_identities_ok(pr, patterns) if c43_authors_resolved(pr, patterns)
+
+c43_identities_ok(pr, _) if c43_approvers_resolved(pr)
+
+c43_authors_resolved(pr, patterns) if {
 	is_array(pr.commits)
 	every c in pr.commits {
 		c43_author_known(c, patterns)
 	}
+}
+
+# Every approver identifiable, and at least one of them. Deliberately silent about
+# state and timestamp: this asks who these people are, not whether they approved —
+# that is c43_each_author_approved's job, and production draws the line in the
+# same place.
+c43_approvers_resolved(pr) if {
+	is_array(pr.approvers)
+	count(pr.approvers) > 0
+	every a in pr.approvers {
+		c43_identity_resolved(a.username)
+	}
+}
+
+# The check-level half of the same question, so the report can say that identity
+# resolution is what failed rather than folding it into the approval row. Per pull
+# request, like production: `some pr`, not every commit of every pull request.
+op_passed(check, trail) if {
+	check.op == "identities_resolved"
+	prs := value_at(trail, check.path)
+	is_array(prs)
+	some pr in prs
+	c43_identities_ok(pr, check.patterns)
 }
 
 # The merge commit is the one whose sha the pull request records as its merge
@@ -101,6 +151,10 @@ c43_each_author_approved(pr, authors) if {
 	}
 }
 
+# Note the asymmetry with c43_identity_resolved, which is production's and is
+# kept: "ghost" is not an identity that *resolves*, but it is still an author who
+# needs somebody else's approval. Filtering it here would quietly drop a
+# ghost-authored commit out of the set needing review.
 c43_commit_authors(pr) := {c.author_username |
 	some c in pr.commits
 	is_string(c.author_username)
@@ -131,8 +185,7 @@ c43_cutoff(pr) := max({c.timestamp | some c in pr.commits}) if {
 c43_eligible_approvers(pr, cutoff) := {a.username |
 	some a in pr.approvers
 	a.state == "APPROVED"
-	is_string(a.username)
-	a.username != ""
+	c43_identity_resolved(a.username)
 	is_number(a.timestamp)
 	a.timestamp > cutoff
 }

@@ -518,6 +518,15 @@ This pair was the difference between `examples/control_43.rego`'s identity check
 being a custom op and being data. That is worth knowing before writing a custom
 op that quantifies: check whether `each` plus `any_of` already says it.
 
+It is also worth knowing where the pair stops, because that check has since gone
+back to being a custom op. `each` projects one level and `any_of` combines **leaf**
+checks, so a disjunction whose two sides are each quantified over a *different*
+collection of the same subject — every commit resolves, or every approver does — is
+outside both. Widening `any_of` to accept a quantified check would close it, and
+cannot be done by simply letting its groups call the collection operators: that
+path reaches the element check and comes back round, which Rego forbids. It needs
+a separate non-recursive route for a quantifier whose own element check is a leaf.
+
 **The combinator** is the only operator that relates two fields of a subject to
 *each other*:
 
@@ -596,8 +605,11 @@ in for the review that could never have happened.
 
 Substitution is not exemption, and the two have different homes. An exemption
 says the subject is **not a subject** of this requirement, which is
-`applies_to`: a service-account commit produces an `$applies` row and no check
-rows, because it is not in breach of four-eyes. A substitute says the subject
+`applies_to`: a subject that fails the filter produces an `$applies` row and no
+check rows, because it is not in breach of the requirement. (Four-eyes used to be
+the example here — a service-account commit was exempt from review. Production
+deleted that exemption in September 2026, so `control_43.rego` no longer carries
+an `applies_to` at all; the distinction it illustrated is unaffected.) A substitute says the subject
 **is** in scope and the requirement **is** met, by other means — so it produces
 an ordinary check row, passing, with `cause: "substituted"` and the substitute's
 own inputs echoed beside the primary's. Choosing `applies_to` where a substitute
@@ -824,10 +836,15 @@ each suite covers, the invariants they pin, and the test conventions.
   `control_43.rego` is the more interesting one: a port of a **real production
   policy** — a customer's four-eyes implementation (`RCTLDEF0000043`) of that same
   SDLC-CTRL-0007 requirement, modelled per commit rather than per artifact. With
-  `control_43_ops.rego` for the one thing the vocabulary can't express and
-  `control_43_test.rego` mirroring all 37 cases of the original's test suite. It
-  agrees with the original on every case except three, where the original passes
-  input it cannot verify — see [INTEGRATION.md](INTEGRATION.md).
+  `control_43_ops.rego` for the two things the vocabulary can't express and
+  `control_43_test.rego` mirroring the original's test suite case for case, names
+  included. `control_43_parity_test.rego` then feeds one corpus of 23 inputs to
+  both the port and a vendored copy of the production policy and fails the moment
+  their verdicts part: they agree everywhere today, and the two places the port
+  is deliberately stricter both fail *closed* on input the original cannot
+  actually verify. That harness earned its keep in September 2026, when the
+  production policy turned out to have moved on a branch — see
+  [INTEGRATION.md](INTEGRATION.md).
   `trail_real_shape.json` is different in kind: a **redacted capture of a real
   `kosli get trail` response**, structurally faithful (same keys, types,
   array-vs-map choices, presence gaps) with every identifying value replaced by
