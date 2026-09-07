@@ -52,7 +52,7 @@ that flag, a failing row without it.
   scenarios, the violation projection, the `peer_approved` custom op, and
   `data.params` configurability.
 
-## Refreshing the vendored production policy
+## Refreshing the vendored `four-eyes.rego`
 
 `examples/four-eyes.vendored.rego` is a copy of a policy this repo does not own,
 and `examples/control_43_parity_test.rego` is the only thing that notices when the
@@ -86,7 +86,7 @@ came from — so the refresh is manual and worth doing in one order:
    test green while asserting nothing.
 
 Mirror a loosening as readily as a tightening — the port's value is the same
-verdicts with better evidence, and a port that denies what production allows
+verdicts with better evidence, and a port that denies what `four-eyes.rego` allows
 blocks releases — but say so in `INTEGRATION.md` where the upstream owners can be
 pointed at it. Where the port stays deliberately stricter, it goes in
 `declared_divergence` with the reason, not in a comment.

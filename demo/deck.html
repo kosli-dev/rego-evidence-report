@@ -687,31 +687,25 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
 
   <!-- 11 -->
   <section class="slide dense" data-label="The row"
-    data-say="The fourth input is the substitute it looked for and did not find: a root commit has no parent to open a PR against, so an initial-commit attestation can discharge the check. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
+    data-say="This is the inputs array of slide 10's failing row, one entry per path the check read. The first path is literally `name` because a trail's name IS the commit sha -- that is how the collector records it, one trail per commit. The last entry is the substitute the check looked for and did not find: a root commit has no parent to open a pull request against, so an initial-commit attestation can discharge the check instead. Operational tell: a substitute that never reports cause substituted anywhere in a report is one nobody is reaching."
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43.report' \
   | jq '.result[0].expressions[0].value.results[]
-        | select(.check==&quot;independently_approved&quot;) | .inputs'">
-    <div class="tag"><span class="n">05</span><span>That row's <code>inputs</code></span></div>
-    <div class="term sm">[
-  {
-    <span class="key">"name"</span>:  <span class="dim">"name"</span>,
-    <span class="key">"value"</span>: <span class="dim">"a1b2c3d"</span>
-  },
-  {
-    <span class="key">"name"</span>:  <span class="dim">"&hellip;[attestation_type==pull_request].pull_requests[].approvers"</span>,
-    <span class="key">"value"</span>: [[{<span class="key">"username"</span>: <span class="no">"alice"</span>, <span class="key">"state"</span>: <span class="dim">"APPROVED"</span>, <span class="key">"timestamp"</span>: 1000050}]]
-  },
-  {
-    <span class="key">"name"</span>:  <span class="dim">"&hellip;[attestation_type==pull_request].pull_requests[].commits"</span>,
-    <span class="key">"value"</span>: [[{<span class="key">"author_username"</span>: <span class="no">"alice"</span>, <span class="key">"sha1"</span>: <span class="dim">"c0ffee1"</span>, <span class="key">"timestamp"</span>: 1000000}]]
-  },
-  {
-    <span class="key">"name"</span>:  <span class="dim">"&hellip;[attestation_type==custom:initial-commit-&hellip;].is_compliant"</span>,
-    <span class="key">"value"</span>: <span class="dim">null</span>
-  }
-]</div>
-    <p class="punch">You can <em>see</em> alice approving alice.</p>
+        | select(.check==&quot;independently_approved&quot;)'">
+    <div class="tag"><span class="n">05</span><span>Inside the failing row</span></div>
+    <div class="term sm">check: <span class="key">independently_approved</span>   subject: <span class="key">commit a1b2c3d</span>   passed: <span class="no">false</span>   cause: <span class="no">value</span></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>path the check read</th><th>value it found</th></tr></thead>
+        <tbody>
+          <tr><td>name</td><td>"a1b2c3d"</td></tr>
+          <tr class="spot"><td>&hellip;pull_requests[].approvers</td><td>[[{username: <span class="v-fail">alice</span>, state: APPROVED, timestamp: 1000050}]]</td></tr>
+          <tr class="spot"><td>&hellip;pull_requests[].commits</td><td>[[{author_username: <span class="v-fail">alice</span>, sha1: c0ffee1, timestamp: 1000000}]]</td></tr>
+          <tr><td>&hellip;[custom:initial-commit-&hellip;].is_compliant</td><td>null</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="punch">Same name in both rows. You can <em>see</em> alice approving alice.</p>
   </section>
 
   <!-- 12 -->

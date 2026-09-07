@@ -19,6 +19,15 @@ Control 43 is the worked example because it is, today, **the only Rego policy in
 `sdlc-workflows`** — every other control is still workflow wiring. That fact
 shapes the conclusion, so it's stated up front rather than buried.
 
+One more status fact belongs up front, because earlier revisions of this file
+called `four-eyes.rego` "the production policy" and that was wrong.
+**`four-eyes.rego` is a hand-written Rego rewrite of control 43, and it is
+itself running in shadow mode — it is not deciding anything yet.** Where this
+file needs to distinguish it from `examples/control_43.rego`, it names the file
+rather than claiming a deployment status. That also means an evidence pass run
+alongside it is one shadow evaluation beside another, which is still worth doing
+and is not the same claim as comparing against a live gate.
+
 ## The pipeline
 
 ```
@@ -97,7 +106,8 @@ The contract it imposes is narrow, and it is the crux of everything:
 ### 4. The policy — where all judgement lives
 
 `four-eyes.rego`, ~200 lines, standalone (imports only `rego.v1`; it does **not**
-use this library today). Three rules, ordered so the first match settles a commit:
+use this library today), hand-written and running in shadow mode rather than
+gating. Three rules, ordered so the first match settles a commit:
 
 1. **Service account** — `git_commit_info.author` matches `svc_.*`, `.*\[bot\]`, or
    `noreply@github\.com` → pass, no PR required.
@@ -284,8 +294,8 @@ its entire merit.
 
 **3. The pipeline is already shaped for the second evaluation.** The control's own
 README says the input document is produced with `kosli evaluate trails …
---show-input`, so the document an evidence pass needs is *already captured in
-production*, and the result JSON is *already re-attested*. Nothing new has to be
+--show-input`, so the document an evidence pass needs is *already captured by
+the workflow*, and the result JSON is *already re-attested*. Nothing new has to be
 plumbed: one more evaluation over bytes that already exist, and the attestation
 that already happens carries the report instead of `{allow, violations}`.
 
@@ -333,7 +343,7 @@ violations := <report rows, one JSON string each> if evidence_mode
 ```
 
 ```sh
-# A — the gate, byte for byte what production runs today
+# A — the gate, byte for byte what the workflow runs today
 kosli evaluate trails <shas> --policy bundle.rego --no-assert --output json …   | jq -r '.allow'
 
 # B — the evidence pass, whose verdict is meaningless and ignored
@@ -661,7 +671,7 @@ Three asks came back from the port meeting real data. Two are now vocabulary; th
 third turned out to be asking for the wrong thing.
 
 **1. Substitute evidence — a check discharged by something other than its primary
-evidence.** Production lets a compliant `custom:initial-commit-by-verified-committer`
+evidence.** `four-eyes.rego` lets a compliant `custom:initial-commit-by-verified-committer`
 attestation stand in for the pull request requirement on a repository's root
 commit, which no pull request could ever have reviewed. The port had no equivalent
 and false-failed the initial commit with "no PR found". Any named check may now
@@ -673,7 +683,7 @@ just not the usual kind.
 
 **2. A row-level cause discriminator.** Rows now carry
 `cause ∈ {satisfied, substituted, ambiguous, unmatched, absent, null, value}`.
-This was independently reinvented by the production policy, which emits four
+This was independently reinvented by `four-eyes.rego`, which emits four
 distinct reasons and uses a separate `any_pr_fully_approved` rule to keep "no
 approval" apart from "unresolvable author" — and it closes the port's own worst
 message. `pr_attestation_present` used to render "missing **or ambiguous**",
@@ -712,7 +722,7 @@ approvers to commit authors across two collections and remains the escape hatch
 working as intended.
 
 > **Superseded on 2026-09-07, and the reasoning is worth keeping anyway.**
-> Production's branch made identity resolution a disjunction of two quantifiers —
+> `four-eyes.rego`'s branch made identity resolution a disjunction of two quantifiers —
 > every commit of *this* pull request resolves, or every approver of it does — and
 > `any_of` cannot say that: its option groups hold leaf checks, and both sides
 > quantify over a collection. So `identities_resolved` went back to being a custom
@@ -728,7 +738,7 @@ working as intended.
 >
 > Declaring it per pull request also fixed something the `all` form had wrong.
 > Flattening `pull_requests` × `commits` demanded that every commit of *every*
-> pull request resolve, where production asks only that *some* pull request
+> pull request resolve, where `four-eyes.rego` asks only that *some* pull request
 > satisfy identities and approval together — which is the "one honest divergence"
 > admitted further down this file, now closed.
 
@@ -910,15 +920,15 @@ run over the same 27 input documents, comparing `allow` and violation counts.
 
 **It is asserted now.** `examples/control_43_parity_test.rego` feeds one corpus
 of 23 cases to both policies and fails the moment their verdicts part without
-an entry on a declared-divergence list, which is empty. The production
-policy is vendored as `examples/four-eyes.vendored.rego` — body byte-for-byte,
+an entry on a declared-divergence list, which is empty. `four-eyes.rego`
+is vendored as `examples/four-eyes.vendored.rego` — body byte-for-byte,
 renamed to `package four_eyes_vendored` because upstream's `package policy`
 would otherwise merge with `examples/code_review.rego` rather than sit beside
 it. It asserts **verdicts** only, leaving cause-level differences to
 `control_43_test.rego` where they belong.
 
-It cannot notice that the vendored copy has drifted from a production policy it
-cannot see, and on 2026-09-07 that is exactly what had happened — see [The
+It cannot notice that the vendored copy has drifted from the `four-eyes.rego`
+branch it cannot see, and on 2026-09-07 that is exactly what had happened — see [The
 refresh of 2026-09-07](#the-refresh-of-2026-09-07-what-drifted-and-what-the-harness-could-not-see).
 The harness caught one of the five verdict-level differences that had opened up;
 the corpus was blind to the other four. It also carried, until that refresh, the
@@ -964,7 +974,7 @@ The exemption was expressed as **scope**, not as a passing check: a
 service-account commit produced a `$applies` row and no check rows, because it is
 not in breach of four-eyes, it is not a subject of it.
 
-> **The exemption no longer exists.** Production deleted it on the 2026-09-07
+> **The exemption no longer exists.** `four-eyes.rego` deleted it on the 2026-09-07
 > branch, so there is no `applies_to` on `commit_reviewed`, every commit is a
 > subject, and no commit produces a bare `$applies` row. The rest of this section
 > is the history of a fail-open that was found and closed while the feature was
@@ -987,7 +997,7 @@ Round 5 narrowed the trigger without removing the hazard. `git_commit_info` *is*
 at trail root on a real enriched trail, so the reachable case is an author that is
 present and unreadable — null, empty, or not a string — rather than a missing
 object. The fix is the same one and the row costs the same either way; what
-changed is that the fixture that found it was more pessimistic than production.
+changed is that the fixture that found it was more pessimistic than `four-eyes.rego`.
 
 Worth being straight about the direction: the original's early-exit exemption
 fails *closed* here — an unreadable author matches no pattern, rule 1 doesn't
@@ -1006,11 +1016,11 @@ One honest divergence: `identities_resolved` was a gating check here, while in t
 original an unresolved identity in one pull request cannot deny a commit that a
 *different* pull request fully covers. The port was stricter in that corner, and no
 test in either suite exercised it. **Closed on 2026-09-07**: rewriting the check as
-a per-pull-request custom op made it `some pr`, which is production's quantifier,
+a per-pull-request custom op made it `some pr`, which is `four-eyes.rego`'s quantifier,
 so the corner is gone rather than merely still unexercised.
 
-The port has since moved with production rather than staying frozen at parity: the
-initial-commit substitute (production gained it; the port false-failed without it)
+The port has since moved with `four-eyes.rego` rather than staying frozen at parity: the
+initial-commit substitute (`four-eyes.rego` gained it; the port false-failed without it)
 and two messages where there was one. Parity as measured above therefore describes
 the 37 cases, not the whole of either policy.
 
@@ -1028,7 +1038,7 @@ Settled from the server's own type model rather than by another round trip:
 bare literals `generic | junit | snyk | pull_request | jira | sonar`, and a custom
 type *name* may not contain a colon — so the type reference is already unique and
 the attestation's own name (a flow-template slot label) is not what identifies the
-evidence. Production's `four-eyes.rego` had it right all along. The port now
+evidence. `four-eyes.rego` had it right all along. The port now
 matches on the type reference alone, and three tests pin the two wrong forms as
 non-matching so the guess cannot come back.
 
@@ -1095,7 +1105,7 @@ a reviewed pull request like anyone else.
 `noreply@github.com` became `^GitHub <noreply@github.com>$`. Unanchored, `.*\[bot\]`
 matches a human called `ali[bot]ce` and `noreply@github.com` matches any author
 string merely containing it — so a person could be waved through as a bot.
-Production pins that with three tests. **This port carried the same hole**, and it
+`four-eyes.rego` pins that with three tests. **This port carried the same hole**, and it
 was not the port's own mistake so much as a faithful copy of one.
 
 **3. `ghost` resolves to nobody.** GitHub replaces a deleted account with the
@@ -1178,9 +1188,9 @@ That is the exact type string this port selects on and the exact place it reads
 `is_compliant` — the status entry. Both were settled from Kosli's server source and
 listed as never observed; they are still not observed *on the wire*, but a second
 policy written by someone else now depends on them the same way. It also means
-production trusts the attestation's mere presence as the root-commit
+`four-eyes.rego` trusts the attestation's mere presence as the root-commit
 discriminator, so the port's "a hand-run `attest custom` would fool this" caveat is
-shared with production rather than unique to the port.
+shared with `four-eyes.rego` rather than unique to the port.
 
 ## Control 1068's output contract — no schema, and one fail-open
 
@@ -1322,7 +1332,7 @@ TypeScript on a machine with access to them.
   for a single subject. The validator was stdlib rather than `jsonschema`, so it
   enforced the `required` lists and the `cause` enum rather than the full draft —
   a live server is still the real test of shape.
-- **Confirmed by reading production's own 2026-09-07 branch**, hand-carried from a
+- **Confirmed by reading `four-eyes.rego`'s own 2026-09-07 branch**, hand-carried from a
   colleague's machine: that the trail-level service-account exemption is deleted;
   that the pattern set is anchored and matched only against a pull-request commit's
   git author; that `ghost` is excluded from every identity test; that an
@@ -1344,7 +1354,7 @@ TypeScript on a machine with access to them.
   source — that `attestation_type` reads `custom:initial-commit-by-verified-committer`
   and that `is_compliant` sits on the status entry as a boolean. Neither is a
   guess any more; both are unobserved — though as of the 2026-09-07 branch
-  production's own policy reads them the same way, which is corroboration from a
+  `four-eyes.rego` reads them the same way, which is corroboration from a
   second independent reader rather than observation on the wire. Round 6 confirmed the restricted machine
   cannot close them: no `kosli` binary and no mirror, and GitHub unreachable
   behind a proxy returning `407 CONNECT tunnel failed`. A live `kosli attest

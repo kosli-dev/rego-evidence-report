@@ -607,7 +607,7 @@ Substitution is not exemption, and the two have different homes. An exemption
 says the subject is **not a subject** of this requirement, which is
 `applies_to`: a subject that fails the filter produces an `$applies` row and no
 check rows, because it is not in breach of the requirement. (Four-eyes used to be
-the example here — a service-account commit was exempt from review. Production
+the example here — a service-account commit was exempt from review. `four-eyes.rego`
 deleted that exemption in September 2026, so `control_43.rego` no longer carries
 an `applies_to` at all; the distinction it illustrated is unaffected.) A substitute says the subject
 **is** in scope and the requirement **is** met, by other means — so it produces
@@ -833,17 +833,18 @@ each suite covers, the invariants they pin, and the test conventions.
   `kosli.evidence` package from the policy side; `trail_compliant.json` and
   `trail_split.json` are input documents to evaluate it against;
   `code_review_test.rego` tests the policy and its custom op.
-  `control_43.rego` is the more interesting one: a port of a **real production
-  policy** — a customer's four-eyes implementation (`RCTLDEF0000043`) of that same
+  `control_43.rego` is the more interesting one: a port of the **hand-written
+  Rego** that implements it — `four-eyes.rego`, which is itself in shadow mode
+  rather than gating anything — a customer's four-eyes implementation (`RCTLDEF0000043`) of that same
   SDLC-CTRL-0007 requirement, modelled per commit rather than per artifact. With
   `control_43_ops.rego` for the two things the vocabulary can't express and
   `control_43_test.rego` mirroring the original's test suite case for case, names
   included. `control_43_parity_test.rego` then feeds one corpus of 23 inputs to
-  both the port and a vendored copy of the production policy and fails the moment
+  both the port and a vendored copy of `four-eyes.rego` and fails the moment
   their verdicts part: they agree everywhere today, and the two places the port
   is deliberately stricter both fail *closed* on input the original cannot
   actually verify. That harness earned its keep in September 2026, when the
-  production policy turned out to have moved on a branch — see
+  `four-eyes.rego` turned out to have moved on a branch — see
   [INTEGRATION.md](INTEGRATION.md).
   `trail_real_shape.json` is different in kind: a **redacted capture of a real
   `kosli get trail` response**, structurally faithful (same keys, types,
