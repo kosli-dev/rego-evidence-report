@@ -152,6 +152,21 @@
     align-items: baseline;
   }
   .tag .n { color: var(--muted); letter-spacing: .1em; font-variant-numeric: tabular-nums; }
+  /* which policy the slide's data came from; the deck alternates, so every
+     data-bearing slide says so rather than relying on the presenter */
+  .tag .pol {
+    margin-left: auto;
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .92em;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: .12em .7em .16em;
+    white-space: nowrap;
+  }
 
   /* one short line under a headline - never a paragraph */
   /* Closing lines take the column as their measure, not an em cap -- an em cap
@@ -587,7 +602,7 @@
     data-cmd="opa eval -d examples/four-eyes.vendored.rego -i demo/trail_self_approved.json \
   --format=json 'data.four_eyes_vendored' \
   | jq '.result[0].expressions[0].value | {allow, violations}'">
-    <div class="tag"><span class="n">01</span><span>What four-eyes.rego returns</span></div>
+    <div class="tag"><span class="n">01</span><span>What four-eyes.rego returns</span><span class="pol">control 43</span></div>
     <h2>182 lines of Rego, and this comes out</h2>
     <div class="term">{
   <span class="key">"allow"</span>: <span class="no">false</span>,
@@ -604,7 +619,7 @@
     data-cmd="opa eval -d src/library.rego -d examples/control_43.rego -d examples/control_43_ops.rego \
   -i demo/trail_self_approved.json --format=json 'data.control43' \
   | jq '.result[0].expressions[0].value | {allow, violations}'">
-    <div class="tag"><span class="n">01</span><span>Same input, the real port</span></div>
+    <div class="tag"><span class="n">01</span><span>Same input, the real port</span><span class="pol">control 43</span></div>
     <div class="stack">
       <div class="colhead">hand-written &nbsp;<span class="mono">four-eyes.rego</span></div>
       <div class="term sm">{
@@ -646,7 +661,7 @@
   | jq -r '.result[0].expressions[0].value.results[]
            | &quot;\(.check)\t\(.subject.id // &quot;&mdash;&quot;)\t\(if .passed then &quot;PASS&quot; else &quot;FAIL&quot; end)\t\(.cause)&quot;' \
   | column -t -s$'\t'">
-    <div class="tag"><span class="n">02</span><span>What the report says instead</span></div>
+    <div class="tag"><span class="n">02</span><span>What the report says instead</span><span class="pol">control 43</span></div>
     <div class="tablewrap">
       <table>
         <tbody>
@@ -670,7 +685,7 @@
 cat demo/prod_deploy.rego
 opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
   --format=pretty 'data.demo.report.compliant'">
-    <div class="tag"><span class="n">03</span><span>Declare it instead</span></div>
+    <div class="tag"><span class="n">03</span><span>Declare it instead</span><span class="pol">prod_deploy</span></div>
     <h2>The rule is <em>data</em></h2>
     <div class="term sm">requirements := {<span class="key">"prod_deploy"</span>: {
     <span class="key">"subject_type"</span>: <span class="dim">"deployment"</span>,
@@ -700,7 +715,7 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
   | jq -r '.result[0].expressions[0].value.results[]
            | &quot;\(.check)\t\(.subject.id // &quot;&mdash;&quot;)\t\(if .passed then &quot;PASS&quot; else &quot;FAIL&quot; end)\t\(.cause)\t\(.inputs | map(&quot;\(.name)=\(.value|tojson)&quot;) | join(&quot;, &quot;))&quot;' \
   | column -t -s$'\t'">
-    <div class="tag"><span class="n">04</span><span>The report</span></div>
+    <div class="tag"><span class="n">04</span><span>The report</span><span class="pol">prod_deploy</span></div>
     <div class="io">
       <span class="iolabel">in</span>
       <div class="term sm">{<span class="key">"name"</span>: <span class="dim">"d-1"</span>, <span class="key">"environment"</span>: <span class="dim">"prod"</span>, <span class="key">"approved_by"</span>: <span class="dim">"bob"</span>, <span class="key">"ci_checks"</span>: [{<span class="key">"conclusion"</span>: <span class="dim">"success"</span>}]},
@@ -736,7 +751,7 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
     data-cmd="opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
   --format=json 'data.demo.report' \
   | jq '.result[0].expressions[0].value.requirements.prod_deploy.checks.ci_green'">
-    <div class="tag"><span class="n">04</span><span>The other half of the report</span></div>
+    <div class="tag"><span class="n">04</span><span>The other half of the report</span><span class="pol">prod_deploy</span></div>
     <div class="io">
       <span class="iolabel">once</span>
       <div class="term sm"><span class="dim">requirements.prod_deploy.checks.ci_green</span>
@@ -766,7 +781,7 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
   <section class="slide" data-label="absent &ne; value"
     data-say="Every operator is fail-closed: a missing, null or wrong-typed field makes a check fail rather than vanish or pass by accident. `equals` treats absent and explicitly-null as different &mdash; only the latter satisfies &quot;value&quot;: null."
     data-cmd="">
-    <div class="tag"><span class="n">04</span><span>Two failures, two problems</span></div>
+    <div class="tag"><span class="n">04</span><span>Two failures, two problems</span><span class="pol">prod_deploy</span></div>
     <div class="tablewrap">
       <table>
         <tbody>
@@ -810,7 +825,7 @@ opa eval -d src/library.rego -d demo/prod_deploy.rego -i demo/deployments.json \
   --format=json 'data.demo.breaches' \
   | jq -r '.result[0].expressions[0].value[]
            | &quot;\(.subject.type) \(.subject.id // &quot;(requirement-level)&quot;): \(.check) &mdash; \(.description) [\(.cause)]&quot;'">
-    <div class="tag"><span class="n">05</span><span>Two functions</span></div>
+    <div class="tag"><span class="n">05</span><span>Two functions</span><span class="pol">prod_deploy</span></div>
     <div class="term sm">evidence.report(input, requirements)   <span class="dim">&rarr;</span>  9 rows, <span class="no">3 failing</span>
 evidence.violations(report)            <span class="dim">&rarr;</span>  <span class="no">2 breaches</span></div>
     <div class="tablewrap">
@@ -833,7 +848,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
   -i demo/trail_self_approved.json --format=json 'data.control43.report' \
   | jq '.result[0].expressions[0].value.results[]
         | select(.check==&quot;independently_approved&quot;)'">
-    <div class="tag"><span class="n">06</span><span>Inside the failing row</span></div>
+    <div class="tag"><span class="n">06</span><span>Inside the failing row</span><span class="pol">control 43</span></div>
     <div class="term sm">check: <span class="key">independently_approved</span>   subject: <span class="key">commit a1b2c3d</span>   passed: <span class="no">false</span>   cause: <span class="no">value</span></div>
     <div class="tablewrap">
       <table>
@@ -854,7 +869,7 @@ evidence.violations(report)            <span class="dim">&rarr;</span>  <span cl
   <section class="slide" data-label="Harness"
     data-say="four-eyes.rego vendored byte-for-byte beside the port, both fed one 23-case corpus, declared-divergence list empty. It proves only the axes it varies, and cannot see the vendored copy drifting from the four-eyes.rego branch it cannot read. That drift is real: the last refresh caught one of five verdict-level differences, and the original eight-case corpus was blind to the other four."
     data-cmd="opa test src examples --ignore '*.json' --run 'parity' -v">
-    <div class="tag"><span class="n">06</span><span>Parity is a test, not a claim</span></div>
+    <div class="tag"><span class="n">06</span><span>Parity is a test, not a claim</span><span class="pol">control 43</span></div>
     <div class="term sm">test_corpus_is_populated:            <span class="yes">PASS</span> <span class="dim">(11.8ms)</span>
 test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="dim">(416.5ms)</span>
 <span class="dim">&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;</span>
@@ -866,7 +881,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
   <section class="slide" data-label="Defects"
     data-say="Three of the four defects are on the slide; the fourth is one commit producing two violation strings, which is not a verdict difference. 1: Rego's > is total across types and numbers sort below strings, so &quot;1000005&quot; > 1000010. 2: max() over a comprehension silently skips commits with no timestamp, so an untimestamped commit cannot raise the cutoff. 3: two pull_request attestations crash evaluation. All four were reproduced by probing, not inferred, and four-eyes.rego's own 37 tests all pass. compare_time takes two RFC3339 strings or two epoch numbers, never a mixed pair."
     data-cmd="">
-    <div class="tag"><span class="n">06</span><span>What that found</span></div>
+    <div class="tag"><span class="n">06</span><span>What that found</span><span class="pol">control 43</span></div>
     <div class="tablewrap">
       <table>
         <thead><tr><th>case</th><th>four-eyes.rego</th><th>the port</th></tr></thead>
@@ -884,7 +899,7 @@ test_verdicts_agree_across_corpus:   <span class="yes">PASS</span> <span class="
   <section class="slide" data-label="Cost"
     data-say="Control 43 can't measure the bet for two reasons: it is the hardest control &mdash; the four-eyes condition compares approvers against commit authors across two nested collections, which no operator over a single path expresses &mdash; and it already works, so the port buys evidence rather than less code. The 86 lines are a one-time cost; 1068 needed none, with any_of covering it."
     data-cmd="">
-    <div class="tag"><span class="n">06</span><span>Be straight about the cost</span></div>
+    <div class="tag"><span class="n">06</span><span>Be straight about the cost</span><span class="pol">control 43</span></div>
     <h2>The port is <em>bigger</em></h2>
     <div class="tablewrap">
       <table>

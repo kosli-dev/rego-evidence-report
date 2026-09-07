@@ -51,6 +51,22 @@ carrying that slide's talking point and the command to run; the rail under the
 stage jumps anywhere. **The prose lives here, not on the slides** — the
 mapping from beats to slide numbers is in each beat's heading below.
 
+**Every data-bearing slide names its policy** in a pill at the right of the
+eyebrow — `control 43` or `prod_deploy`. The deck alternates between them, and
+without the pill the switch at slide 6 and the switch back at slide 12 are
+invisible to the room:
+
+| slides | pill | |
+| --- | --- | --- |
+| 2–5 | `control 43` | parity, the gap, the payoff table |
+| 6–11 | `prod_deploy` | declare, report, definitions, causes, violations |
+| 12–15 | `control 43` | the failing row, harness, defects, cost |
+| 16–19 | none | integration, unknowns, next — no policy data |
+| 20–21 | named in the eyebrow | A1 `prod_deploy`, A2 `control_43` |
+
+It's a sandwich, not a handoff: the vocabulary middle would be a lecture about a
+toy if it didn't land back on control 43's real failing row at slide 12.
+
 The spine of the talk is one input document evaluated twice — once by
 hand-written `four-eyes.rego`, once by this library — so the room sees the *same verdict*
 with two different amounts of evidence behind it.
