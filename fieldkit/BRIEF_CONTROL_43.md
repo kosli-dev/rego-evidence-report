@@ -19,7 +19,7 @@ and attests GitHub PR data as `source-code-review`; `kosli evaluate` then runs a
 Rego policy, owned in the **`sdlc-workflows`** repository, over `input.trails[]`.
 
 We want to know whether `kosli.evidence` (this repo) can express control 43,
-producing a structured evidence report instead of `allow` plus hand-written
+producing a structured evidence report instead of `allow` plus hard-coded
 violation strings. Round 1 proved the library survives real data; this round is
 about a real *control*.
 

@@ -21,7 +21,7 @@ shapes the conclusion, so it's stated up front rather than buried.
 
 One more status fact belongs up front, because earlier revisions of this file
 called `four-eyes.rego` "the production policy" and that was wrong.
-**`four-eyes.rego` is a hand-written Rego rewrite of control 43, and it is
+**`four-eyes.rego` is a bespoke Rego rewrite of control 43, and it is
 itself running in shadow mode — it is not deciding anything yet.** Where this
 file needs to distinguish it from `examples/control_43.rego`, it names the file
 rather than claiming a deployment status. That also means an evidence pass run
@@ -114,7 +114,7 @@ The contract it imposes is narrow, and it is the crux of everything:
 ### 4. The policy — where all judgement lives
 
 `four-eyes.rego`, ~200 lines, standalone (imports only `rego.v1`; it does **not**
-use this library today), hand-written and running in shadow mode rather than
+use this library today), bespoke and running in shadow mode rather than
 gating. Three rules, ordered so the first match settles a commit:
 
 1. **Service account** — `git_commit_info.author` matches `svc_.*`, `.*\[bot\]`, or
@@ -540,7 +540,7 @@ writable flow rather than an open risk.
 ## Where the input document comes from — settled, by running it
 
 This was the last "unverified, and now the most important gap" in the status list
-below: every report so far had been computed from a fixture written by hand.
+below: every report so far had been computed from a constructed fixture.
 `kosli evaluate` turns out to compose exactly the document the port needs, and it
 does the composition itself — and round 5 then confirmed that control 43 uses
 precisely this, its own README describing the input document as produced by
@@ -723,7 +723,7 @@ those express the check as data:
 
 A narrower bespoke operator would have replaced one custom op with one operator
 nobody else could use, and left the nesting limit where it was. This removes the
-custom op outright, renders its own expression instead of a hand-written string,
+custom op outright, renders its own expression instead of a hard-coded string,
 and puts the exemption's discriminator in the report where a reader can see it.
 `control_43_ops.rego` is down to the four-eyes condition itself, which relates
 approvers to commit authors across two collections and remains the escape hatch

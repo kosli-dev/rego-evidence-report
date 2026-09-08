@@ -1,7 +1,7 @@
 # kosli.evidence
 
 A Rego library that turns policy evaluation into a structured, hashable
-**evidence report**, instead of a bare `allow`/`deny` plus hand-written
+**evidence report**, instead of a bare `allow`/`deny` plus hard-coded
 violation strings.
 
 You don't write evaluation or reporting logic. You declare, as data, the things
@@ -10,9 +10,9 @@ uniform report: which checks ran, against which things, what values they read,
 and what each one concluded. The same shape regardless of which policy produced
 it, so it can be hashed, attested, and consumed without parsing Rego.
 
-The practical difference: a hand-written policy fails with a string someone
-wrote. This library fails with a row naming the thing that failed, the named
-check that failed, and the input values it read.
+The practical difference: a bespoke policy fails with a hard-coded string.
+This library fails with a row naming the thing that failed, the named check
+that failed, and the input values it read.
 
 **Where the requirement came from.** Compliance is reported in Excel, and that
 reporting is what the uniform shape is *for*. Control 43's legacy generation
@@ -844,7 +844,7 @@ each suite covers, the invariants they pin, and the test conventions.
   `kosli.evidence` package from the policy side; `trail_compliant.json` and
   `trail_split.json` are input documents to evaluate it against;
   `code_review_test.rego` tests the policy and its custom op.
-  `control_43.rego` is the more interesting one: a port of the **hand-written
+  `control_43.rego` is the more interesting one: a port of the **bespoke
   Rego** that implements it — `four-eyes.rego`, which is itself in shadow mode
   rather than gating anything — a customer's four-eyes implementation (`RCTLDEF0000043`) of that same
   SDLC-CTRL-0007 requirement, modelled per commit rather than per artifact. With
