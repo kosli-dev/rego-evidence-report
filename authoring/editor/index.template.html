@@ -1,0 +1,946 @@
+<title>Policy Prose Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --paper:#EFF1F4; --surface:#FFFFFF; --sunk:#E7EAEF; --ink:#141922; --muted:#5A6472;
+  --faint:#8A93A1; --hairline:#D6DBE2;
+  --rule:#1B4DB1; --rule-wash:#E8EEFA; --rule-edge:#B9CCEE;
+  --declare:#1A6F68; --declare-wash:#E3F0EE; --declare-edge:#AFD4CF;
+  --warn:#A8701A; --warn-wash:#F7EEDD; --warn-edge:#E3CFA4;
+  --err:#A32B2B; --err-wash:#F8E9E9;
+  --serif:"Newsreader",Georgia,serif;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --lh:22px; --pad:12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:#0D1116; --surface:#151A22; --sunk:#1B222B; --ink:#E4E9F0; --muted:#99A4B3;
+    --faint:#6E7987; --hairline:#262F3A;
+    --rule:#85A9FF; --rule-wash:#172236; --rule-edge:#2C4370;
+    --declare:#5CC0B4; --declare-wash:#122624; --declare-edge:#245149;
+    --warn:#E0A44A; --warn-wash:#2A2113; --warn-edge:#584327;
+    --err:#F08A8A; --err-wash:#2C1618;
+  }
+}
+:root[data-theme="dark"] {
+  --paper:#0D1116; --surface:#151A22; --sunk:#1B222B; --ink:#E4E9F0; --muted:#99A4B3;
+  --faint:#6E7987; --hairline:#262F3A;
+  --rule:#85A9FF; --rule-wash:#172236; --rule-edge:#2C4370;
+  --declare:#5CC0B4; --declare-wash:#122624; --declare-edge:#245149;
+  --warn:#E0A44A; --warn-wash:#2A2113; --warn-edge:#584327;
+  --err:#F08A8A; --err-wash:#2C1618;
+}
+*,*::before,*::after { box-sizing:border-box; }
+body { background:var(--paper); color:var(--ink); font-family:var(--sans);
+  height:100dvh; display:flex; flex-direction:column; overflow:hidden; -webkit-font-smoothing:antialiased; }
+button { font:inherit; color:inherit; cursor:pointer; }
+:focus-visible { outline:2px solid var(--rule); outline-offset:2px; border-radius:2px; }
+
+.bar { display:flex; align-items:center; gap:1.25rem; flex-wrap:wrap; padding:.7rem 1.1rem;
+  border-bottom:1px solid var(--hairline); background:var(--surface); }
+.brand { display:flex; align-items:baseline; gap:.6rem; margin-right:auto; }
+.brand h1 { font-family:var(--serif); font-size:1.2rem; font-weight:500; margin:0; letter-spacing:-.01em; }
+.brand span { font-size:.7rem; color:var(--faint); letter-spacing:.1em; text-transform:uppercase; font-weight:600; }
+.samples { display:flex; gap:1px; background:var(--hairline); border:1px solid var(--hairline); border-radius:3px; overflow:hidden; }
+.samples button { background:var(--surface); border:0; padding:.35rem .8rem; font-size:.78rem; color:var(--muted); }
+.samples button[aria-pressed="true"] { background:var(--rule); color:var(--surface); font-weight:600; }
+.stats { display:flex; gap:1.1rem; font-size:.75rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+.stats b { color:var(--ink); font-weight:600; }
+.stats .bad b { color:var(--err); }
+
+.work { flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1px; background:var(--hairline); min-height:0; }
+@media (max-width:56rem) { .work { grid-template-columns:1fr; grid-template-rows:1fr 1fr; } }
+.side { background:var(--surface); display:flex; flex-direction:column; min-height:0; min-width:0; }
+.side > header { display:flex; align-items:center; gap:.9rem; padding:0 .9rem; height:38px; flex:none;
+  border-bottom:1px solid var(--hairline);
+  background:var(--sunk); font-size:.66rem; font-weight:600; letter-spacing:.11em; text-transform:uppercase; color:var(--faint); }
+.side > header .spacer { margin-left:auto; }
+.tab { background:none; border:0; padding:.15rem .1rem; font:inherit; font-size:.66rem; font-weight:600;
+  letter-spacing:.11em; text-transform:uppercase; color:var(--faint); border-bottom:2px solid transparent; }
+.tab[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--rule); }
+.ghost { background:none; border:1px solid var(--hairline); border-radius:3px; padding:.2rem .55rem;
+  font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; font-weight:600; color:var(--muted); }
+.ghost:hover { border-color:var(--rule); color:var(--rule); }
+
+/* ---- editor ---- */
+.editor { flex:1; display:flex; min-height:0; overflow:hidden; }
+.field { position:relative; flex:1; min-width:0; display:flex; }
+.bandwrap { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.bands { position:absolute; top:0; left:0; right:0; }
+.band { position:absolute; left:0; right:0; }
+.band.b-rule,.band.b-scope { background:var(--rule-wash); }
+.band.b-subject,.band.b-properties,.band.b-constant,.band.b-substitute,.band.b-requirement { background:var(--declare-wash); }
+.band.b-directive { background:var(--warn-wash); }
+.gutter { width:3.3rem; flex:none; overflow:hidden; background:var(--sunk); border-right:1px solid var(--hairline);
+  padding:var(--pad) 0; font-family:var(--mono); font-size:11px; line-height:var(--lh); }
+.gline { height:var(--lh); padding-right:.45rem; text-align:right; color:var(--faint);
+  border-left:3px solid transparent; font-variant-numeric:tabular-nums; }
+.k-rule,.k-scope        { border-left-color:var(--rule)    !important; background:var(--rule-wash);    color:var(--rule)    !important; }
+.k-subject,.k-properties,.k-constant,.k-substitute,.k-requirement
+                        { border-left-color:var(--declare) !important; background:var(--declare-wash); color:var(--declare) !important; }
+.k-directive            { border-left-color:var(--warn)    !important; background:var(--warn-wash);    color:var(--warn)    !important; }
+.gline.hit { outline:1px solid var(--rule); outline-offset:-1px; }
+textarea { flex:1; min-width:0; border:0; resize:none; background:transparent; color:var(--ink); position:relative;
+  font-family:var(--mono); font-size:13px; line-height:var(--lh); padding:var(--pad) .9rem; white-space:pre; overflow:auto; tab-size:2; }
+textarea:focus { outline:none; }
+
+.foot { flex:none; background:var(--surface); border-top:1px solid var(--hairline); }
+.diags { max-height:7rem; overflow:auto; background:var(--surface); }
+.diag { display:grid; grid-template-columns:4.5rem 1fr; gap:.7rem; width:100%; text-align:left; padding:.4rem .9rem;
+  border:0; border-top:1px solid var(--hairline); background:none; font-size:.76rem; color:var(--muted); }
+.diag:first-child { border-top:0; }
+.diag .where { font-family:var(--mono); font-size:.7rem; font-weight:600; }
+.diag.sev-error { background:var(--err-wash); } .diag.sev-error .where { color:var(--err); }
+.diag.sev-warning { background:var(--warn-wash); } .diag.sev-warning .where { color:var(--warn); }
+
+/* ---- right pane ---- */
+.panel { flex:1; overflow:auto; min-height:0; position:relative; }
+
+/* aligned map: every block sits at its source lines */
+.map { position:relative; }
+.mblk { position:absolute; left:0; right:0; overflow:hidden; padding:0 .9rem 0 0;
+  display:grid; grid-template-columns:5.6rem 1fr; gap:0 .7rem; border-radius:0 2px 2px 0; }
+.mblk .tag { font-size:.58rem; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--faint);
+  padding:3px 0 0 .9rem; border-left:3px solid transparent; line-height:1.35; }
+.mblk .body { min-width:0; overflow:hidden; padding-top:1px; }
+.mblk .name { display:block; font-family:var(--mono); font-size:.75rem; color:var(--ink); font-weight:600; line-height:20px; }
+.mblk .name em { font-style:normal; color:var(--faint); font-weight:400; margin-left:.4rem; }
+.mblk .detail { display:block; font-family:var(--mono); font-size:.7rem; color:var(--muted); line-height:19px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mblk .detail.expr { color:var(--rule); }
+.mblk .quiet { display:block; font-family:var(--serif); font-size:.8rem; font-style:italic; color:var(--faint); line-height:20px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mblk.b-rule,.mblk.b-scope { background:var(--rule-wash); }
+.mblk.b-rule .tag,.mblk.b-scope .tag { color:var(--rule); border-left-color:var(--rule); }
+.mblk.b-subject,.mblk.b-properties,.mblk.b-constant,.mblk.b-substitute,.mblk.b-requirement { background:var(--declare-wash); }
+.mblk.b-subject .tag,.mblk.b-properties .tag,.mblk.b-constant .tag,
+.mblk.b-substitute .tag,.mblk.b-requirement .tag { color:var(--declare); border-left-color:var(--declare); }
+.mblk.b-directive { background:var(--warn-wash); }
+.mblk.b-directive .tag { color:var(--warn); border-left-color:var(--warn); }
+.mblk.b-prose .tag { border-left-color:var(--hairline); }
+.mblk:hover { outline:1px solid var(--rule); outline-offset:-1px; cursor:pointer; }
+
+/* ---- policy view ---- */
+.spec { padding:1.1rem .95rem 2.5rem; display:flex; flex-direction:column; gap:1.4rem; }
+.req { border:1px solid var(--hairline); border-radius:3px; overflow:hidden; background:var(--surface); }
+.req > header { padding:.75rem .9rem; background:var(--sunk); border-bottom:1px solid var(--hairline);
+  display:flex; flex-direction:column; gap:.3rem; }
+.req h3 { margin:0; font-family:var(--serif); font-size:1.15rem; font-weight:500; letter-spacing:-.01em; }
+.req .id { font-family:var(--mono); font-size:.7rem; color:var(--declare); font-weight:600; }
+.badges { display:flex; flex-wrap:wrap; gap:.35rem; }
+.badge { font-family:var(--mono); font-size:.65rem; padding:.12rem .42rem; border-radius:2px;
+  background:var(--surface); border:1px solid var(--hairline); color:var(--muted); }
+.badge.on { color:var(--declare); border-color:var(--declare-edge); }
+.badge.link { cursor:pointer; }
+.badge.link:hover { background:var(--declare-wash); border-color:var(--declare); }
+.badge.link::after { content:' \2197'; opacity:.55; }
+.grouphead.flash { background:var(--declare-wash); color:var(--declare); }
+.sub { padding:.6rem .9rem; border-bottom:1px solid var(--hairline); font-size:.76rem; color:var(--muted);
+  display:flex; flex-wrap:wrap; gap:.2rem 1.2rem; }
+.sub code { font-family:var(--mono); color:var(--ink); }
+.grouphead { padding:.45rem .9rem; font-size:.6rem; font-weight:600; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--faint); background:var(--sunk); border-bottom:1px solid var(--hairline); border-top:1px solid var(--hairline); }
+.chk { padding:.7rem .9rem; border-top:1px solid var(--hairline); display:flex; flex-direction:column; gap:.35rem; }
+.chk:first-of-type { border-top:0; }
+.chk .top { display:flex; align-items:baseline; gap:.55rem; flex-wrap:wrap; }
+.chk .cname { font-family:var(--mono); font-size:.8rem; font-weight:600; color:var(--ink); }
+.chk .op { font-family:var(--mono); font-size:.65rem; color:var(--rule); background:var(--rule-wash);
+  border:1px solid var(--rule-edge); border-radius:2px; padding:.08rem .38rem; }
+.chk .op.custom { color:var(--warn); background:var(--warn-wash); border-color:var(--warn-edge); }
+.chk .desc { font-family:var(--serif); font-size:.98rem; line-height:1.5; color:var(--ink); }
+.chk .expr { font-family:var(--mono); font-size:.72rem; color:var(--muted); overflow-wrap:anywhere; }
+.nest { margin-top:.15rem; border-left:2px solid var(--hairline); padding-left:.75rem;
+  display:flex; flex-direction:column; gap:.3rem; }
+.nest.of-rule { border-left-color:var(--rule-edge); }
+.nest.of-warn { border-left-color:var(--warn-edge); }
+.role { font-size:.6rem; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); }
+.role .of { font-family:var(--mono); text-transform:none; letter-spacing:0; color:var(--muted); font-weight:400; }
+.leaf { display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
+.leaf .expr { font-family:var(--mono); font-size:.72rem; color:var(--muted); overflow-wrap:anywhere; }
+.chk.scope .cname { color:var(--muted); }
+
+/* ---- rendered document ---- */
+.doc { padding:1.3rem 1.4rem 3rem; font-family:var(--serif); font-size:1rem; line-height:1.62;
+  max-width:44rem; display:flex; flex-direction:column; gap:.95rem; }
+.doc h1 { font-size:1.75rem; font-weight:500; letter-spacing:-.015em; line-height:1.15; }
+.doc h2 { font-size:1.25rem; font-weight:500; letter-spacing:-.01em; margin-top:.6rem; }
+.doc h3 { font-size:1.05rem; font-weight:600; }
+.doc ul { margin:0; padding-left:1.2rem; display:flex; flex-direction:column; gap:.5rem; }
+.doc li { padding-left:.1rem; }
+.doc code { font-family:var(--mono); font-size:.82em; background:var(--sunk); padding:.08em .32em; border-radius:2px; }
+.doc strong { font-weight:600; }
+.doc em { font-style:italic; color:var(--muted); }
+.doc table { border-collapse:collapse; font-size:.82rem; font-family:var(--sans); }
+.doc th, .doc td { border:1px solid var(--hairline); padding:.3rem .55rem; text-align:left; }
+.doc th { background:var(--sunk); font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
+.doc .tw { overflow-x:auto; }
+.doc .mark { border-left:3px solid transparent; padding-left:.8rem; margin-left:-.9rem; }
+.doc .mark-rule { border-left-color:var(--rule); }
+.doc .mark-declare { border-left-color:var(--declare); }
+.doc .mark-directive { border-left-color:var(--warn); }
+
+/* completion popup */
+.ac { position:absolute; z-index:20; min-width:19rem; max-width:32rem; max-height:15rem; overflow:auto;
+  background:var(--surface); border:1px solid var(--hairline); border-radius:3px;
+  box-shadow:0 6px 22px rgba(0,0,0,.16); }
+.ac button { display:grid; grid-template-columns:1fr auto; gap:.9rem; align-items:baseline; width:100%;
+  text-align:left; border:0; background:none; padding:.32rem .6rem; font-size:.76rem; }
+.ac button .lab { font-family:var(--mono); font-size:.74rem; color:var(--ink);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ac button .hint { font-family:var(--sans); font-size:.66rem; color:var(--faint); white-space:nowrap; }
+.ac button[aria-selected="true"] { background:var(--rule-wash); }
+.ac button[aria-selected="true"] .lab { color:var(--rule); font-weight:500; }
+.ac .ackeys { position:sticky; bottom:0; padding:.3rem .6rem; background:var(--sunk);
+  border-top:1px solid var(--hairline); font-size:.62rem; color:var(--faint); }
+.ac .ackeys b { font-family:var(--mono); font-weight:600; color:var(--muted); }
+.ac .achead { padding:.3rem .6rem; font-size:.58rem; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--faint); background:var(--sunk); border-bottom:1px solid var(--hairline); position:sticky; top:0; }
+
+/* reference */
+.ref { padding:0 0 2rem; }
+.refgroup { padding:.45rem .9rem; font-size:.6rem; font-weight:600; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--faint); background:var(--sunk); border-bottom:1px solid var(--hairline); border-top:1px solid var(--hairline); }
+.refrow { display:grid; grid-template-columns:1fr 11rem; gap:.9rem; padding:.4rem .9rem;
+  border-top:1px solid var(--hairline); align-items:baseline; }
+.refrow:first-of-type { border-top:0; }
+.refrow .p { font-family:var(--mono); font-size:.74rem; color:var(--ink); overflow-wrap:anywhere; }
+.refrow .q { font-family:var(--mono); font-size:.68rem; color:var(--rule); text-align:right; overflow-wrap:anywhere; }
+.reflead { padding:.9rem .9rem .3rem; font-family:var(--serif); font-size:.92rem; color:var(--muted); }
+
+.ptw { overflow-x:auto; border-bottom:1px solid var(--hairline); }
+.ptab { width:100%; border-collapse:collapse; }
+.ptab th { text-align:left; font-size:.58rem; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--faint); padding:.3rem .9rem; border-bottom:1px solid var(--hairline); }
+.ptab td { padding:.28rem .9rem; border-top:1px solid var(--hairline); vertical-align:baseline; font-size:.78rem; }
+.ptab td:first-child { font-family:var(--serif); color:var(--ink); white-space:nowrap; }
+.ptab td:last-child { font-family:var(--mono); font-size:.7rem; color:var(--declare); overflow-wrap:anywhere; }
+.subj { padding:.5rem .9rem; font-size:.76rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:.2rem 1.2rem; }
+.subj code { font-family:var(--mono); color:var(--ink); }
+
+.y-key { color:var(--ink); }
+.y-punc, .y-dash { color:var(--faint); }
+.y-com { color:var(--faint); font-style:italic; }
+.y-anchor { color:var(--declare); font-weight:500; }
+.y-val { color:var(--rule); }
+.y-lit { color:var(--warn); }
+.yaml { margin:0; padding:.85rem .9rem 2rem; font-family:var(--mono); font-size:.75rem; line-height:1.75;
+  white-space:pre; overflow:auto; color:var(--ink); }
+.empty { padding:1.5rem .9rem; color:var(--faint); font-size:.85rem; font-family:var(--serif); font-style:italic; }
+.legend { display:flex; flex-wrap:wrap; align-items:baseline; gap:.3rem 1.1rem; padding:.45rem .9rem;
+  border-top:1px solid var(--hairline); background:var(--sunk); font-size:.68rem; color:var(--muted); }
+.legend .note { margin-left:auto; font-family:var(--serif); font-style:italic; color:var(--faint); font-size:.72rem; }
+.legend span { display:inline-flex; align-items:center; gap:.4rem; }
+.legend i { width:.55rem; height:.55rem; border-radius:1px; }
+
+</style>
+
+<div class="bar">
+  <div class="brand"><h1>Policy prose</h1><span>live segmentation</span></div>
+  <div class="samples" role="group" aria-label="Sample policy">
+    <button id="s-pd" aria-pressed="true">prod_deploy</button>
+    <button id="s-43" aria-pressed="false">control 43</button>
+    <button id="s-ms" aria-pressed="false">two subjects</button>
+    <button id="s-reset" title="Discard edits and reload the sample">reset</button>
+  </div>
+  <div class="stats">
+    <span><b id="n-req">0</b> requirements</span>
+    <span><b id="n-chk">0</b> checks</span>
+    <span><b id="n-pro">0</b> prose</span>
+    <span id="n-diag-wrap"><b id="n-diag">0</b> problems</span>
+  </div>
+</div>
+
+<div class="work">
+  <div class="side">
+    <header><span>policy.md</span><span class="spacer"></span>
+      <span id="cursor" style="text-transform:none;letter-spacing:0;font-weight:400;font-family:var(--mono)"></span></header>
+    <div class="editor">
+      <div class="gutter" id="gutter" aria-hidden="true"></div>
+      <div class="field">
+        <div class="bandwrap"><div class="bands" id="bands"></div></div>
+        <textarea id="src" spellcheck="false" aria-label="Policy source"></textarea>
+        <div class="ac" id="ac" hidden role="listbox" aria-label="Completions"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="side">
+    <header>
+      <button class="tab" id="t-blocks" aria-selected="true">Blocks</button>
+      <button class="tab" id="t-policy" aria-selected="false">Policy</button>
+      <button class="tab" id="t-doc" aria-selected="false">Document</button>
+      <button class="tab" id="t-yaml" aria-selected="false">YAML</button>
+      <button class="tab" id="t-ref" aria-selected="false">Reference</button>
+      <span class="spacer"></span>
+      <button class="ghost" id="copy">Copy YAML</button>
+    </header>
+    <div class="panel" id="panel"></div>
+  </div>
+</div>
+
+<div class="foot">
+  <div class="diags" id="diags" hidden></div>
+  <div class="legend" id="legend">
+    <span><i style="background:var(--rule)"></i>rule &mdash; compiles to a check</span>
+    <span><i style="background:var(--declare)"></i>declaration</span>
+    <span><i style="background:var(--warn)"></i>directive</span>
+    <span><i style="background:var(--hairline)"></i>prose</span>
+    <span class="note" id="note"></span>
+  </div>
+</div>
+
+<script>__BUNDLE__</script>
+<script>
+const SAMPLES = __SAMPLES__;
+const LH = 22, PAD = 12;
+const $ = (id) => document.getElementById(id);
+const src = $('src'), gutter = $('gutter'), panel = $('panel'), diags = $('diags'), bands = $('bands');
+let current = 'pd', tab = 'blocks', last = null, syncing = false;
+
+const store = {
+  get(k) { try { return localStorage.getItem('pp:' + k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem('pp:' + k, v); } catch {} },
+  del(k) { try { localStorage.removeItem('pp:' + k); } catch {} },
+};
+
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+
+const renderPath = (path) => !Array.isArray(path) ? '' : path
+  .map((s) => typeof s === 'string' ? s
+    : '[' + Object.entries(s.where ?? {}).map(([k, v]) => k + '=' + v).join(' ') + ']')
+  .join('.').replace(/\.\[/g, '[');
+
+function shape(check) {
+  if (!check || typeof check !== 'object') return '';
+  const op = String(check.op ?? ''), path = renderPath(check.path);
+  const each = Array.isArray(check.each) ? '[].' + check.each.join('.') : '';
+  if (op === 'all') return 'every ' + path + each + ': ' + shape(check.check);
+  if (op === 'any') return 'some ' + path + each + ': ' + shape(check.check);
+  if (typeof check.expression === 'string' && check.expression) return check.expression;
+  if (check.value !== undefined) return (path || 'element') + ' == ' + String(check.value);
+  if (Array.isArray(check.patterns)) return path + ' ~ one of ' + check.patterns.length + ' patterns';
+  if (op === 'present') return (path || 'element') + ' is present';
+  if (op === 'non_empty_string') return path + ' is a non-empty string';
+  if (op === 'range') return path + ' between ' + check.min + ' and ' + check.max;
+  if (op === 'compare' || op === 'compare_time') return renderPath(check.left) + ' ' + check.cmp + ' ' + renderPath(check.right);
+  return (op + ' ' + path).trim();
+}
+
+function leafText(check) {
+  const op = String(check.op ?? ''), p = renderPath(check.path) || 'the element';
+  if (typeof check.expression === 'string' && check.expression) return check.expression;
+  if (op === 'equals') return p + ' == ' + String(check.value);
+  if (op === 'present') return p + ' is present';
+  if (op === 'non_empty_string') return p + ' is a non-empty string';
+  if (op === 'matches_any') return p + ' matches one of [' + (check.patterns ?? []).join(', ') + ']';
+  if (op === 'not_matches_any') return p + ' matches none of [' + (check.patterns ?? []).join(', ') + ']';
+  if (op === 'range') return p + ' >= ' + check.min + ' and ' + p + ' <= ' + check.max;
+  if (op === 'includes') return 'contains(' + p + ', ' + String(check.value) + ')';
+  if (op === 'excludes') return 'not contains(' + p + ', ' + String(check.value) + ')';
+  if (op === 'compare' || op === 'compare_time') return renderPath(check.left) + ' ' + check.cmp + ' ' + renderPath(check.right);
+  return (op + ' ' + (renderPath(check.path) || '')).trim();
+}
+
+const BUILTIN = new Set(['equals','present','non_empty_string','matches_any','not_matches_any',
+  'range','includes','excludes','compare','compare_time','all','any','any_of']);
+
+/* ---------- blocks, aligned to the source ---------- */
+function viewBlocks(result) {
+  const total = src.value.split('\n').length;
+  const map = el('div', 'map');
+  map.style.height = (total * LH + PAD * 2) + 'px';
+
+  let requirement = '';
+  for (const b of result.blocks) {
+    if (b.kind === 'requirement') requirement = b.label ?? '';
+    const span = Math.max(1, (b.endLine - b.line + 1));
+    const box = el('div', 'mblk b-' + b.kind);
+    box.style.top = ((b.line - 1) * LH + PAD) + 'px';
+    box.style.height = (span * LH) + 'px';
+    box.append(el('span', 'tag', b.kind));
+
+    const body = el('span', 'body');
+    if (b.label) {
+      const n = el('span', 'name', b.label);
+      if (b.op) n.append(el('em', null, b.op));
+      body.append(n);
+    }
+    const check = (b.kind === 'rule' || b.kind === 'scope' || b.kind === 'substitute')
+      ? checkFor(result.requirements, b, requirement) : null;
+    const detail = check ? shape(check) : (b.detail ?? '');
+    if (detail && span > (b.label ? 1 : 0))
+      body.append(el('span', b.kind === 'prose' ? 'quiet' : (check ? 'detail expr' : 'detail'), detail));
+    box.append(body);
+    box.addEventListener('click', () => goto(b.line));
+    map.append(box);
+  }
+  panel.replaceChildren(map);
+  panel.scrollTop = src.scrollTop;
+}
+
+function checkFor(reqs, block, requirement) {
+  if (block.kind === 'substitute') return null;
+  const req = reqs[requirement];
+  if (!req) return null;
+  return ((block.kind === 'scope' ? req.applies_to : req.checks) ?? {})[block.label] ?? null;
+}
+
+const opBadge = (check) => {
+  const op = String(check.op ?? '');
+  const custom = op && !BUILTIN.has(op);
+  return el('span', 'op' + (custom ? ' custom' : ''), custom ? op + ' (custom)' : op || '?');
+};
+
+/**
+ * The body of a check: its expression, or its nested structure expanded.
+ * A collection operator holds an element check and any_of holds option groups;
+ * collapsing those into one line hides the part a reader most needs to check.
+ */
+function renderCheck(check, into, showBadge) {
+  const op = String(check.op ?? '');
+  if (op === 'all' || op === 'any') {
+    const coll = renderPath(check.path) + (Array.isArray(check.each) ? '[].' + check.each.join('.') : '');
+    const nest = el('div', 'nest of-rule');
+    const role = el('div', 'role');
+    role.append(document.createTextNode(op === 'all' ? 'every element of ' : 'at least one element of '));
+    role.append(el('span', 'of', coll));
+    nest.append(role);
+    renderCheck(check.check ?? {}, nest, true);
+    into.append(nest);
+  } else if (op === 'any_of') {
+    const outer = el('div', 'nest of-rule');
+    outer.append(el('div', 'role', 'one of'));
+    for (const [name, group] of Object.entries(check.options ?? {})) {
+      const g = el('div', 'nest of-rule');
+      g.append(el('div', 'role', name));
+      for (const leaf of group ?? []) renderCheck(leaf, g, true);
+      outer.append(g);
+    }
+    into.append(outer);
+  } else {
+    const line = el('div', 'leaf');
+    if (showBadge) line.append(opBadge(check));
+    line.append(el('span', 'expr', leafText(check)));
+    into.append(line);
+  }
+  if (check.substitute) {
+    const nest = el('div', 'nest of-warn');
+    nest.append(el('div', 'role', 'or substitute'));
+    renderCheck(check.substitute, nest, true);
+    into.append(nest);
+  }
+}
+
+/* ---------- the policy, as a spec sheet ---------- */
+function viewPolicy(result) {
+  const reqs = Object.entries(result.requirements);
+  if (!reqs.length && !result.subjects.length) {
+    panel.replaceChildren(el('p', 'empty', 'Nothing compiles yet.'));
+    return;
+  }
+
+  const titleFor = {};
+  for (const b of result.blocks) if (b.kind === 'requirement' && b.label) titleFor[b.label] = b.detail ?? '';
+
+  const spec = el('div', 'spec');
+
+  // What the document declares, before what it asserts. A reader checking a
+  // path needs the subject table as much as the checks.
+  if (result.subjects.length) {
+    const card = el('div', 'req');
+    const head = el('header');
+    head.append(el('span', 'id', 'subjects'),
+      el('h3', null, result.subjects.length === 1 ? 'The subject' : 'Subjects and their properties'));
+    card.append(head);
+    for (const s of result.subjects) {
+      const gh = el('div', 'grouphead', s.subjectType);
+      gh.id = 'subj-' + s.subjectType.toLowerCase().replace(/\s+/g, '-');
+      card.append(gh);
+      const line = el('div', 'subj');
+      const a = el('span'); a.append(document.createTextNode('each of '), el('code', null, renderPath(s.from)));
+      const b = el('span'); b.append(document.createTextNode('identified by '), el('code', null, renderPath(s.id)));
+      line.append(a, b);
+      card.append(line);
+      if (s.properties.length) {
+        const tw = el('div', 'ptw'), t = el('table', 'ptab');
+        const hr = el('tr');
+        hr.append(el('th', null, 'Property'), el('th', null, 'Path'));
+        t.append(hr);
+        for (const prop of s.properties) {
+          const tr = el('tr');
+          tr.append(el('td', null, prop.display), el('td', null, prop.pathText));
+          t.append(tr);
+        }
+        tw.append(t);
+        card.append(tw);
+      }
+    }
+    spec.append(card);
+  }
+
+  for (const [name, req] of reqs) {
+    const card = el('div', 'req');
+    const head = el('header');
+    head.append(el('span', 'id', name));
+    head.append(el('h3', null, titleFor[name] || name));
+    const badges = el('div', 'badges');
+    // The subject's paths are stated once, at the top. Repeating them on every
+    // requirement is the same duplication the property table exists to remove;
+    // link to the definition instead.
+    const type = String(req.subject_type ?? 'subject');
+    const pill = el('button', 'badge on link', 'subject: ' + type);
+    pill.title = 'Go to the definition of ' + type;
+    pill.addEventListener('click', () => {
+      const target = document.getElementById('subj-' + type.toLowerCase().replace(/\s+/g, '-'));
+      if (!target) return;
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      target.classList.add('flash');
+      setTimeout(() => target.classList.remove('flash'), 900);
+    });
+    badges.append(pill);
+    badges.append(el('span', 'badge', 'require: ' + (req.require ?? 'every')));
+    badges.append(el('span', 'badge', 'min subjects: ' + (req.min_subjects ?? 1)));
+    head.append(badges);
+    card.append(head);
+
+    for (const [group, label] of [['applies_to', 'In scope when'], ['checks', 'Must hold']]) {
+      const entries = Object.entries(req[group] ?? {});
+      if (!entries.length) continue;
+      card.append(el('div', 'grouphead', label));
+      for (const [cname, check] of entries) {
+        const row = el('div', 'chk' + (group === 'applies_to' ? ' scope' : ''));
+        const top = el('div', 'top');
+        top.append(el('span', 'cname', cname), opBadge(check));
+        row.append(top);
+        if (check.description) row.append(el('div', 'desc', check.description));
+        renderCheck(check, row, false);
+        card.append(row);
+      }
+    }
+    spec.append(card);
+  }
+  panel.replaceChildren(spec);
+}
+
+/* ---------- the document, rendered ---------- */
+function inline(nodes, into) {
+  for (const n of nodes ?? []) {
+    if (n.type === 'text') into.append(document.createTextNode(n.value));
+    else if (n.type === 'inlineCode') into.append(el('code', null, n.value));
+    else if (n.type === 'strong') { const s = el('strong'); inline(n.children, s); into.append(s); }
+    else if (n.type === 'emphasis') { const s = el('em'); inline(n.children, s); into.append(s); }
+    else if (n.type === 'delete') { const s = el('s'); inline(n.children, s); into.append(s); }
+    else if (n.type === 'break') into.append(document.createTextNode(' '));
+    else if (n.type === 'link') { const a = el('a'); a.href = n.url; a.rel = 'noopener'; inline(n.children, a); into.append(a); }
+    else if (n.children) inline(n.children, into);
+    else if (n.value) into.append(document.createTextNode(n.value));
+  }
+}
+
+function block(node) {
+  if (node.type === 'heading') { const h = el('h' + Math.min(3, node.depth)); inline(node.children, h); return h; }
+  if (node.type === 'paragraph') { const p = el('p'); inline(node.children, p); return p; }
+  if (node.type === 'thematicBreak') return el('hr');
+  if (node.type === 'code') return el('pre', null, node.value);
+  if (node.type === 'blockquote') { const q = el('blockquote'); for (const c of node.children ?? []) q.append(block(c)); return q; }
+  if (node.type === 'list') {
+    const list = el(node.ordered ? 'ol' : 'ul');
+    for (const item of node.children ?? []) {
+      const li = el('li');
+      for (const c of item.children ?? []) li.append(block(c));
+      list.append(li);
+    }
+    return list;
+  }
+  if (node.type === 'table') {
+    const wrap = el('div', 'tw'), t = el('table');
+    (node.children ?? []).forEach((row, i) => {
+      const tr = el('tr');
+      for (const cell of row.children ?? []) { const c = el(i === 0 ? 'th' : 'td'); inline(cell.children, c); tr.append(c); }
+      t.append(tr);
+    });
+    wrap.append(t);
+    return wrap;
+  }
+  const p = el('p'); inline(node.children, p); return p;
+}
+
+const MARK = { rule:'rule', scope:'rule', subject:'declare', properties:'declare', constant:'declare',
+  substitute:'declare', requirement:'declare', directive:'directive' };
+
+function viewDoc(result) {
+  let tree;
+  try { tree = EvidenceMD.parse(src.value); } catch { tree = { children: [] }; }
+  const kindAt = new Map();
+  for (const b of result.blocks) if (MARK[b.kind]) for (let i = b.line; i <= b.endLine; i++) kindAt.set(i, MARK[b.kind]);
+
+  const doc = el('div', 'doc');
+  for (const node of tree.children ?? []) {
+    const node_el = block(node);
+    const line = node.position?.start?.line;
+    const kind = line ? kindAt.get(line) : undefined;
+    if (kind) node_el.classList.add('mark', 'mark-' + kind);
+    doc.append(node_el);
+  }
+  panel.replaceChildren(doc.children.length ? doc : el('p', 'empty', 'Nothing to render.'));
+}
+
+/**
+ * Highlight the emitted YAML. Hand-rolled because the subset is narrow — keys,
+ * scalars, list items, comments and the anchors the emitter produces for shared
+ * fragments — and a highlighting library would be a dependency carried for one
+ * tab.
+ */
+const valueClass = (v) => /^(true|false|null|-?\d+(\.\d+)?)$/.test(v.trim()) ? 'y-lit' : 'y-val';
+
+function highlightYaml(text) {
+  const frag = document.createDocumentFragment();
+  for (const raw of text.split('\n')) {
+    const line = el('div');
+    const indent = /^\s*/.exec(raw)[0];
+    if (indent) line.append(document.createTextNode(indent));
+    let rest = raw.slice(indent.length);
+
+    if (rest.startsWith('#')) { line.append(el('span', 'y-com', rest)); frag.append(line); continue; }
+    if (rest.startsWith('- ')) { line.append(el('span', 'y-dash', '- ')); rest = rest.slice(2); }
+    else if (rest === '-') { line.append(el('span', 'y-dash', '-')); rest = ''; }
+
+    const kv = /^([^:#]+):(\s*)(.*)$/.exec(rest);
+    if (kv) {
+      line.append(el('span', 'y-key', kv[1]), el('span', 'y-punc', ':'));
+      if (kv[2]) line.append(document.createTextNode(kv[2]));
+      rest = kv[3];
+    }
+    const anchor = /^([&*][\w-]+)(\s*)(.*)$/.exec(rest);
+    if (anchor) {
+      line.append(el('span', 'y-anchor', anchor[1]));
+      if (anchor[2]) line.append(document.createTextNode(anchor[2]));
+      rest = anchor[3];
+    }
+    if (rest) line.append(el('span', valueClass(rest), rest));
+    frag.append(line.childNodes.length ? line : el('div', null, ' '));
+  }
+  return frag;
+}
+
+/* ---------- the reference, generated from the matcher's own table ---------- */
+function viewRef() {
+  const ref = el('div', 'ref');
+  ref.append(el('p', 'reflead',
+    'Everything the transpiler recognises. Built from the same table the matcher uses, ' +
+    'so it cannot describe a shape the parser does not accept. Heading text and heading ' +
+    'levels are yours \u2014 declarations are found by their own shape, wherever they sit.'));
+  let group = '';
+  for (const phrase of EvidenceMD.VOCABULARY) {
+    if (phrase.group !== group) { group = phrase.group; ref.append(el('div', 'refgroup', group)); }
+    const row = el('div', 'refrow');
+    row.append(el('span', 'p', phrase.prose), el('span', 'q', phrase.produces));
+    ref.append(row);
+  }
+  panel.replaceChildren(ref);
+}
+
+/* ---------- completions ---------- */
+
+const OPENERS = [
+  { label: 'the **property** must ...', hint: 'one field', insert: 'the ' },
+  { label: 'every **collection** must ...', hint: 'all', insert: 'every ' },
+  { label: 'at least one **collection** must ...', hint: 'any', insert: 'at least one ' },
+];
+
+const DOC_LEVEL = [
+  { label: 'A **thing** is each of `path`, identified by its `path`.', hint: 'subject', insert: 'A **thing** is each of `path`, identified by its `path`.' },
+  { label: 'For each **subject**.', hint: 'binds a requirement', insert: 'For each **subject**.' },
+  { label: 'At least one **subject** must be in scope.', hint: 'min_subjects', insert: 'At least one **subject** must be in scope.' },
+  { label: 'No minimum \u2014 ', hint: 'min_subjects: 0', insert: 'No minimum \u2014 ' },
+  { label: 'One **subject** must satisfy all of these.', hint: 'require: some', insert: 'One **subject** must satisfy all of these.' },
+  { label: 'In scope:', hint: 'applies_to follows', insert: 'In scope:' },
+  { label: 'Must hold:', hint: 'checks follow', insert: 'Must hold:' },
+  { label: '- `name` \u2014 ', hint: 'a rule', insert: '- `name` \u2014 ' },
+];
+
+/** Leaf phrasings, minus the `the **X** ` opener the author has already typed. */
+const predicates = () => EvidenceMD.VOCABULARY
+  .filter((v) => v.group === 'Leaf operators')
+  .map((v) => ({ label: v.prose.replace(/^the \*\*X\*\* /, ''), hint: v.produces,
+                 insert: v.prose.replace(/^the \*\*X\*\* /, '') }));
+
+const ELEMENT = [
+  { label: 'must have a **property** of `value`', hint: 'equals, per element', insert: 'must have a **property** of `value`' },
+  { label: 'must exist', hint: 'present, per element', insert: 'must exist' },
+];
+
+/** All declared property names, for whichever subject the caret is nearest. */
+function propertyNames(analysis, line) {
+  if (!analysis?.subjects?.length) return [];
+  const before = analysis.subjects.filter((s) => s.line <= line);
+  const scope = before.length ? analysis.subjects : analysis.subjects;
+  return scope.flatMap((s) => s.properties.map((p) => ({
+    label: '**' + p.display + '**', hint: p.pathText, insert: '**' + p.display + '** ' })));
+}
+
+/**
+ * What could come next, given the line up to the caret. `back` is how many
+ * characters before the caret the insertion replaces.
+ */
+function completions(lineText, analysis, lineNo) {
+  // `consumed` is the text before the caret that the insertion replaces — it
+  // must include any markup already typed (the `**` of a property, the opening
+  // backtick of a name), or accepting doubles it.
+  const pick = (list, consumed) => {
+    const needle = consumed.replace(/[`*]/g, '').toLowerCase();
+    return list
+      .filter((c) => c.label.toLowerCase().includes(needle))
+      .map((c) => ({ ...c, back: consumed.length }));
+  };
+
+  const bullet = /^\s*-\s*`([^`]*)`?\s*[\u2014\u2013-]?\s*(.*)$/.exec(lineText);
+  if (bullet) {
+    const body = bullet[2] ?? '';
+    let m;
+    if ((m = /(?:^|[\s,])or else (`?[\w-]*)$/.exec(body)))
+      return pick((analysis?.substitutes ?? []).map((n) => ({ label: '`' + n + '`', hint: 'substitute', insert: '`' + n + '`' })), m[1] ?? '');
+    if ((m = /treating (\*{0,2}[\w -]*)$/.exec(body)))
+      return pick((analysis?.constants ?? []).map((n) => ({ label: '**' + n + '**', hint: 'constant', insert: '**' + n + '** as explained' })), m[1] ?? '');
+    if ((m = /^(?:the|every|at least one|some) (\*\*[^*]*)$/.exec(body)))
+      return pick(propertyNames(analysis, lineNo), m[1] ?? '');
+    if ((m = /^the \*\*[^*]+\*\*\s*(.*)$/.exec(body))) return pick(predicates(), m[1] ?? '');
+    if ((m = /^(?:every|at least one|some) \*\*[^*]+\*\*\s*(.*)$/.exec(body))) return pick(ELEMENT, m[1] ?? '');
+    return pick(OPENERS, body);
+  }
+
+  return pick(DOC_LEVEL, lineText.trim());
+}
+
+/* ---------- shell ---------- */
+function render(result) {
+  last = result;
+  const lines = src.value.split('\n');
+  const kinds = new Array(lines.length).fill('');
+  for (const b of result.blocks)
+    for (let i = b.line; i <= b.endLine && i <= lines.length; i++) kinds[i - 1] = b.kind;
+
+  gutter.replaceChildren(...lines.map((_, i) =>
+    el('div', 'gline' + (kinds[i] ? ' k-' + kinds[i] : ''), String(i + 1))));
+
+  // Tint the source itself, behind the text, using the same line arithmetic as
+  // the aligned blocks pane — so what you author and what you inspect agree.
+  bands.replaceChildren(...result.blocks.filter((b) => b.kind !== 'prose').map((b) => {
+    const band = el('div', 'band b-' + b.kind);
+    band.style.top = ((b.line - 1) * LH + PAD) + 'px';
+    band.style.height = (Math.max(1, b.endLine - b.line + 1) * LH) + 'px';
+    return band;
+  }));
+  bands.style.transform = 'translateY(' + -src.scrollTop + 'px)';
+
+  $('n-req').textContent = Object.keys(result.requirements).length;
+  $('n-chk').textContent = result.blocks.filter((b) => b.kind === 'rule' || b.kind === 'scope').length;
+  $('n-pro').textContent = result.blocks.filter((b) => b.kind === 'prose').length;
+  $('n-diag').textContent = result.diagnostics.length;
+  $('n-diag-wrap').classList.toggle('bad', result.diagnostics.some((d) => d.severity === 'error'));
+
+  diags.hidden = result.diagnostics.length === 0;
+  diags.replaceChildren(...result.diagnostics.map((d) => {
+    const b = el('button', 'diag sev-' + d.severity);
+    b.append(el('span', 'where', d.line ? 'line ' + d.line : d.severity), el('span', null, d.message));
+    if (d.line) b.addEventListener('click', () => goto(d.line));
+    return b;
+  }));
+
+  $('note').textContent = tab === 'blocks'
+    ? 'Blocks sit at the same height as the lines they came from.'
+    : tab === 'policy'
+      ? 'Rendered expressions come from the Rego library via OPA, so a check shows its compiled shape here.'
+      : '';
+  if (tab === 'blocks') viewBlocks(result);
+  else if (tab === 'policy') viewPolicy(result);
+  else if (tab === 'doc') viewDoc(result);
+  else if (tab === 'ref') viewRef();
+  else {
+    const pre = el('pre', 'yaml');
+    pre.append(highlightYaml(result.yaml.trim() || '# nothing compiled yet'));
+    panel.replaceChildren(pre);
+  }
+}
+
+function goto(line) {
+  src.scrollTop = Math.max(0, (line - 1) * LH - 60);
+  src.focus();
+  const pos = src.value.split('\n').slice(0, line - 1).join('\n').length + (line > 1 ? 1 : 0);
+  src.setSelectionRange(pos, pos);
+  const g = gutter.children[line - 1];
+  if (g) { g.classList.add('hit'); setTimeout(() => g.classList.remove('hit'), 700); }
+}
+
+function compile() {
+  let result;
+  try { result = EvidenceMD.compile(src.value); }
+  catch (e) {
+    result = { blocks: [], requirements: {}, yaml: '', ok: false,
+      diagnostics: [{ severity: 'error', line: 0, message: String(e?.message ?? e) }] };
+  }
+  render(result);
+  store.set(current, src.value);
+}
+
+let timer = 0;
+src.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(compile, 120); });
+src.addEventListener('scroll', () => {
+  if (syncing) return;
+  syncing = true;
+  gutter.scrollTop = src.scrollTop;
+  bands.style.transform = 'translateY(' + -src.scrollTop + 'px)';
+  if (tab === 'blocks') panel.scrollTop = src.scrollTop;
+  syncing = false;
+});
+panel.addEventListener('scroll', () => {
+  if (syncing || tab !== 'blocks') return;
+  syncing = true;
+  src.scrollTop = panel.scrollTop;
+  gutter.scrollTop = panel.scrollTop;
+  bands.style.transform = 'translateY(' + -panel.scrollTop + 'px)';
+  syncing = false;
+});
+for (const ev of ['keyup', 'click']) src.addEventListener(ev, () => {
+  $('cursor').textContent = 'L' + src.value.slice(0, src.selectionStart).split('\n').length;
+});
+
+function load(which) {
+  current = which;
+  for (const [id, key] of [['s-pd','pd'],['s-43','c43'],['s-ms','ms']])
+    $(id).setAttribute('aria-pressed', String(which === key));
+  src.value = store.get(which) ?? SAMPLES[which];
+  src.scrollTop = 0;
+  compile();
+}
+$('s-pd').addEventListener('click', () => load('pd'));
+$('s-43').addEventListener('click', () => load('c43'));
+$('s-ms').addEventListener('click', () => load('ms'));
+$('s-reset').addEventListener('click', () => { store.del(current); load(current); });
+
+const TABS = [['t-blocks','blocks'],['t-policy','policy'],['t-doc','doc'],['t-yaml','yaml'],['t-ref','ref']];
+for (const [id, name] of TABS) $(id).addEventListener('click', () => {
+  tab = name;
+  for (const [i, n] of TABS) $(i).setAttribute('aria-selected', String(n === name));
+  panel.scrollTop = 0;
+  if (last) render(last);
+});
+$('copy').addEventListener('click', async () => {
+  const b = $('copy');
+  try { await navigator.clipboard.writeText(last?.yaml ?? ''); b.textContent = 'Copied'; }
+  catch { b.textContent = 'Blocked'; }
+  setTimeout(() => { b.textContent = 'Copy YAML'; }, 1400);
+});
+
+/* ---------- the completion popup ---------- */
+
+const ac = $('ac');
+let acItems = [], acIndex = 0;
+// Enter accepts only once you have actually chosen something with the arrows.
+// Otherwise Enter is a newline, which is what it is the rest of the time.
+let acTouched = false, acSuppressed = false;
+
+/** One character's width, measured in the textarea's own font rather than
+ *  assumed — the alignment everywhere else in this page depends on the same
+ *  monospace grid. */
+const charWidth = (() => {
+  const probe = el('span', null, 'M'.repeat(40));
+  const style = getComputedStyle(src);
+  Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', whiteSpace: 'pre',
+    font: style.font, fontFamily: style.fontFamily, fontSize: style.fontSize });
+  document.body.append(probe);
+  const w = probe.getBoundingClientRect().width / 40;
+  probe.remove();
+  return w;
+})();
+
+const caretLine = () => src.value.slice(0, src.selectionStart).split('\n');
+
+function hideAc() { ac.hidden = true; acItems = []; acTouched = false; }
+
+function showAc() {
+  if (acSuppressed) { acSuppressed = false; return hideAc(); }
+  if (document.activeElement !== src) return hideAc();
+  const upto = caretLine();
+  const lineNo = upto.length;
+  const lineText = upto[upto.length - 1];
+  acItems = completions(lineText, last, lineNo).slice(0, 40);
+  if (!acItems.length) return hideAc();
+
+  acIndex = 0;
+  acTouched = false;
+  ac.replaceChildren();
+  let group = null;
+  for (const [i, item] of acItems.entries()) {
+    if (item.hint !== group) { group = item.hint; }
+    const b = el('button');
+    b.append(el('span', 'lab', item.label), el('span', 'hint', item.hint));
+    b.setAttribute('aria-selected', String(i === acIndex));
+    b.addEventListener('mousedown', (e) => { e.preventDefault(); accept(i); });
+    ac.append(b);
+  }
+  const keys = el('div', 'ackeys');
+  keys.append(el('b', null, 'Tab'), document.createTextNode(' accept  \u00b7  '),
+    el('b', null, '\u2191\u2193'), document.createTextNode(' choose  \u00b7  '),
+    el('b', null, 'Esc'), document.createTextNode(' dismiss'));
+  ac.append(keys);
+  const padLeft = parseFloat(getComputedStyle(src).paddingLeft);
+  const x = Math.max(4, Math.min(lineText.length * charWidth + padLeft - src.scrollLeft, src.clientWidth - 240));
+  const y = lineNo * LH + PAD - src.scrollTop;
+  ac.style.left = x + 'px';
+  ac.style.top = y + 'px';
+  ac.hidden = false;
+}
+
+function move(delta) {
+  if (!acItems.length) return;
+  acTouched = true;
+  acIndex = (acIndex + delta + acItems.length) % acItems.length;
+  [...ac.children].forEach((b, i) => b.setAttribute('aria-selected', String(i === acIndex)));
+  ac.children[acIndex]?.scrollIntoView({ block: 'nearest' });
+}
+
+function accept(i) {
+  const item = acItems[i ?? acIndex];
+  if (!item) return;
+  const at = src.selectionStart;
+  const before = src.value.slice(0, at - (item.back ?? 0));
+  const after = src.value.slice(at);
+  src.value = before + item.insert + after;
+  const pos = before.length + item.insert.length;
+  src.setSelectionRange(pos, pos);
+  hideAc();
+  compile();
+  // A completion usually opens the next choice — property, then predicate.
+  setTimeout(showAc, 0);
+}
+
+src.addEventListener('keydown', (e) => {
+  if (e.key === ' ' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); showAc(); return; }
+  if (ac.hidden) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+  else if (e.key === 'Tab') { e.preventDefault(); accept(); }
+  else if (e.key === 'Enter') {
+    if (acTouched) { e.preventDefault(); accept(); return; }
+    // Let the newline through, and don't reopen on the blank line it makes.
+    hideAc();
+    acSuppressed = true;
+  } else if (e.key === 'Escape') { e.preventDefault(); hideAc(); }
+});
+src.addEventListener('blur', () => setTimeout(hideAc, 120));
+src.addEventListener('input', () => setTimeout(showAc, 0));
+// Clicking or arrowing around the document is navigation, not authoring —
+// popping a menu open for it is noise.
+src.addEventListener('click', hideAc);
+
+load('pd');
+</script>
