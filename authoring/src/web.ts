@@ -7,6 +7,9 @@
 //
 //   npm run bundle   ->  dist/web.js
 
+import {fromMarkdown} from 'mdast-util-from-markdown'
+import {gfmTable} from 'micromark-extension-gfm-table'
+import {gfmTableFromMarkdown} from 'mdast-util-gfm-table'
 import {stringify as toYaml} from 'yaml'
 import customOps from '../custom_ops.json' with {type: 'json'}
 import {analyze} from './core/index.ts'
@@ -22,6 +25,16 @@ const registry = (): CustomOpRegistry => {
 export function compile(markdown: string): Analysis & {yaml: string} {
 	const result = analyze(markdown, {customOps: registry()})
 	return {...result, yaml: toYaml({requirements: result.requirements}, {lineWidth: 0})}
+}
+
+/**
+ * The parsed document, for rendering it. Same parser and same options as
+ * core/index.ts uses, so a rendered view cannot show a structure the
+ * transpiler did not see — which is the whole reason not to reach for a
+ * second Markdown library in the page.
+ */
+export function parse(markdown: string): unknown {
+	return fromMarkdown(markdown, {extensions: [gfmTable()], mdastExtensions: [gfmTableFromMarkdown()]})
 }
 
 export {analyze, validateRequirements}
