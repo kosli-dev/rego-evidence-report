@@ -1,0 +1,26 @@
+# The demo/prod_deploy.rego requirements, written as YAML instead of Rego.
+#
+# Nothing here is Rego-specific: `requirements` is a plain object, so OPA can
+# load it from a data document and the library consumes it unchanged. See
+# examples/prod_deploy_as_data.rego for the policy that reads it, and
+# INTEGRATION.md "Requirements as data, in a format that is not Rego".
+#
+# OPA loads a file named data.yaml at the path of its directory, so this lands
+# at `data.prod_deploy_spec` under `opa test src examples`.
+requirements:
+  prod_deploy:
+    subject_type: deployment
+    from: [deployments]
+    id: [name]
+    applies_to:
+      is_prod: {op: equals, path: [environment], value: prod}
+    checks:
+      approved:
+        description: A named approver signed off on the deployment
+        op: non_empty_string
+        path: [approved_by]
+      ci_green:
+        description: Every CI check on the deployment passed
+        op: all
+        path: [ci_checks]
+        check: {op: equals, path: [conclusion], value: success}

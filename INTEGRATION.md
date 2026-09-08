@@ -1254,6 +1254,130 @@ upstream. And if the port is ever fed 1068 evidence, it must treat a dropped or
 absent ticket as a **breach**, not trust `permitted_tickets` and
 `non_permitted_tickets` to be jointly complete. They are not.
 
+## After the demo: four threads worth pulling
+
+The demo was given on 2026-09-08 and landed well. Four ideas came out of the
+room. They are recorded here rather than in a slide because three of them are
+claims that can be checked, and one of them now has been.
+
+### Requirements as data, in a format that is not Rego — **verified**
+
+The idea was YAML or JSON instead of Rego, to lower the barrier for people who
+write controls but not policy code. It turns out to need **no library change at
+all**: `requirements` is a plain object, and nothing inside it is Rego-specific,
+so OPA can load it from a data document and the library consumes it unchanged.
+
+`examples/prod_deploy_spec/data.yaml` is `demo/prod_deploy.rego`'s rule written
+as YAML. `examples/prod_deploy_as_data.rego` is the entire policy that runs it:
+
+```rego
+report := evidence.report(input, data.prod_deploy_spec.requirements)
+```
+
+Over `demo/deployments.json` that produces a report **byte-identical** to the
+Rego spelling — same nine rows, same `absent`/`value` split on `d-2`, same
+rendered `expression` strings, and `violations` projects the same two breaches:
+
+```sh
+opa eval --ignore '*.json' -d src/library.rego -d examples \
+  -i demo/deployments.json --format=json 'data.prod_deploy_as_data.report'
+```
+
+JSON behaves identically; OPA loads `data.yaml` and `data.json` natively, so
+neither needs a build step. `examples/prod_deploy_as_data_test.rego` pins the
+YAML's meaning in five tests, so this stays a fact rather than becoming a claim
+nobody re-checks.
+
+**What a data document cannot carry**, which is the honest limit of the idea:
+
+1. **Custom ops.** `op_passed` is a Rego rule, so control 43 has no pure-data
+   spelling — it needs `independently_approved` and `identities_resolved`.
+2. **Computation that builds the spec.** `examples/control_1068.rego` reads its
+   flavour tables from `data.params` with a literal fallback, and "read from
+   params, else default" is Rego, not data. Its `permitted_options` comprehension
+   is only sugar — YAML could write the three options out literally — but the
+   parameterisation is not.
+3. **The entry point and any output projection.** The four-line wrapper above,
+   and 1068's `permitted_tickets`/`non_permitted_tickets` lists.
+
+So the surface a non-Rego front end has to generate is exactly the requirements
+object, and everything else stays a small Rego shim. **This is a front-end
+project, not a library project.**
+
+### Markdown as the authoring surface
+
+The stronger version of the same idea: controls written as prose. The argument
+that this is feasible *for this library specifically* is that *the library
+already goes the other way* — `leaf_describe` and its callers render prose from a
+spec, which is what a row's `expression` is:
+
+```json
+{"op": "all", "path": ["ci_checks"],
+ "check": {"op": "equals", "path": ["conclusion"], "value": "success"},
+ "expression": "every ci_checks: conclusion == success"}
+```
+
+A Markdown front end is that correspondence run backwards over a vocabulary of
+**thirteen operators** — a small enough surface to parse, and one that already
+has a canonical rendering to check a parse against.
+
+The design constraint worth stating up front: **Markdown compiles to the
+requirements object, and the object remains what gets hashed and attested.** If
+prose becomes the source of truth for a verdict, the hashable-artefact property
+this library exists to provide is gone. Markdown is an authoring and review
+surface — which is the actual win, because it is a surface a compliance officer
+can read and write.
+
+Prior art to look at: **Varar** (<https://varar.dev>, Aslak Hellesøy), described
+to us as the successor to Gherkin and presenting itself as
+documentation-as-executable-tests, where each Markdown paragraph or table row runs
+as its own example. Of direct interest here is its **drift detection**: when prose
+is reworded so it no longer matches the code steps, it raises an amber marker
+rather than silently passing. That is the same problem as the fourth row of the
+open-questions slide — a harness that cannot see one of the two artefacts it holds
+go stale. Worth asking how they resolve it, because we have a live instance of it.
+
+### Porting an imperative Rego policy: what it actually costs
+
+Asked in the room, and answered there with "not really straightforward". The
+repo has better evidence than that, because `examples/control_43.rego` **is** this
+migration, from `four-eyes.rego`:
+
+- 182 lines became 237 — 151 declared plus an 86-line custom op.
+- The port found **four defects** in the original, including `"1000005" > 1000010`.
+- But [the refresh of 2026-09-07](#the-refresh-of-2026-09-07-what-drifted-and-what-the-harness-could-not-see)
+  found the port had drifted in **five** verdict-changing ways, of which the
+  harness caught **one**. The original eight-case corpus was blind to the other
+  four; it is 23 cases now.
+
+The useful formulation is therefore neither "hard" nor "easy with AI". **The
+translation is cheap, and AI makes it cheaper. The proof that the translation is
+faithful is the expensive part, and it is the actual deliverable** — a vendored
+copy of the original beside the port, one shared corpus, and a build that breaks
+when they disagree. Our own history shows an eight-case corpus silently was not
+enough. AI helps write that corpus too, and that is precisely the place its word
+cannot be taken.
+
+Stated that way it is a better pitch than "it's easy", because it ships with a
+method instead of a promise.
+
+### Open-sourcing the library
+
+Raised as a way to lower the barrier to entry for the industry. The library core
+is in good shape for it: `src/library.rego` is coupled to Kosli only by the
+package name `kosli.evidence` and the `"kosli.evidence/absent"` sentinel key, and
+`README.md`, `CONTRIBUTING.md`, `schema/evidence-report.schema.json`, the test
+suite and the worked examples all already exist.
+
+Two concrete blockers, neither of them technical:
+
+1. **There is no `LICENSE` file.** That is a decision, not a task.
+2. **This file, `DEMO.md` and the `fieldkit/` briefs name internal control
+   identifiers, repository names and a customer's implementation.** The warning
+   at the end of this file already says so; open-sourcing turns it from a caution
+   into a prerequisite. The split is natural, though — `src/`, `schema/` and the
+   toy examples carry none of it.
+
 ## Status of these claims
 
 Sourced from control 43's `README.md` and `SCENARIOS.md`, and from a round of
@@ -1385,6 +1509,12 @@ TypeScript on a machine with access to them.
   silently. See [What the CLI and server sources settled](#what-the-cli-and-server-sources-settled).
 - **Also unverified:** `--summary`, which would render key report numbers in the
   Kosli UI, exists in the CLI source on `main` but not in 2.13.1.
+- **Confirmed by running it, after the demo:** that a requirements object loaded
+  from a YAML or JSON data document produces a report byte-identical to the Rego
+  spelling of the same rule, with no library change. `examples/prod_deploy_spec/`
+  and `examples/prod_deploy_as_data.rego`, pinned by five tests. The limits are
+  stated with it: custom ops, computed specs and output projections stay Rego.
+  See [After the demo](#after-the-demo-four-threads-worth-pulling).
 
 > This file names internal control identifiers and repository names. It is fine on
 > an internal branch; it is worth a deliberate look before anything here reaches a

@@ -84,7 +84,7 @@ with two different amounts of evidence behind it.
 ```sh
 cd /Users/jbpros/Projects/rego-evidence-report
 opa version && jq --version               # opa 1.19.0, jq-1.6+
-opa test src examples --ignore '*.json'   # PASS: 410/410
+opa test src examples --ignore '*.json'   # PASS: 415/415
 ```
 
 The deck: `python3 -m http.server 8000 --directory demo`, then
@@ -940,7 +940,7 @@ never sideways or up — calling `report` or `check_passed` from a custom op sto
 the *library* compiling. `CONTRIBUTING.md` has the layer stack.
 
 **"How do you know the library is right?"**
-410 tests across `src` and `examples`. But the differential harness in beat 6 is
+415 tests across `src` and `examples`. But the differential harness in beat 6 is
 the stronger evidence: the bespoke policy sits next to the port and the
 build breaks when they disagree.
 
