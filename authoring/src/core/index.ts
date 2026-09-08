@@ -13,11 +13,11 @@ import {fromMarkdown} from 'mdast-util-from-markdown'
 import {gfmTable} from 'micromark-extension-gfm-table'
 import {gfmTableFromMarkdown} from 'mdast-util-gfm-table'
 
-import type {Analysis, Block, Check, CustomOpRegistry, Diagnostic, PropertyDef, SubjectDef} from './types.ts'
+import type {Analysis, Block, Check, CustomOpRegistry, Diagnostic, PropertyDef, SubjectDef, SubjectSummary} from './types.ts'
 import {type Atom, type Ctx, RuleError, atomize, matchRecords, matchRule, plain, sentences} from './grammar.ts'
 import {parseConstantHead, parseSubject, parseTable} from './declare.ts'
 import {validateRequirements} from './validate.ts'
-import {renderPath} from './paths.ts'
+import {renderDeclared, renderPath} from './paths.ts'
 
 interface Node {
 	type: string
@@ -27,6 +27,8 @@ interface Node {
 	position?: {start: {line: number}; end: {line: number}}
 }
 
+const subjectKey = (s: string): string => s.toLowerCase().replace(/\*/g, '').replace(/\s+/g, ' ').trim()
+
 const lineOf = (n: Node): number => n.position?.start.line ?? 0
 const endOf = (n: Node): number => n.position?.end.line ?? lineOf(n)
 
@@ -35,10 +37,19 @@ function textOf(n: Node): string {
 	return (n.children ?? []).map(textOf).join('')
 }
 
+/** A declared subject, with the properties declared under it. Properties are
+ *  scoped per subject: two subjects may both have a `name`, and a rule resolves
+ *  against the subject its requirement is about. */
+interface SubjectEntry {
+	def: SubjectDef
+	props: Map<string, PropertyDef>
+}
+
 /** A requirement under construction. */
 interface Req {
 	name: string
 	line: number
+	subject: SubjectEntry | null
 	minSubjects?: number
 	require?: string
 	appliesTo: Record<string, Check>
@@ -53,15 +64,20 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 
 	const blocks: Block[] = []
 	const diagnostics: Diagnostic[] = []
+	const subjects = new Map<string, SubjectEntry>()
+	// Document-level constructs — substitutes, constants — are declared before
+	// any requirement picks a subject, so they resolve against every property
+	// declared anywhere.
+	const allProps = new Map<string, PropertyDef>()
+	let lastSubject: SubjectEntry | null = null
 	const ctx: Ctx = {
-		props: new Map<string, PropertyDef>(),
+		props: allProps,
 		constants: new Map<string, unknown[]>(),
 		substitutes: new Map<string, Check>(),
 		customOps: opts.customOps ?? {},
 	}
 	const customOpNames = new Set(Object.keys(ctx.customOps))
 
-	let subject: SubjectDef | null = null
 	let section: 'none' | 'subjects' | 'constants' | 'substitutes' | 'requirement' = 'none'
 	let req: Req | null = null
 	let listRole: 'scope' | 'checks' | 'patterns' | 'substitutes' | null = null
@@ -70,6 +86,15 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 
 	const err = (line: number, message: string): number => diagnostics.push({severity: 'error', line, message})
 	const warn = (line: number, message: string): number => diagnostics.push({severity: 'warning', line, message})
+
+	/** Point rule resolution at one subject's properties. */
+	const useSubject = (r: Req, entry: SubjectEntry | null): void => {
+		r.subject = entry
+		ctx.props = entry ? entry.props : allProps
+	}
+
+	/** The subject a requirement is about, when the document leaves it implicit. */
+	const soleSubject = (): SubjectEntry | null => (subjects.size === 1 ? [...subjects.values()][0]! : null)
 
 	/** Read one bullet as `name — rule sentence. description sentences.` */
 	const readRule = (item: Node): {name: string; check: Check; description: string} | null => {
@@ -142,7 +167,8 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 			const label = textOf(node).trim()
 
 			if ((node.depth ?? 1) >= 2 && last?.type === 'inlineCode') {
-				req = {name: last.value ?? '', line, appliesTo: {}, checks: {}}
+				req = {name: last.value ?? '', line, subject: null, appliesTo: {}, checks: {}}
+				useSubject(req, soleSubject())
 				reqs.push(req)
 				section = 'requirement'
 				listRole = null
@@ -167,8 +193,14 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 			}
 			const rows = (node.children ?? []) as {children?: {children?: unknown[]}[]}[]
 			try {
-				for (const [k, v] of parseTable(rows, (c) => textOf(c as Node))) ctx.props.set(k, v)
-				blocks.push({kind: 'properties', line, endLine: endOf(node), detail: `${ctx.props.size} properties`})
+				const parsed = parseTable(rows, (c) => textOf(c as Node))
+				if (!lastSubject) err(line, 'declare a subject before its properties')
+				for (const [k, v] of parsed) {
+					lastSubject?.props.set(k, v)
+					allProps.set(k, v)
+				}
+				blocks.push({kind: 'properties', line, endLine: endOf(node), detail: `${parsed.size} properties`,
+					label: lastSubject?.def.subjectType})
 			} catch (e) {
 				err(line, (e as Error).message)
 			}
@@ -182,7 +214,10 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 			if (section === 'subjects') {
 				const parsed = parseSubject(atoms, line)
 				if (parsed) {
-					subject = parsed
+					const key = parsed.subjectType.toLowerCase().replace(/\s+/g, ' ').trim()
+					if (subjects.has(key)) err(line, `a subject named "${parsed.subjectType}" is already declared`)
+					lastSubject = {def: parsed, props: new Map<string, PropertyDef>()}
+					subjects.set(key, lastSubject)
 					blocks.push({
 						kind: 'subject',
 						line,
@@ -216,8 +251,18 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: 'checks follow'})
 					continue
 				}
+				if ((m = /^(?:For|About) each \*?\*?(.+?)\*?\*?\.?$/i.exec(text)) && subjects.has(subjectKey(m[1] ?? ''))) {
+					const entry = subjects.get(subjectKey(m[1] ?? ''))!
+					useSubject(req, entry)
+					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: `subject: ${entry.def.subjectType}`})
+					continue
+				}
 				if ((m = /^At least (\d+|one) \S.* must be in scope\.?$/i.exec(text))) {
 					req.minSubjects = m[1] === 'one' ? 1 : Number(m[1])
+					// The bold span names the subject, and `plain` has already
+					// dropped the markup — so read the atom, not the text.
+					const key = subjectKey(atoms.find((a) => a.kind === 'prop')?.text ?? '')
+					if (!req.subject && subjects.has(key)) useSubject(req, subjects.get(key)!)
 					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: `min_subjects: ${req.minSubjects}`})
 					continue
 				}
@@ -307,14 +352,19 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 	// ---------------------------------------------------------------- emit
 
 	const requirements: Record<string, unknown> = {}
-	if (!subject) err(0, 'no subject declared: say `A **thing** is each of `path`, identified by its `path`.`')
+	if (subjects.size === 0) err(0, 'no subject declared: say `A **thing** is each of `path`, identified by its `path`.`')
 
 	for (const r of reqs) {
 		if (!Object.keys(r.checks).length) {
 			err(r.line, `${r.name}: declares no checks, so it asserts nothing`)
 			continue
 		}
+		if (!r.subject && subjects.size > 1) {
+			err(r.line, `${r.name}: several subjects are declared, so say which one this is about — \`For each **${[...subjects.values()][0]!.def.subjectType}**.\``)
+			continue
+		}
 		const out: Record<string, unknown> = {}
+		const subject = r.subject?.def
 		if (subject) {
 			out['subject_type'] = subject.subjectType
 			out['from'] = subject.from
@@ -329,8 +379,18 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 
 	diagnostics.push(...validateRequirements(requirements, customOpNames))
 
+	const summaries: SubjectSummary[] = [...subjects.values()].map((e) => ({
+		name: e.def.subjectType,
+		subjectType: e.def.subjectType,
+		from: e.def.from,
+		id: e.def.id,
+		line: e.def.line,
+		properties: [...e.props.values()].map((p) => ({display: p.display, path: p.path, pathText: renderDeclared(p.path, p.splits)})),
+	}))
+
 	return {
 		blocks,
+		subjects: summaries,
 		requirements,
 		diagnostics,
 		ok: !diagnostics.some((d) => d.severity === 'error'),

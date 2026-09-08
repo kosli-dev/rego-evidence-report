@@ -57,8 +57,21 @@ export interface Diagnostic {
 	message: string
 }
 
+/** A declared subject and the properties that belong to it. Part of the
+ *  analysis because an editor needs to show what a document declares, not only
+ *  what it compiles to. */
+export interface SubjectSummary {
+	name: string
+	subjectType: string
+	from: Path
+	id: Path
+	line: number
+	properties: Array<{display: string; path: Path; pathText: string}>
+}
+
 export interface Analysis {
 	blocks: Block[]
+	subjects: SubjectSummary[]
 	requirements: Record<string, unknown>
 	diagnostics: Diagnostic[]
 	/** True when nothing of severity 'error' was raised. */

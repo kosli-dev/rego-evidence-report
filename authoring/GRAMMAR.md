@@ -58,6 +58,43 @@ A rule naming an undeclared property is an **error**. This is deliberate: the
 library itself validates nothing, so a misspelled field silently becomes a check
 that can never pass. The transpiler is where that gets caught.
 
+### More than one subject
+
+A document may declare several, and a real control often must — an artifact, an
+attestation and a pull request are not the same kind of thing, live at different
+paths and are identified differently. Each subject sentence starts a new subject,
+and the property tables that follow it belong to that subject:
+
+```markdown
+An **artifact** is each of `artifacts`, identified by its `fingerprint`.
+
+| Property    | Path          |
+| ----------- | ------------- |
+| fingerprint | `fingerprint` |
+
+A **pull request** is each of `pull_requests`, identified by its `url`.
+
+| Property | Path       |
+| -------- | ---------- |
+| state    | `state`    |
+```
+
+**Properties are scoped to their subject.** Two subjects may each declare a
+`state`, and a rule resolves against its own requirement's subject only —
+reaching for another subject's property is an error, not a silent mis-binding.
+
+A requirement then says which subject it is about:
+
+| Prose | Effect |
+| --- | --- |
+| `For each **artifact**.` | this requirement's subject |
+| `At least one **artifact** must be in scope.` | the same, and `min_subjects` with it |
+
+With exactly one subject declared, neither line is needed. With more than one, a
+requirement that names none is an error — the alternative is guessing, and a
+requirement bound to the wrong subject produces a report that reads as though it
+judged something it never looked at.
+
 ### Requirements
 
 ```markdown

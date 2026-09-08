@@ -93,3 +93,15 @@ export function renderPath(path: Path): string {
 		.join('.')
 		.replace(/\.\[/g, '[')
 }
+
+/** Render a declared path the way it was written, `[]` boundaries included.
+ *  `renderPath` drops them because a compiled check's path has none — but a
+ *  property table is showing the author their own declaration, so losing the
+ *  boundary there makes the display disagree with the source. */
+export function renderDeclared(path: Path, splits: number[]): string {
+	const marks = new Set(splits)
+	return path
+		.map((seg, i) => (typeof seg === 'string' ? seg : renderPath([seg])) + (marks.has(i + 1) ? '[]' : ''))
+		.join('.')
+		.replace(/\.\[/g, '[')
+}
