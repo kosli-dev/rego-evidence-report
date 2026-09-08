@@ -84,7 +84,7 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 			name = atoms[0].text
 			rest = atoms.slice(1)
 			const sep = rest[0]
-			if (sep && sep.kind === 'text') rest = [{kind: 'text', text: sep.text.replace(/^\s*[—–-]\s*/, '')}, ...rest.slice(1)]
+			if (sep && sep.kind === 'text') rest = [{kind: 'text', text: sep.text.replace(/^\s*[\u2014\u2013-]\s*/, '')}, ...rest.slice(1)]
 		}
 		if (!name) {
 			err(line, 'a rule needs a name: put it in backticks at the start of the bullet')
@@ -146,7 +146,10 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 				reqs.push(req)
 				section = 'requirement'
 				listRole = null
-				blocks.push({kind: 'requirement', line, endLine: endOf(node), label: req.name, detail: label})
+				// The heading's own text, less the backticked name it ends with —
+				// repeating the label as its own description reads as a bug.
+				const prose = label.replace(/\s*`?[\w-]+`?$/, '').trim()
+				blocks.push({kind: 'requirement', line, endLine: endOf(node), label: req.name, detail: prose})
 				continue
 			}
 			const key = label.toLowerCase()
@@ -246,7 +249,14 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 			if (listRole === 'patterns' && pendingConstant) {
 				const patterns = (node.children ?? []).map((item) => plain(atomize(((item.children ?? [])[0]?.children ?? []) as never[])))
 				ctx.constants.set(pendingConstant, patterns)
-				blocks.push({kind: 'constant', line, endLine: endOf(node), label: pendingConstant, detail: `${patterns.length} patterns`})
+				// The heading paragraph and its list are one declaration, not two.
+				const head = blocks[blocks.length - 1]
+				if (head && head.kind === 'constant' && head.label === pendingConstant) {
+					head.endLine = endOf(node)
+					head.detail = `${patterns.length} patterns`
+				} else {
+					blocks.push({kind: 'constant', line, endLine: endOf(node), label: pendingConstant, detail: `${patterns.length} patterns`})
+				}
 				pendingConstant = null
 				listRole = null
 				continue

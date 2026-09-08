@@ -14,7 +14,7 @@ import {type Atom, normalize} from './grammar.ts'
 /** `A **deployment** is each of \`deployments\`, identified by its \`name\`.` */
 export function parseSubject(atoms: Atom[], line: number): SubjectDef | null {
 	const n = normalize(atoms)
-	const m = /^An? «p(\d+)» is each of «c(\d+)», identified by its «c(\d+)»\.?$/.exec(n.s)
+	const m = /^An? \u00abp(\d+)\u00bb is each of \u00abc(\d+)\u00bb, identified by its \u00abc(\d+)\u00bb\.?$/.exec(n.s)
 	if (!m) return null
 	return {
 		subjectType: (n.props[Number(m[1])] ?? '').trim(),
@@ -50,7 +50,7 @@ export function parseTable(rows: TableRowish[], cellText: (c: TableCellish) => s
  *  constant, whose patterns are the list that follows. */
 export function parseConstantHead(atoms: Atom[]): string | null {
 	const n = normalize(atoms)
-	const m = /^«p(\d+)»\s+(?:are|is)\b.*:$/.exec(n.s)
+	const m = /^\u00abp(\d+)\u00bb\s+(?:are|is)\b.*:$/.exec(n.s)
 	if (!m) return null
 	return (n.props[Number(m[1])] ?? '').toLowerCase().trim()
 }

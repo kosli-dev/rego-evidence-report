@@ -8,3 +8,5 @@ fieldkit/scratch/
 
 # The authoring transpiler's dependencies.
 authoring/node_modules/
+authoring/dist/
+.playwright-mcp/

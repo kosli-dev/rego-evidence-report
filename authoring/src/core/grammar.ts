@@ -99,8 +99,13 @@ export function normalize(atoms: Atom[]): Norm {
 	return {s: s.replace(/\s+/g, ' ').trim(), props, codes}
 }
 
-const P = '«p(\\d+)»'
-const C = '«c(\\d+)»'
+// Placeholder delimiters are written as \u escapes, here and in every regex
+// under core/. esbuild escapes string literals to ASCII but leaves regex
+// literals as raw UTF-8, so a raw guillemet or em dash silently breaks the
+// browser bundle on any page that does not decode as UTF-8. Node always
+// does, so the CLI never sees it.
+const P = '\\u00abp(\\d+)\\u00bb'
+const C = '\\u00abc(\\d+)\\u00bb'
 
 /** Look a property up tolerantly: rules read naturally in the singular even
  *  when the table declares a plural, and vice versa. */
