@@ -72,6 +72,10 @@ export interface SubjectSummary {
 export interface Analysis {
 	blocks: Block[]
 	subjects: SubjectSummary[]
+	/** Names a rule may refer to: `, or else \`initial_commit\`` and
+	 *  `treating **web-flow authors** as explained`. */
+	substitutes: string[]
+	constants: string[]
 	requirements: Record<string, unknown>
 	diagnostics: Diagnostic[]
 	/** True when nothing of severity 'error' was raised. */

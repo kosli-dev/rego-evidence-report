@@ -38,4 +38,5 @@ export function parse(markdown: string): unknown {
 }
 
 export {analyze, validateRequirements}
+export {VOCABULARY} from './core/grammar.ts'
 export const customOpNames = (): string[] => Object.keys(registry())

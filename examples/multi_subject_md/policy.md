@@ -10,7 +10,13 @@ about, and a rule can only reach the properties of its own subject — so a
 misplaced field is an error at authoring time rather than a check that quietly
 never passes.
 
-## Subjects
+## What gets judged
+
+Nothing below is keyed to these heading names. A subject is recognised by the
+shape of its own sentence, so call this section whatever your organisation calls
+it, at whatever heading level suits the document.
+
+### The artifact
 
 An **artifact** is each of `artifacts`, identified by its `fingerprint`.
 
@@ -18,6 +24,8 @@ An **artifact** is each of `artifacts`, identified by its `fingerprint`.
 | ----------- | ------------- |
 | fingerprint | `fingerprint` |
 | build       | `build_url`   |
+
+### The pull request
 
 A **pull request** is each of `pull_requests`, identified by its `url`.
 

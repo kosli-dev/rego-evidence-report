@@ -17,15 +17,32 @@ Everything that is not a rule is prose, and prose is never guessed at.
 
 ## Document structure
 
-| Section | Produces |
+**Headings are yours.** Their text and their level carry no meaning, with one
+exception: a heading ending in a backticked name opens a requirement, and a
+heading at the same level or shallower closes it. Everything else is found by
+its own shape, wherever it sits — so a section may be called "Subjects",
+"Considered items" or nothing at all, and a subject may sit under its own H3.
+
+| Written like this | Produces |
 | --- | --- |
-| `# Title` and any paragraph | prose. Kept in the document, not in the object. |
-| `## Subjects` | `subject_type`, `from`, `id`, and the property table |
-| `## Constants` | named lists reusable as `patterns` |
-| `## Substitutes` | named checks reusable as `substitute` |
-| `## Heading \`name\`` | one requirement named `name` |
+| `A **thing** is each of \`path\`, identified by its \`path\`.` | a subject |
+| a two-column table, second column paths | that subject's properties |
+| `**Name** are …:` then a list of `` `patterns` `` | a named constant |
+| a named bullet outside any requirement | a named substitute |
+| `## Any text \`name\`` | a requirement named `name` |
 | `In scope:` + bullets | that requirement's `applies_to` |
 | `Must hold:` + bullets | that requirement's `checks` |
+| anything else | prose, and never guessed at |
+
+Those last two are the **only** keywords in the language, and they are
+irreducible: a scope filter and a check are the same sentence in the same shape,
+and nothing can tell them apart from the outside. A list of named bullets with
+neither lead-in is an error — it used to be silently discarded, which took the
+scope filter with it and left a policy that had quietly stopped exempting
+anything.
+
+A declaration may appear anywhere, including after the requirement that uses it:
+the transpiler reads declarations first and rules second.
 
 ### Subjects
 

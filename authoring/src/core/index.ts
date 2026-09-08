@@ -49,7 +49,9 @@ interface SubjectEntry {
 interface Req {
 	name: string
 	line: number
+	depth: number
 	subject: SubjectEntry | null
+	subjectName: string | null
 	minSubjects?: number
 	require?: string
 	appliesTo: Record<string, Check>
@@ -61,15 +63,14 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 		extensions: [gfmTable()],
 		mdastExtensions: [gfmTableFromMarkdown()],
 	}) as unknown as Node
+	const nodes = tree.children ?? []
 
 	const blocks: Block[] = []
 	const diagnostics: Diagnostic[] = []
 	const subjects = new Map<string, SubjectEntry>()
-	// Document-level constructs — substitutes, constants — are declared before
-	// any requirement picks a subject, so they resolve against every property
-	// declared anywhere.
+	// Document-level constructs — substitutes, constants — belong to no one
+	// subject, so they resolve against every property declared anywhere.
 	const allProps = new Map<string, PropertyDef>()
-	let lastSubject: SubjectEntry | null = null
 	const ctx: Ctx = {
 		props: allProps,
 		constants: new Map<string, unknown[]>(),
@@ -78,26 +79,16 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 	}
 	const customOpNames = new Set(Object.keys(ctx.customOps))
 
-	let section: 'none' | 'subjects' | 'constants' | 'substitutes' | 'requirement' = 'none'
-	let req: Req | null = null
-	let listRole: 'scope' | 'checks' | 'patterns' | 'substitutes' | null = null
-	let pendingConstant: string | null = null
-	const reqs: Req[] = []
-
 	const err = (line: number, message: string): number => diagnostics.push({severity: 'error', line, message})
 	const warn = (line: number, message: string): number => diagnostics.push({severity: 'warning', line, message})
-
-	/** Point rule resolution at one subject's properties. */
-	const useSubject = (r: Req, entry: SubjectEntry | null): void => {
-		r.subject = entry
-		ctx.props = entry ? entry.props : allProps
+	const claimed = new Set<number>()
+	const claim = (i: number, block: Block): void => {
+		claimed.add(i)
+		blocks.push(block)
 	}
 
-	/** The subject a requirement is about, when the document leaves it implicit. */
-	const soleSubject = (): SubjectEntry | null => (subjects.size === 1 ? [...subjects.values()][0]! : null)
-
 	/** Read one bullet as `name — rule sentence. description sentences.` */
-	const readRule = (item: Node): {name: string; check: Check; description: string} | null => {
+	const readRule = (item: Node): {name: string; check: Check} | null => {
 		const para = (item.children ?? [])[0]
 		if (!para) return null
 		const atoms = atomize((para.children ?? []) as never[])
@@ -137,10 +128,10 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 
 		const check: Check = {...matched.check}
 		const descriptions: string[] = []
-		for (const s of sents.slice(1)) {
+		for (const sentence of sents.slice(1)) {
 			let record: Check | null = null
 			try {
-				record = matchRecords(s, ctx)
+				record = matchRecords(sentence, ctx)
 			} catch (e) {
 				err(line, `${name}: ${(e as Error).message}`)
 			}
@@ -148,208 +139,280 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 				check['inputs'] = [...((check['inputs'] as unknown[]) ?? []), record]
 				continue
 			}
-			descriptions.push(plain(s))
+			descriptions.push(plain(sentence))
 		}
 		// Trailing full stop dropped: every description in the existing specs is
 		// a phrase, not a sentence, and the report renders them inline.
 		const description = descriptions.join(' ').trim().replace(/\.$/, '')
 		if (description) check['description'] = description
 
-		return {name, check, description}
+		return {name, check}
 	}
 
-	for (const node of tree.children ?? []) {
-		const line = lineOf(node)
+	// ---------------------------------------------------------- regions
+	// A heading ending in a backticked name opens a requirement; a heading at
+	// the same depth or shallower closes it. Nothing else about a heading
+	// matters — its text is the author's, and a deeper heading stays inside.
 
-		if (node.type === 'heading') {
-			const kids = node.children ?? []
-			const last = kids[kids.length - 1]
-			const label = textOf(node).trim()
-
-			if ((node.depth ?? 1) >= 2 && last?.type === 'inlineCode') {
-				req = {name: last.value ?? '', line, subject: null, appliesTo: {}, checks: {}}
-				useSubject(req, soleSubject())
-				reqs.push(req)
-				section = 'requirement'
-				listRole = null
-				// The heading's own text, less the backticked name it ends with —
-				// repeating the label as its own description reads as a bug.
-				const prose = label.replace(/\s*`?[\w-]+`?$/, '').trim()
-				blocks.push({kind: 'requirement', line, endLine: endOf(node), label: req.name, detail: prose})
-				continue
+	const reqs: Req[] = []
+	const owner: Array<Req | null> = new Array(nodes.length).fill(null)
+	{
+		let open: Req | null = null
+		nodes.forEach((node, i) => {
+			if (node.type === 'heading') {
+				const depth = node.depth ?? 1
+				const kids = node.children ?? []
+				const last = kids[kids.length - 1]
+				if (last?.type === 'inlineCode') {
+					const label = textOf(node).trim()
+					open = {
+						name: last.value ?? '',
+						line: lineOf(node),
+						depth,
+						subject: null,
+						subjectName: null,
+						appliesTo: {},
+						checks: {},
+					}
+					reqs.push(open)
+					owner[i] = open
+					claim(i, {
+						kind: 'requirement',
+						line: lineOf(node),
+						endLine: endOf(node),
+						label: open.name,
+						detail: label.replace(/\s*`?[\w-]+`?$/, '').trim(),
+					})
+					return
+				}
+				if (open && depth <= open.depth) open = null
 			}
-			const key = label.toLowerCase()
-			section = key === 'subjects' ? 'subjects' : key === 'constants' ? 'constants' : key === 'substitutes' ? 'substitutes' : 'none'
-			listRole = section === 'substitutes' ? 'substitutes' : null
-			req = null
-			blocks.push({kind: 'prose', line, endLine: endOf(node), detail: label})
-			continue
+			owner[i] = open
+		})
+	}
+
+	// ---------------------------------------------------------- phase 1
+	// Declarations, found by their own shape, at any heading level and under
+	// any heading text. Order does not matter: a requirement may use a subject
+	// declared after it.
+
+	let lastSubject: SubjectEntry | null = null
+	let pendingConstant: {name: string; at: number; line: number} | null = null
+
+	nodes.forEach((node, i) => {
+		if (node.type === 'paragraph') {
+			const atoms = atomize((node.children ?? []) as never[])
+
+			const parsed = parseSubject(atoms, lineOf(node))
+			if (parsed) {
+				const key = subjectKey(parsed.subjectType)
+				if (subjects.has(key)) err(lineOf(node), `a subject named "${parsed.subjectType}" is already declared`)
+				lastSubject = {def: parsed, props: new Map<string, PropertyDef>()}
+				subjects.set(key, lastSubject)
+				pendingConstant = null
+				claim(i, {
+					kind: 'subject',
+					line: lineOf(node),
+					endLine: endOf(node),
+					label: parsed.subjectType,
+					detail: `from=${renderPath(parsed.from)} id=${renderPath(parsed.id)}`,
+				})
+				return
+			}
+
+			const name = parseConstantHead(atoms)
+			// Only a head if a list of patterns follows it — otherwise it is an
+			// ordinary paragraph that happens to end in a colon.
+			if (name && isPatternList(nodes[i + 1])) {
+				pendingConstant = {name, at: i, line: lineOf(node)}
+				claim(i, {kind: 'constant', line: lineOf(node), endLine: endOf(node), label: name})
+				return
+			}
+			pendingConstant = null
+			return
 		}
 
 		if (node.type === 'table') {
-			if (section !== 'subjects') {
-				blocks.push({kind: 'prose', line, endLine: endOf(node), detail: 'table'})
-				continue
-			}
+			if (!isPropertyTable(node)) return
 			const rows = (node.children ?? []) as {children?: {children?: unknown[]}[]}[]
 			try {
 				const parsed = parseTable(rows, (c) => textOf(c as Node))
-				if (!lastSubject) err(line, 'declare a subject before its properties')
+				if (!lastSubject) err(lineOf(node), 'declare a subject before its properties')
 				for (const [k, v] of parsed) {
 					lastSubject?.props.set(k, v)
 					allProps.set(k, v)
 				}
-				blocks.push({kind: 'properties', line, endLine: endOf(node), detail: `${parsed.size} properties`,
-					label: lastSubject?.def.subjectType})
+				claim(i, {
+					kind: 'properties',
+					line: lineOf(node),
+					endLine: endOf(node),
+					label: lastSubject?.def.subjectType,
+					detail: `${parsed.size} properties`,
+				})
 			} catch (e) {
-				err(line, (e as Error).message)
+				err(lineOf(node), (e as Error).message)
 			}
-			continue
+			pendingConstant = null
+			return
 		}
 
-		if (node.type === 'paragraph') {
+		if (node.type === 'list' && pendingConstant && pendingConstant.at === i - 1) {
+			const patterns = (node.children ?? []).map((item) => plain(atomize(((item.children ?? [])[0]?.children ?? []) as never[])))
+			ctx.constants.set(pendingConstant.name, patterns)
+			claim(i, {
+				kind: 'constant',
+				line: lineOf(node),
+				endLine: endOf(node),
+				label: pendingConstant.name,
+				detail: `${patterns.length} patterns`,
+			})
+			pendingConstant = null
+			return
+		}
+
+		if (node.type !== 'list') pendingConstant = null
+	})
+
+	// ---------------------------------------------------------- phase 2
+	// A named bullet outside any requirement is a substitute: same shape as a
+	// check, but belonging to the document rather than to one requirement.
+
+	nodes.forEach((node, i) => {
+		if (node.type !== 'list' || owner[i] || claimed.has(i)) return
+		if (!(node.children ?? []).some(isNamedBullet)) return
+		for (const item of node.children ?? []) {
+			const parsed = readRule(item)
+			if (!parsed) continue
+			ctx.substitutes.set(parsed.name, parsed.check)
+			blocks.push({
+				kind: 'substitute',
+				line: lineOf(item),
+				endLine: endOf(item),
+				label: parsed.name,
+				op: String(parsed.check['op']),
+			})
+		}
+		claimed.add(i)
+	})
+
+	// ---------------------------------------------------------- phase 3
+	// Requirements. Their subject is resolved first, so a rule inside one
+	// resolves properties against the right subject whatever the order.
+
+	const soleSubject = (): SubjectEntry | null => (subjects.size === 1 ? [...subjects.values()][0]! : null)
+
+	for (const r of reqs) {
+		const mine = nodes.map((n, i) => [n, i] as const).filter(([, i]) => owner[i] === r)
+
+		for (const [node] of mine) {
+			if (node.type !== 'paragraph') continue
 			const atoms = atomize((node.children ?? []) as never[])
-			const text = plain(atoms)
+			const bound = /^(?:For|About) each /i.test(plain(atoms)) || /must be in scope\.?$/i.test(plain(atoms))
+			if (!bound) continue
+			const key = subjectKey(atoms.find((a) => a.kind === 'prop')?.text ?? '')
+			if (subjects.has(key)) r.subjectName = key
+		}
+		r.subject = (r.subjectName ? subjects.get(r.subjectName) : null) ?? soleSubject()
+		ctx.props = r.subject ? r.subject.props : allProps
 
-			if (section === 'subjects') {
-				const parsed = parseSubject(atoms, line)
-				if (parsed) {
-					const key = parsed.subjectType.toLowerCase().replace(/\s+/g, ' ').trim()
-					if (subjects.has(key)) err(line, `a subject named "${parsed.subjectType}" is already declared`)
-					lastSubject = {def: parsed, props: new Map<string, PropertyDef>()}
-					subjects.set(key, lastSubject)
-					blocks.push({
-						kind: 'subject',
-						line,
-						endLine: endOf(node),
-						label: parsed.subjectType,
-						detail: `from=${renderPath(parsed.from)} id=${renderPath(parsed.id)}`,
-					})
-					continue
-				}
-			}
+		let role: 'scope' | 'checks' | null = null
 
-			if (section === 'constants') {
-				const name = parseConstantHead(atoms)
-				if (name) {
-					pendingConstant = name
-					listRole = 'patterns'
-					blocks.push({kind: 'constant', line, endLine: endOf(node), label: name})
-					continue
-				}
-			}
+		for (const [node, i] of mine) {
+			if (claimed.has(i)) continue
+			const line = lineOf(node)
 
-			if (req) {
+			if (node.type === 'paragraph') {
+				const atoms = atomize((node.children ?? []) as never[])
+				const text = plain(atoms)
 				let m: RegExpExecArray | null
+
 				if (/^In scope:?$/i.test(text)) {
-					listRole = 'scope'
-					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: 'applies_to follows'})
+					role = 'scope'
+					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: 'applies_to follows'})
 					continue
 				}
 				if (/^Must hold:?$/i.test(text)) {
-					listRole = 'checks'
-					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: 'checks follow'})
+					role = 'checks'
+					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: 'checks follow'})
 					continue
 				}
-				if ((m = /^(?:For|About) each \*?\*?(.+?)\*?\*?\.?$/i.exec(text)) && subjects.has(subjectKey(m[1] ?? ''))) {
-					const entry = subjects.get(subjectKey(m[1] ?? ''))!
-					useSubject(req, entry)
-					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: `subject: ${entry.def.subjectType}`})
+				if (/^(?:For|About) each /i.test(text) && r.subject) {
+					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: `subject: ${r.subject.def.subjectType}`})
 					continue
 				}
 				if ((m = /^At least (\d+|one) \S.* must be in scope\.?$/i.exec(text))) {
-					req.minSubjects = m[1] === 'one' ? 1 : Number(m[1])
-					// The bold span names the subject, and `plain` has already
-					// dropped the markup — so read the atom, not the text.
-					const key = subjectKey(atoms.find((a) => a.kind === 'prop')?.text ?? '')
-					if (!req.subject && subjects.has(key)) useSubject(req, subjects.get(key)!)
-					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: `min_subjects: ${req.minSubjects}`})
+					r.minSubjects = m[1] === 'one' ? 1 : Number(m[1])
+					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: `min_subjects: ${r.minSubjects}`})
 					continue
 				}
 				if (/^No minimum\b/i.test(text)) {
-					req.minSubjects = 0
-					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: 'min_subjects: 0'})
+					r.minSubjects = 0
+					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: 'min_subjects: 0'})
 					continue
 				}
 				if (/^One \S.* must satisfy all of these\.?$/i.test(text)) {
-					req.require = 'some'
-					blocks.push({kind: 'directive', line, endLine: endOf(node), detail: 'require: some'})
+					r.require = 'some'
+					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: 'require: some'})
 					continue
 				}
-			}
-
-			// Prose. Warn only if a sentence looks like a rule that failed to land.
-			for (const s of sentences(atoms)) {
-				try {
-					matchRule(s, ctx, true)
-				} catch (e) {
-					if (e instanceof RuleError) warn(line, e.message)
-				}
-			}
-			blocks.push({kind: 'prose', line, endLine: endOf(node), detail: text.slice(0, 60)})
-			continue
-		}
-
-		if (node.type === 'list') {
-			if (listRole === 'patterns' && pendingConstant) {
-				const patterns = (node.children ?? []).map((item) => plain(atomize(((item.children ?? [])[0]?.children ?? []) as never[])))
-				ctx.constants.set(pendingConstant, patterns)
-				// The heading paragraph and its list are one declaration, not two.
-				const head = blocks[blocks.length - 1]
-				if (head && head.kind === 'constant' && head.label === pendingConstant) {
-					head.endLine = endOf(node)
-					head.detail = `${patterns.length} patterns`
-				} else {
-					blocks.push({kind: 'constant', line, endLine: endOf(node), label: pendingConstant, detail: `${patterns.length} patterns`})
-				}
-				pendingConstant = null
-				listRole = null
 				continue
 			}
 
-			if (listRole === 'substitutes') {
-				for (const item of node.children ?? []) {
-					const parsed = readRule(item)
-					if (!parsed) continue
-					ctx.substitutes.set(parsed.name, parsed.check)
-					blocks.push({
-						kind: 'substitute',
-						line: lineOf(item),
-						endLine: endOf(item),
-						label: parsed.name,
-						op: String(parsed.check['op']),
-					})
+			if (node.type === 'list') {
+				if (!(node.children ?? []).some(isNamedBullet)) continue
+				if (!role) {
+					// The bug this replaces: a named list with no lead-in used to
+					// be dropped without a word, taking its scope filter with it.
+					err(line, `${r.name}: say what these are before the list — "Must hold:" for checks, "In scope:" for a scope filter`)
+					claimed.add(i)
+					continue
 				}
-				continue
-			}
-
-			if (req && (listRole === 'scope' || listRole === 'checks')) {
 				for (const item of node.children ?? []) {
 					const parsed = readRule(item)
 					if (!parsed) continue
-					const target = listRole === 'scope' ? req.appliesTo : req.checks
+					const target = role === 'scope' ? r.appliesTo : r.checks
 					if (target[parsed.name]) err(lineOf(item), `${parsed.name}: already defined in this requirement`)
 					target[parsed.name] = parsed.check
 					blocks.push({
-						kind: listRole === 'scope' ? 'scope' : 'rule',
+						kind: role === 'scope' ? 'scope' : 'rule',
 						line: lineOf(item),
 						endLine: endOf(item),
 						label: parsed.name,
 						op: String(parsed.check['op']),
-						detail: String(parsed.check['expression'] ?? ''),
 					})
 				}
-				continue
+				claimed.add(i)
 			}
-
-			blocks.push({kind: 'prose', line, endLine: endOf(node), detail: 'list'})
-			continue
 		}
-
-		blocks.push({kind: 'prose', line, endLine: endOf(node), detail: node.type})
 	}
 
-	// ---------------------------------------------------------------- emit
+	// ------------------------------------------------------------ prose
+	// Everything unclaimed. A sentence that looks like a rule and landed here
+	// is worth a word, because a rule read as prose is the silent failure.
+
+	ctx.props = allProps
+	nodes.forEach((node, i) => {
+		if (claimed.has(i)) return
+		const atoms = node.type === 'heading' || node.type === 'paragraph' ? atomize((node.children ?? []) as never[]) : []
+		if (node.type === 'paragraph')
+			for (const sentence of sentences(atoms)) {
+				try {
+					matchRule(sentence, ctx, true)
+				} catch (e) {
+					if (e instanceof RuleError) warn(lineOf(node), e.message)
+				}
+			}
+		blocks.push({
+			kind: 'prose',
+			line: lineOf(node),
+			endLine: endOf(node),
+			detail: atoms.length ? plain(atoms).slice(0, 90) : node.type,
+		})
+	})
+
+	blocks.sort((a, b) => a.line - b.line || a.endLine - b.endLine)
+
+	// ------------------------------------------------------------- emit
 
 	const requirements: Record<string, unknown> = {}
 	if (subjects.size === 0) err(0, 'no subject declared: say `A **thing** is each of `path`, identified by its `path`.`')
@@ -385,17 +448,53 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 		from: e.def.from,
 		id: e.def.id,
 		line: e.def.line,
-		properties: [...e.props.values()].map((p) => ({display: p.display, path: p.path, pathText: renderDeclared(p.path, p.splits)})),
+		properties: [...e.props.values()].map((p) => ({
+			display: p.display,
+			path: p.path,
+			pathText: renderDeclared(p.path, p.splits),
+		})),
 	}))
 
 	return {
 		blocks,
 		subjects: summaries,
+		substitutes: [...ctx.substitutes.keys()],
+		constants: [...ctx.constants.keys()],
 		requirements,
 		diagnostics,
 		ok: !diagnostics.some((d) => d.severity === 'error'),
 	}
 }
 
+/** A bullet naming a check: a leading code span. */
+function isNamedBullet(item: Node): boolean {
+	const para = (item.children ?? [])[0]
+	return (para?.children ?? [])[0]?.type === 'inlineCode'
+}
+
+/** A list whose every item is a single code span — the shape of a pattern
+ *  list under a constant, and nothing else. */
+function isPatternList(node: Node | undefined): boolean {
+	if (!node || node.type !== 'list') return false
+	const items = node.children ?? []
+	if (!items.length) return false
+	return items.every((item) => {
+		const kids = ((item.children ?? [])[0]?.children ?? []) as Node[]
+		return kids.length === 1 && kids[0]?.type === 'inlineCode'
+	})
+}
+
+/** A two-column table whose second column holds paths. An ordinary table in
+ *  the prose is not a declaration and must not be read as one. */
+function isPropertyTable(node: Node): boolean {
+	const rows = (node.children ?? []).slice(1)
+	if (!rows.length) return false
+	return rows.some((row) => {
+		const cells = row.children ?? []
+		return cells.length >= 2 && ((cells[1]?.children ?? []) as Node[]).some((c) => c.type === 'inlineCode')
+	})
+}
+
 export type {Analysis, Block, Diagnostic} from './types.ts'
+export {VOCABULARY, type Phrase} from './grammar.ts'
 export {validateRequirements} from './validate.ts'

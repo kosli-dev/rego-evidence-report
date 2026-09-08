@@ -159,34 +159,136 @@ function patternsOf(n: Norm, rest: string, ctx: Ctx): unknown[] {
 	return out
 }
 
+/**
+ * The leaf operators, as a table rather than a chain of regexes — because the
+ * reference an author reads has to be generated from the matcher, not written
+ * beside it. A hand-kept cheatsheet drifts from the parser within a month; this
+ * one cannot, since VOCABULARY below is built from these same entries.
+ */
+interface LeafPhrase {
+	prose: string
+	produces: string
+	re: RegExp
+	build: (m: RegExpExecArray, n: Norm, path: Path, ctx: Ctx) => Check
+}
+
+const val = (n: Norm, i: string | undefined): unknown => literal(n.codes[Number(i)] ?? '')
+
+const LEAVES: LeafPhrase[] = [
+	{
+		prose: 'the **X** must be present',
+		produces: 'present',
+		re: /^(?:be present|exist)$/,
+		build: (_m, _n, path) => ({op: 'present', path}),
+	},
+	{
+		prose: 'the **X** must be a non-empty string',
+		produces: 'non_empty_string',
+		re: /^be a non-empty string$/,
+		build: (_m, _n, path) => ({op: 'non_empty_string', path}),
+	},
+	{
+		prose: 'the **X** must be `value`',
+		produces: 'equals',
+		re: new RegExp(`^be ${C}$`),
+		build: (m, n, path) => ({op: 'equals', path, value: val(n, m[1])}),
+	},
+	{
+		prose: 'the **X** must be between `min` and `max`',
+		produces: 'range',
+		re: new RegExp(`^be between ${C} and ${C}$`),
+		build: (m, n, path) => ({op: 'range', path, min: val(n, m[1]), max: val(n, m[2])}),
+	},
+	{
+		prose: 'the **X** must include `value`',
+		produces: 'includes',
+		re: new RegExp(`^include ${C}$`),
+		build: (m, n, path) => ({op: 'includes', path, value: val(n, m[1])}),
+	},
+	{
+		prose: 'the **X** must not include `value`',
+		produces: 'excludes',
+		re: new RegExp(`^not include ${C}$`),
+		build: (m, n, path) => ({op: 'excludes', path, value: val(n, m[1])}),
+	},
+	{
+		prose: 'the **X** must match one of `pattern`, `pattern` (or a **constant**)',
+		produces: 'matches_any',
+		re: /^match one of (.+)$/,
+		build: (m, n, path, ctx) => ({op: 'matches_any', path, patterns: patternsOf(n, m[1] ?? '', ctx)}),
+	},
+	{
+		prose: 'the **X** must match none of `pattern`, `pattern` (or a **constant**)',
+		produces: 'not_matches_any',
+		re: /^match none of (.+)$/,
+		build: (m, n, path, ctx) => ({op: 'not_matches_any', path, patterns: patternsOf(n, m[1] ?? '', ctx)}),
+	},
+	{
+		prose: 'the **X** must be greater than / at least / less than / at most the **Y**',
+		produces: 'compare',
+		re: new RegExp(`^be (equal to|different from|greater than|at least|less than|at most) the ${P}$`),
+		build: (m, n, path, ctx) => twoSided(m, n, path, ctx, false),
+	},
+	{
+		prose: 'the **X** must be after / at or after / before / at or before the **Y**',
+		produces: 'compare_time',
+		re: new RegExp(`^be (after|at or after|before|at or before) the ${P}$`),
+		build: (m, n, path, ctx) => twoSided(m, n, path, ctx, true),
+	},
+]
+
+function twoSided(m: RegExpExecArray, n: Norm, path: Path, ctx: Ctx, time: boolean): Check {
+	const spec = CMP[m[1] ?? '']
+	const right = lookup(ctx, n.props[Number(m[2])] ?? '')
+	if (!spec) throw new RuleError(`unknown comparison "${m[1]}"`)
+	if (!right) throw new RuleError(`no declared property named "${n.props[Number(m[2])]}"`)
+	return {op: time ? 'compare_time' : 'compare', left: path, right: right.path, cmp: spec.cmp}
+}
+
 /** The predicate half of a leaf rule, applied at `path`. */
 function predicate(n: Norm, rest: string, path: Path, ctx: Ctx): Check {
-	let m: RegExpExecArray | null
-
-	if (/^(?:be present|exist)$/.test(rest)) return {op: 'present', path}
-	if (rest === 'be a non-empty string') return {op: 'non_empty_string', path}
-
-	if ((m = new RegExp(`^be ${C}$`).exec(rest))) return {op: 'equals', path, value: literal(n.codes[Number(m[1])] ?? '')}
-
-	if ((m = new RegExp(`^be between ${C} and ${C}$`).exec(rest)))
-		return {op: 'range', path, min: literal(n.codes[Number(m[1])] ?? ''), max: literal(n.codes[Number(m[2])] ?? '')}
-
-	if ((m = new RegExp(`^include ${C}$`).exec(rest))) return {op: 'includes', path, value: literal(n.codes[Number(m[1])] ?? '')}
-	if ((m = new RegExp(`^not include ${C}$`).exec(rest))) return {op: 'excludes', path, value: literal(n.codes[Number(m[1])] ?? '')}
-
-	if ((m = /^match one of (.+)$/.exec(rest))) return {op: 'matches_any', path, patterns: patternsOf(n, m[1] ?? '', ctx)}
-	if ((m = /^match none of (.+)$/.exec(rest))) return {op: 'not_matches_any', path, patterns: patternsOf(n, m[1] ?? '', ctx)}
-
-	if ((m = new RegExp(`^be (${Object.keys(CMP).join('|')}) the ${P}$`).exec(rest))) {
-		const spec = CMP[m[1] ?? '']
-		const right = lookup(ctx, n.props[Number(m[2])] ?? '')
-		if (!spec) throw new RuleError(`unknown comparison "${m[1]}"`)
-		if (!right) throw new RuleError(`no declared property named "${n.props[Number(m[2])]}"`)
-		return {op: spec.time ? 'compare_time' : 'compare', left: path, right: right.path, cmp: spec.cmp}
+	for (const entry of LEAVES) {
+		const m = entry.re.exec(rest)
+		if (m) return entry.build(m, n, path, ctx)
 	}
-
 	throw new RuleError(`no operator matches "${rest}"`)
 }
+
+/** Everything the transpiler recognises, for the reference an author reads.
+ *  The leaf half is the table above; nothing here is written twice. */
+export interface Phrase {
+	group: string
+	prose: string
+	produces: string
+}
+
+export const VOCABULARY: Phrase[] = [
+	{group: 'Declarations', prose: 'A **thing** is each of `path`, identified by its `path`.', produces: 'subject_type, from, id'},
+	{group: 'Declarations', prose: 'a two-column table: property name | `path`', produces: 'the subject\u2019s properties'},
+	{group: 'Declarations', prose: '**Name** are ... :  followed by a list of `patterns`', produces: 'a named constant'},
+	{group: 'Declarations', prose: 'a named bullet outside any requirement', produces: 'a named substitute'},
+	{group: 'Declarations', prose: '## Any heading text `requirement_name`', produces: 'a requirement'},
+
+	{group: 'Per requirement', prose: 'For each **subject**.', produces: 'which subject it is about'},
+	{group: 'Per requirement', prose: 'At least one **subject** must be in scope.', produces: 'min_subjects, and the subject'},
+	{group: 'Per requirement', prose: 'No minimum \u2014 ...', produces: 'min_subjects: 0'},
+	{group: 'Per requirement', prose: 'One **subject** must satisfy all of these.', produces: 'require: some'},
+	{group: 'Per requirement', prose: 'In scope:', produces: 'the bullets below are applies_to'},
+	{group: 'Per requirement', prose: 'Must hold:', produces: 'the bullets below are checks'},
+
+	...LEAVES.map((l) => ({group: 'Leaf operators', prose: l.prose, produces: l.produces})),
+
+	{group: 'Collections', prose: 'every **X** must have a **Y** of `value`', produces: 'all'},
+	{group: 'Collections', prose: 'at least one **X** must ...', produces: 'any'},
+	{group: 'Collections', prose: 'some **X** must ...', produces: 'any'},
+	{group: 'Collections', prose: 'a property whose path has one `[]` can be quantified; two give the `each` projection', produces: 'all / any with each'},
+
+	{group: 'Modifiers', prose: '..., or else `substitute_name`', produces: 'substitute'},
+	{group: 'Modifiers', prose: '..., treating **constant** as explained', produces: 'patterns, for a custom operator'},
+	{group: 'Modifiers', prose: 'Records the **X**\u2019 `field`.', produces: 'an extra entry in inputs'},
+
+	{group: 'Anatomy of a rule', prose: '- `name` \u2014 <rule sentence>. <the description.>', produces: 'one check, named, with its description'},
+]
 
 /** The clause inside `every X must …` / `at least one X must …`, addressed
  *  relative to one element of the collection. */
