@@ -1,0 +1,24 @@
+{
+  "name": "@kosli/evidence-authoring",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Markdown authoring surface for kosli.evidence requirements",
+  "bin": { "evidence-md": "./src/cli.ts" },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "mdast-util-from-markdown": "^2.0.2",
+    "mdast-util-gfm-table": "^2.0.0",
+    "micromark-extension-gfm-table": "^2.1.1",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

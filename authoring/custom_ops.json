@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "What a custom operator needs that the library cannot derive: its own",
+    "human-readable expression, and the fields it reads. Maintained beside the",
+    "Rego that defines the operator — examples/control_43_ops.rego — because",
+    "an op is a reusable library extension, not part of any one policy.",
+    "",
+    "`phrase` is the prose that selects it, after any leading quantifier.",
+    "`inputs` entries are either a path relative to the subject, or a",
+    "projection through the property the rule names.",
+    "",
+    "This is the one place a step-like translation layer returns: one entry",
+    "per operator, not one per sentence."
+  ],
+  "identities_resolved": {
+    "phrase": "have its identities resolved",
+    "expression": "some pull_request: (every commit: author_username resolves or author is web-flow) or (every approver: username resolves)",
+    "inputs": [{"each": ["commits"]}, {"each": ["approvers"]}]
+  },
+  "independently_approved": {
+    "phrase": "be independently approved",
+    "expression": "some pull_request: every author: some approver != author where state == APPROVED and timestamp > max(commits[].timestamp)",
+    "inputs": [{"subject": ["name"]}, {"each": ["approvers"]}, {"each": ["commits"]}]
+  }
+}

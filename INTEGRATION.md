@@ -1321,38 +1321,91 @@ generate is exactly the requirements object** — a real control's rule, custom
 operators included — and everything around it stays a small Rego shim written
 once per policy. This is a front-end project, not a library project.
 
-### Markdown as the authoring surface
+### Markdown as the authoring surface — **verified**
 
-The stronger version of the same idea: controls written as prose. The argument
-that this is feasible *for this library specifically* is that *the library
-already goes the other way* — `leaf_describe` and its callers render prose from a
-spec, which is what a row's `expression` is:
+The stronger version of the same idea: controls written as prose. It works, and
+control 43 is written that way in `examples/control_43_md/policy.md`.
 
-```json
-{"op": "all", "path": ["ci_checks"],
- "check": {"op": "equals", "path": ["conclusion"], "value": "success"},
- "expression": "every ci_checks: conclusion == success"}
+The argument that this is feasible *for this library specifically* is that the
+library already goes the other way — `leaf_describe` and its callers render
+prose from a spec, which is what a row's `expression` is. A Markdown front end
+is that correspondence run backwards over a vocabulary of **thirteen
+operators**: small enough to parse, and already carrying a canonical rendering
+to check a parse against.
+
+What distinguishes it from Gherkin/Cucumber and from Varar is that there is **no
+user-defined translation layer** — no steps. Steps exist because those tools
+target arbitrary code, an open semantic space. Here the target is closed, so
+prose does not have to mean anything; it only has to select an operator and fill
+its slots.
+
+Two conventions carry the whole notation, and `authoring/GRAMMAR.md` is the
+contract:
+
+- **bold** is a declared property. A sentence is read as a rule *only* if it
+  references one, which is what lets rationale say "must" as often as it likes
+  without being parsed.
+- `code` is a path, a literal, or an identifier.
+
+Declaring the subject is not an extra burden: `A **commit** is each of
+\`trails\`, identified by its \`name\`.` yields `subject_type`, `from` and `id`,
+which the requirement needs anyway. The property table is what makes a real
+control's paths sayable — control 43 addresses
+`compliance_status.attestations_statuses[attestation_type=pull_request].pull_requests`,
+which no prose survives inline, and which is written once and then called
+**pull requests**.
+
+`examples/control_43_md_test.rego` pins the result:
+
+```rego
+data.control_43_md.requirements == data.control43.requirements
 ```
 
-A Markdown front end is that correspondence run backwards over a vocabulary of
-**thirteen operators** — a small enough surface to parse, and one that already
-has a canonical rendering to check a parse against.
+So prose produces control 43's object exactly — two requirements over one
+subject, selector paths, a substitute shared by four checks, and both custom
+operators — and the report over `demo/trail_self_approved.json` is identical to
+the Rego spelling's. The same holds for the toy policy.
 
-The design constraint worth stating up front: **Markdown compiles to the
-requirements object, and the object remains what gets hashed and attested.** If
-prose becomes the source of truth for a verdict, the hashable-artefact property
-this library exists to provide is gone. Markdown is an authoring and review
-surface — which is the actual win, because it is a surface a compliance officer
-can read and write.
+**What a custom operator costs.** It needs `expression` and `inputs` on the
+check, and `inputs` is too technical for prose, so `authoring/custom_ops.json`
+holds them, keyed by operator and maintained beside the Rego that defines it.
+This is the one place a step-like translation layer returns — **one entry per
+operator**, not one per sentence, and two entries cover this repo.
 
-Prior art to look at: **Varar** (<https://varar.dev>, Aslak Hellesøy), described
-to us as the successor to Gherkin and presenting itself as
-documentation-as-executable-tests, where each Markdown paragraph or table row runs
-as its own example. Of direct interest here is its **drift detection**: when prose
-is reworded so it no longer matches the code steps, it raises an amber marker
-rather than silently passing. That is the same problem as the fourth row of the
-open-questions slide — a harness that cannot see one of the two artefacts it holds
-go stale. Worth asking how they resolve it, because we have a live instance of it.
+**The transpiler has to be the validator**, because the library is not and
+cannot be: every rule defaults to `false`, so a misspelled `op`, or a `values`
+where the operator wanted `value`, produces a well-formed report in which the
+check merely never passes. `--lint` checks any requirements object against the
+closed vocabulary, including the hand-written YAML ones, and is worth having
+independently of Markdown.
+
+**Drift is caught by diff, not by heuristics.** Varar's answer to prose that
+stopped matching is an amber marker, remembered out of band. Here the Markdown
+compiles to a committed object, so a check that used to compile and no longer
+does is a diff — `--check` fails the build naming what was lost. Reworded a rule
+into a paragraph by accident and it reads as prose? The object says so. Deleting
+a rule on purpose means committing the deletion, which is visible in review.
+
+**The design constraint, unchanged:** Markdown compiles to the requirements
+object, and the object remains what gets hashed and attested. If prose became
+the source of truth for a verdict, the hashable-artefact property this library
+exists to provide would be gone.
+
+**What it does not carry yet.** A *requirement's* rationale. The report projects
+a requirement as exactly `{require, satisfied, subjects, checks}`, so prose
+attached to a requirement lives in the Markdown and never reaches the report —
+and this is the biggest thing the Markdown surfaces and then fails to deliver,
+since 60 of the 122 lines inside `control_43.rego`'s requirements object are
+exactly that kind of comment. Carrying `description` through the requirement
+projection is a small additive library change, and is the next one to make.
+
+Prior art: **Varar** (<https://varar.dev>, Aslak Hellesøy), the successor to
+Gherkin, presenting itself as documentation-as-executable-tests where each
+Markdown paragraph runs as its own example. Its drift detection is the part that
+mattered here — *"instead of silently dropping to prose (losing that test),
+Varar flags it as drift"* — and it is the same problem as the fourth row of the
+open-questions slide. The difference is that a committed compile target gives us
+the memory it has to keep separately.
 
 ### Porting an imperative Rego policy: what it actually costs
 
@@ -1536,6 +1589,17 @@ TypeScript on a machine with access to them.
   control 43 are the same object. What stays Rego: computed specs, the
   `--params` fallback, the entry point and output projections.
   See [After the demo](#after-the-demo-four-threads-worth-pulling).
+- **Confirmed by running it:** that **Markdown prose compiles to that same
+  object**, with no user-defined translation layer. `examples/control_43_md/policy.md`
+  is control 43 written as prose, and
+  `data.control_43_md.requirements == data.control43.requirements` — selector
+  paths, a shared substitute and both custom operators included. Six tests pin
+  it. The transpiler (`authoring/`, TypeScript, a pure core plus a CLI shell)
+  also validates the closed vocabulary, which the library cannot do for itself,
+  and `--check` catches a rule that silently stopped compiling by diffing
+  against the committed object. Not carried: requirement-level rationale, which
+  the report has no field for.
+  See [Markdown as the authoring surface](#markdown-as-the-authoring-surface--verified).
 
 > This file names internal control identifiers and repository names. It is fine on
 > an internal branch; it is worth a deliberate look before anything here reaches a

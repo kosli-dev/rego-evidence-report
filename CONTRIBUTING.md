@@ -235,3 +235,28 @@ do. Both kinds still land in the same array, with `$well_formed` sorted first,
 because it only arises from a malformed policy that the policy's own tests
 should catch long before production. If that turns out to confuse people, adding
 a `category` field to violation entries is purely additive.
+
+## Regenerating the Markdown-authored specs
+
+`examples/prod_deploy_md/` and `examples/control_43_md/` hold a control written
+as prose plus the `data.yaml` compiled from it. The generated file is committed,
+because it is what OPA loads and what gets hashed and attested — the Markdown is
+the source of truth, not the artefact.
+
+```sh
+npx tsx authoring/src/cli.ts examples/control_43_md/policy.md \
+    -o examples/control_43_md/data.yaml
+npx tsx authoring/src/cli.ts examples/control_43_md/policy.md --check
+npx tsx authoring/src/cli.ts examples/control_43_md/policy.md --explain
+```
+
+**`opa test` cannot see the Markdown.** It compares the generated `data.yaml`
+against `examples/control_43.rego`, so editing `policy.md` without regenerating
+leaves the suite green and the prose lying. `--check` is the step that closes
+that: it recompiles and fails naming any check that no longer compiles, is new,
+or changed. Run it after touching a `policy.md`.
+
+`--lint` validates any requirements object, including the hand-written YAML
+ones, against the closed operator vocabulary. It exists because the library
+validates nothing and cannot — every rule defaults to false, so a misspelled
+`op` is a check that never passes rather than an error.

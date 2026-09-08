@@ -91,6 +91,10 @@ becomes the check's `description` — which is what `violations` reports and wha
 an auditor reads. The rule is stated once, not once in code and again in a
 description maintained beside it.
 
+The description's trailing full stop is dropped, because every description in
+the existing specs is a phrase rather than a sentence and the report renders
+them inline.
+
 ## Operators
 
 Ten leaf operators, over a declared property:

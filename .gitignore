@@ -5,3 +5,6 @@
 # so that `git reset --hard` (the refresh on a pull-only machine) can't destroy
 # them, and so confidential input can't be committed by accident.
 fieldkit/scratch/
+
+# The authoring transpiler's dependencies.
+authoring/node_modules/
