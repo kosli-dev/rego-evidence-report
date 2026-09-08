@@ -18,12 +18,15 @@
 # policy reads null. Loading the directory is also what `opa test` does, so the
 # tests and this command see the same tree.
 #
-# WHAT THIS DOES NOT SHOW. A data document cannot carry a custom op, because
-# `op_passed` is a Rego rule — so control 43 has no pure-data spelling. Nor can
-# it carry computation: examples/control_1068.rego reads its flavour tables from
-# `data.params` with a literal fallback, and "read from params, else default" is
-# Rego, not data. What a data document holds is the requirements object itself,
-# which is the part a non-Rego front end would generate.
+# This is the toy policy, and it uses no custom op. For the case that matters —
+# a real control whose spec names custom ops, resolved from a separate ops file —
+# see examples/control_43_spec/data.yaml.
+#
+# WHAT A DATA DOCUMENT STILL CANNOT CARRY: computation. examples/control_1068.rego
+# reads its flavour tables from `data.params` with a literal fallback, and "read
+# from params, else default" is Rego, not data. Nor the entry point above, nor an
+# output projection. What it holds is the requirements object itself, which is
+# the part a non-Rego front end would generate.
 package prod_deploy_as_data
 
 import data.kosli.evidence

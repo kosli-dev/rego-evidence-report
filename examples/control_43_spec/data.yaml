@@ -1,0 +1,78 @@
+# Control 43's requirements, written as YAML instead of Rego.
+#
+# This is the interesting half of the "requirements as data" claim, because
+# control 43 is the hardest control here and needs TWO custom ops. It gets them
+# from examples/control_43_ops.rego, unmodified: custom ops are contributed into
+# `package kosli.evidence` from a file of their own and dispatch on `check.op`,
+# so they never reference the policy. A spec loaded from a data document reaches
+# them exactly as a Rego spec does.
+#
+#   opa eval --ignore '*.json' -d src/library.rego -d examples \
+#     -i demo/trail_self_approved.json --format=json 'data.control43.report'
+#
+# ... is byte-identical to the same query driven from this file. The pin that
+# keeps it that way is examples/control_43_as_data_test.rego, which asserts this
+# object equals examples/control_43.rego's — so a change there breaks the build
+# until this follows. Same arrangement as the parity harness, one level up.
+#
+# WHAT IS NOT HERE, and cannot be. examples/control_43.rego also holds the
+# violations projection (`check_priority` and the collapse to one string per
+# commit), `allow`, and the `data.params` fallback for web_flow_patterns —
+# "read from params, else default" is Rego, not data, so the patterns below are
+# the literal defaults. YAML anchors stand in for the `array.concat` the Rego
+# spelling uses to keep the selector paths DRY.
+requirements:
+  commits_present:
+    subject_type: commit
+    from: [trails]
+    id: [name]
+    min_subjects: 1
+    checks:
+      commit_identified:
+        description: The trail names the commit it covers
+        op: non_empty_string
+        path: [name]
+  commit_reviewed:
+    subject_type: commit
+    from: [trails]
+    id: [name]
+    min_subjects: 0
+    checks:
+      pr_attestation_present:
+        description: Pull request review data was collected for this commit
+        op: present
+        path: &pr_att [compliance_status, attestations_statuses, {where: {attestation_type: pull_request}}]
+        substitute: &initial
+          description: A compliant initial-commit-by-verified-committer attestation stands in for the pull request an initial commit cannot have
+          op: equals
+          path: [compliance_status, attestations_statuses, {where: {attestation_type: "custom:initial-commit-by-verified-committer"}}, is_compliant]
+          value: true
+      pull_request_found:
+        description: The commit is associated with at least one pull request
+        op: any
+        path: &prs [compliance_status, attestations_statuses, {where: {attestation_type: pull_request}}, pull_requests]
+        check: {op: present, path: []}
+        inputs:
+          - {path: *prs, each: [url]}
+        substitute: *initial
+      identities_resolved:
+        description: Some pull request has every branch commit linked to a GitHub account or explained as a web-flow commit, or else has every one of its approvers resolved
+        op: identities_resolved
+        expression: "some pull_request: (every commit: author_username resolves or author is web-flow) or (every approver: username resolves)"
+        path: *prs
+        patterns: &wf ['^svc_[a-zA-Z0-9_-]+ <[^>]+>$', '^.*?\[bot\] <[^>]+>$', '^GitHub <noreply@github.com>$']
+        inputs:
+          - {path: *prs, each: [commits]}
+          - {path: *prs, each: [approvers]}
+        substitute: *initial
+      independently_approved:
+        description: Some pull request has an approval from someone other than each of its authors, after its latest commit
+        op: independently_approved
+        expression: "some pull_request: every author: some approver != author where state == APPROVED and timestamp > max(commits[].timestamp)"
+        path: *prs
+        patterns: *wf
+        inputs:
+          - [name]
+          - {path: *prs, each: [approvers]}
+          - {path: *prs, each: [commits]}
+        substitute: *initial

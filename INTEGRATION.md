@@ -1288,21 +1288,38 @@ neither needs a build step. `examples/prod_deploy_as_data_test.rego` pins the
 YAML's meaning in five tests, so this stays a fact rather than becoming a claim
 nobody re-checks.
 
-**What a data document cannot carry**, which is the honest limit of the idea:
+**Custom ops work from a YAML spec too**, which was not obvious and is the part
+that decides how far the idea reaches. A custom op is contributed into `package
+kosli.evidence` from a file of its own and dispatches on `check.op` — it never
+references the policy. So a spec loaded from a data document reaches it exactly
+as a Rego spec does, and the op file is a reusable library extension rather than
+part of any one policy.
 
-1. **Custom ops.** `op_passed` is a Rego rule, so control 43 has no pure-data
-   spelling — it needs `independently_approved` and `identities_resolved`.
-2. **Computation that builds the spec.** `examples/control_1068.rego` reads its
+`examples/control_43_spec/data.yaml` is the proof, because control 43 is the
+hardest control here and needs two of them. With `examples/control_43_ops.rego`
+unmodified, it produces a report byte-identical to `examples/control_43.rego`'s
+over `demo/trail_self_approved.json`, and
+`examples/control_43_as_data_test.rego` pins the two specs as the same object —
+so a change to the Rego spelling breaks the build until the YAML follows. That is
+the parity harness's arrangement one level up, which is what makes keeping a
+second spelling of a policy safe.
+
+**What a data document still cannot carry**, which is the honest limit:
+
+1. **Computation that builds the spec.** `examples/control_1068.rego` reads its
    flavour tables from `data.params` with a literal fallback, and "read from
    params, else default" is Rego, not data. Its `permitted_options` comprehension
    is only sugar — YAML could write the three options out literally — but the
-   parameterisation is not.
-3. **The entry point and any output projection.** The four-line wrapper above,
-   and 1068's `permitted_tickets`/`non_permitted_tickets` lists.
+   parameterisation is not. Control 43's YAML has the same hole: it holds
+   `web_flow_patterns`' literal defaults and loses the `--params` override.
+2. **The entry point and any output projection.** The four-line wrapper above,
+   control 43's `check_priority` and its collapse to one string per commit, and
+   1068's `permitted_tickets`/`non_permitted_tickets` lists.
 
-So the surface a non-Rego front end has to generate is exactly the requirements
-object, and everything else stays a small Rego shim. **This is a front-end
-project, not a library project.**
+Neither is a barrier to a front end. **The surface a non-Rego front end has to
+generate is exactly the requirements object** — a real control's rule, custom
+operators included — and everything around it stays a small Rego shim written
+once per policy. This is a front-end project, not a library project.
 
 ### Markdown as the authoring surface
 
@@ -1511,9 +1528,13 @@ TypeScript on a machine with access to them.
   Kosli UI, exists in the CLI source on `main` but not in 2.13.1.
 - **Confirmed by running it, after the demo:** that a requirements object loaded
   from a YAML or JSON data document produces a report byte-identical to the Rego
-  spelling of the same rule, with no library change. `examples/prod_deploy_spec/`
-  and `examples/prod_deploy_as_data.rego`, pinned by five tests. The limits are
-  stated with it: custom ops, computed specs and output projections stay Rego.
+  spelling of the same rule, with no library change — for the toy policy
+  (`examples/prod_deploy_spec/`) and for **control 43 with both its custom ops**
+  (`examples/control_43_spec/`), since an op file is contributed to `package
+  kosli.evidence` and dispatches on `check.op` rather than belonging to a policy.
+  Pinned by eight tests, one of which asserts the YAML and Rego spellings of
+  control 43 are the same object. What stays Rego: computed specs, the
+  `--params` fallback, the entry point and output projections.
   See [After the demo](#after-the-demo-four-threads-worth-pulling).
 
 > This file names internal control identifiers and repository names. It is fine on
