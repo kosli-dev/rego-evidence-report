@@ -228,6 +228,22 @@ textarea:focus { outline:none; }
 .y-lit { color:var(--warn); }
 .yaml { margin:0; padding:.85rem .9rem 2rem; font-family:var(--mono); font-size:.75rem; line-height:1.75;
   white-space:pre; overflow:auto; color:var(--ink); }
+/* The YAML tab is an editor, not a readout: a highlighted <pre> under a
+   transparent <textarea>, sharing every metric so the caret lands on the
+   character it is drawn over. */
+.ywrap { position:absolute; inset:0; }
+.ywrap .yaml, .ywrap textarea { position:absolute; inset:0; padding:.85rem .9rem 2.4rem;
+  font-family:var(--mono); font-size:.75rem; line-height:1.75; white-space:pre; overflow:auto; }
+.ywrap .yaml { pointer-events:none; }
+.ywrap textarea { margin:0; border:0; background:transparent; color:transparent; caret-color:var(--rule);
+  resize:none; outline:none; tab-size:2; }
+.ywrap textarea::selection { background:var(--rule-wash); }
+.ystat { position:absolute; left:0; right:0; bottom:0; padding:.4rem .9rem; font-size:.7rem;
+  border-top:1px solid var(--hairline); background:var(--paper); color:var(--muted);
+  display:flex; gap:.5rem; align-items:baseline; }
+.ystat b { font-family:var(--mono); font-size:.62rem; text-transform:uppercase; letter-spacing:.08em; }
+.ystat.good b { color:var(--rule); } .ystat.bad b { color:var(--err); } .ystat.warn b { color:var(--warn); }
+.ystat span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .empty { padding:1.5rem .9rem; color:var(--faint); font-size:.85rem; font-family:var(--serif); font-style:italic; }
 .legend { display:flex; flex-wrap:wrap; align-items:baseline; gap:.3rem 1.1rem; padding:.45rem .9rem;
   border-top:1px solid var(--hairline); background:var(--sunk); font-size:.68rem; color:var(--muted); }
@@ -759,15 +775,104 @@ function render(result) {
     ? 'Blocks sit at the same height as the lines they came from.'
     : tab === 'policy'
       ? 'Rendered expressions come from the Rego library via OPA, so a check shows its compiled shape here.'
-      : '';
+      : tab === 'yaml'
+        ? 'Editable. Only the bullets that changed are rewritten \u2014 the prose around them is never addressed.'
+        : '';
   if (tab === 'blocks') viewBlocks(result);
   else if (tab === 'policy') viewPolicy(result);
   else if (tab === 'doc') viewDoc(result);
   else if (tab === 'ref') viewRef();
-  else {
-    const pre = el('pre', 'yaml');
-    pre.append(highlightYaml(result.yaml.trim() || '# nothing compiled yet'));
-    panel.replaceChildren(pre);
+  else viewYaml(result);
+}
+
+/* ---------- the YAML tab, which writes back ---------- */
+//
+// Markdown stays the document of record. A YAML edit is never turned back into
+// a document — it is diffed against the compiled object, and the differences
+// are patched into the bullets that produced them. Everything else in the file,
+// the rationale paragraphs included, is never addressed and so never moves.
+
+let ybox = null, ydirty = false, ytimer = 0;
+
+function buildYaml() {
+  const wrap = el('div', 'ywrap');
+  const pre = el('pre', 'yaml');
+  const area = document.createElement('textarea');
+  area.spellcheck = false;
+  area.setAttribute('aria-label', 'Requirements YAML');
+  const stat = el('div', 'ystat');
+  stat.hidden = true;
+  wrap.append(pre, area, stat);
+
+  const paint = () => {
+    pre.replaceChildren(highlightYaml(area.value));
+    pre.scrollTop = area.scrollTop;
+    pre.scrollLeft = area.scrollLeft;
+  };
+  area.addEventListener('scroll', () => { pre.scrollTop = area.scrollTop; pre.scrollLeft = area.scrollLeft; });
+  area.addEventListener('input', () => {
+    ydirty = true;
+    paint();
+    clearTimeout(ytimer);
+    ytimer = setTimeout(writeBack, 400);
+  });
+  // Leaving the pane accepts the canonical spelling of whatever landed.
+  area.addEventListener('blur', () => { ydirty = false; if (last) { area.value = last.yaml.trim(); paint(); } });
+  area.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const at = area.selectionStart;
+    area.setRangeText('  ', at, area.selectionEnd, 'end');
+    area.dispatchEvent(new Event('input'));
+  });
+
+  ybox = { wrap, pre, area, stat, paint };
+  return ybox;
+}
+
+function say(kind, label, text) {
+  const stat = ybox.stat;
+  stat.className = 'ystat' + (kind ? ' ' + kind : '');
+  stat.hidden = !text;
+  stat.replaceChildren(el('b', null, label), el('span', null, text));
+}
+
+function writeBack() {
+  const res = EvidenceMD.applyYaml(src.value, ybox.area.value);
+  if (res.error) return say('warn', 'yaml', res.error);
+
+  // A change with no prose form is refused by name rather than approximated,
+  // and drift is the same refusal caught by recompiling: either way nothing is
+  // written, so a half-understood edit can never damage the document.
+  // Drift after a refusal is the refusal seen again from the other side, so
+  // only report it on its own: there it means the writer, not the edit, is at
+  // fault, and that is worth saying loudly.
+  const refused = res.refusals.length ? res.refusals : res.drift.map((d) => d + ' \u2014 no prose form');
+  if (refused.length) return say('bad', 'not applied', refused.join(' \u00b7 '));
+
+  if (res.markdown === src.value) return say('', 'in sync', 'the Markdown already says this');
+  src.value = res.markdown;
+  compile();
+  say('good', 'patched', res.changes.join(' \u00b7 '));
+  // Point at the bullet that moved. The edit was made over here; the proof
+  // that only that bullet moved is over there.
+  const moved = last.blocks.find((b) => (b.kind === 'rule' || b.kind === 'scope') && b.label === res.touched[0]);
+  if (moved) {
+    src.scrollTop = Math.max(0, (moved.line - 1) * LH - 80);
+    for (let i = moved.line; i <= moved.endLine; i++) {
+      const g = gutter.children[i - 1];
+      if (g) { g.classList.add('hit'); setTimeout(() => g.classList.remove('hit'), 900); }
+    }
+  }
+}
+
+function viewYaml(result) {
+  const box = ybox ?? buildYaml();
+  if (panel.firstChild !== box.wrap) panel.replaceChildren(box.wrap);
+  if (!ydirty) {
+    box.area.value = result.yaml.trim() || '# nothing compiled yet';
+    box.paint();
+    box.stat.hidden = true;
   }
 }
 
@@ -829,6 +934,7 @@ $('s-reset').addEventListener('click', () => { store.del(current); load(current)
 const TABS = [['t-blocks','blocks'],['t-policy','policy'],['t-doc','doc'],['t-yaml','yaml'],['t-ref','ref']];
 for (const [id, name] of TABS) $(id).addEventListener('click', () => {
   tab = name;
+  ydirty = false;
   for (const [i, n] of TABS) $(i).setAttribute('aria-selected', String(n === name));
   panel.scrollTop = 0;
   if (last) render(last);

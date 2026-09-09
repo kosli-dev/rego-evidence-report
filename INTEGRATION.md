@@ -1386,6 +1386,21 @@ does is a diff — `--check` fails the build naming what was lost. Reworded a ru
 into a paragraph by accident and it reads as prose? The object says so. Deleting
 a rule on purpose means committing the deletion, which is visible in review.
 
+**Either surface, one document.** Markdown does not have to be adopted before it
+is useful: the YAML is editable too, and an edit made there is written back into
+the Markdown that produced it. It is never *regenerated* — regeneration would be
+lossy, because the rationale is not in the object. What is applied is the diff:
+every difference between the compiled object and the edited one names a
+construct, every construct has a recorded source range, and the patch rewrites
+those ranges and nothing else. Changing a threshold in the YAML rewrites one
+bullet; the paragraphs around it are never addressed, so they cannot move. An
+edit with no prose form is refused by name — and refused *wholesale*, because
+the patch is recompiled and kept only if it says exactly what was asked for, so
+an incomplete writer surfaces as a refusal rather than as damaged prose. An
+engineer can keep editing the object and let the prose accrete around them;
+`npm run roundtrip` holds that over the real policies. `--apply` does the same
+from the command line.
+
 **The design constraint, unchanged:** Markdown compiles to the requirements
 object, and the object remains what gets hashed and attested. If prose became
 the source of truth for a verdict, the hashable-artefact property this library

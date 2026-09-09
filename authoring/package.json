@@ -11,7 +11,8 @@
     "build": "tsc",
     "check": "tsc --noEmit",
     "bundle": "esbuild src/web.ts --bundle --format=iife --global-name=EvidenceMD --minify --target=es2022 --outfile=dist/web.js",
-    "editor": "node editor/build.mjs"
+    "editor": "node editor/build.mjs",
+    "roundtrip": "tsx src/roundtrip.ts"
   },
   "dependencies": {
     "mdast-util-from-markdown": "^2.0.2",

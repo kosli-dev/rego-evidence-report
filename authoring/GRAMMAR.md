@@ -270,6 +270,48 @@ For a new document there is no committed object to diff against, so `--explain`
 additionally warns on any block containing a code span and a modal verb that
 matched nothing.
 
+## Editing the object instead
+
+The YAML is editable too, and a change made there is written back into the
+Markdown without disturbing a word of the prose around it.
+
+```sh
+npx tsx authoring/src/cli.ts policy.md --apply spec.yaml
+```
+
+The Markdown stays the document of record, and it is never regenerated —
+regeneration would be lossy, since the rationale paragraphs are not in the
+object. What is applied is the *diff*: every difference between the compiled
+object and the edited one names a construct, every construct has a recorded
+source range, and the patch rewrites those ranges and nothing else. A changed
+threshold rewrites one bullet; the four paragraphs around it are never
+addressed, so they cannot move.
+
+Inside a bullet there is nothing to lose either: every sentence that is not the
+rule and not a `Records …` becomes `description`, which is in the object. So a
+bullet can be rewritten whole. The author's own wording survives the rewrite —
+the quantifier they chose, and their spelling of a property the table declares
+in the plural — because both are recorded when the sentence is read.
+
+Two edits are lossy, and say so:
+
+- **Deleting a check** deletes its bullet, and the description written under it.
+  That prose existed to explain that check.
+- **Changing `min_subjects`** rewrites the sentence that set it, and any
+  reasoning written into that sentence goes with it.
+
+An edit with no prose form — an operator outside the vocabulary, a path no
+property declares — is refused by name rather than approximated. Nothing is
+written at all in that case: the patch is applied, recompiled, and checked
+against what was asked for, and only a document that compiles back to exactly
+that object is kept. So an incomplete writer shows up as a refusal, never as
+mangled prose.
+
+`npm run roundtrip` holds that to three properties over the real policies:
+applying a document's own YAML to it changes nothing; touching every check
+sends every bullet through the writer and still recompiles to the object asked
+for; and every paragraph of prose is still there afterwards, byte for byte.
+
 ## What has no home yet
 
 Requirement-level rationale. The report projects a requirement as exactly

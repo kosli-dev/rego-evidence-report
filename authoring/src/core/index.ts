@@ -13,7 +13,7 @@ import {fromMarkdown} from 'mdast-util-from-markdown'
 import {gfmTable} from 'micromark-extension-gfm-table'
 import {gfmTableFromMarkdown} from 'mdast-util-gfm-table'
 
-import type {Analysis, Block, Check, CustomOpRegistry, Diagnostic, PropertyDef, SubjectDef, SubjectSummary} from './types.ts'
+import type {Analysis, Anchor, Block, Check, CustomOpRegistry, Diagnostic, DocContext, PropertyDef, SubjectDef, SubjectSummary} from './types.ts'
 import {type Atom, type Ctx, RuleError, atomize, matchRecords, matchRule, plain, sentences} from './grammar.ts'
 import {parseConstantHead, parseSubject, parseTable} from './declare.ts'
 import {validateRequirements} from './validate.ts'
@@ -24,13 +24,16 @@ interface Node {
 	depth?: number
 	value?: string
 	children?: Node[]
-	position?: {start: {line: number}; end: {line: number}}
+	position?: {start: {line: number; column: number; offset?: number}; end: {line: number; offset?: number}}
 }
 
 const subjectKey = (s: string): string => s.toLowerCase().replace(/\*/g, '').replace(/\s+/g, ' ').trim()
 
 const lineOf = (n: Node): number => n.position?.start.line ?? 0
 const endOf = (n: Node): number => n.position?.end.line ?? lineOf(n)
+const from = (n: Node): number => n.position?.start.offset ?? 0
+const to = (n: Node): number => n.position?.end.offset ?? from(n)
+const indentOf = (n: Node): string => ' '.repeat((n.position?.start.column ?? 1) - 1)
 
 function textOf(n: Node): string {
 	if (n.type === 'text' || n.type === 'inlineCode') return n.value ?? ''
@@ -66,6 +69,7 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 	const nodes = tree.children ?? []
 
 	const blocks: Block[] = []
+	const anchors: Anchor[] = []
 	const diagnostics: Diagnostic[] = []
 	const subjects = new Map<string, SubjectEntry>()
 	// Document-level constructs — substitutes, constants — belong to no one
@@ -88,7 +92,7 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 	}
 
 	/** Read one bullet as `name — rule sentence. description sentences.` */
-	const readRule = (item: Node): {name: string; check: Check} | null => {
+	const readRule = (item: Node): {name: string; check: Check; lead?: string; head?: string} | null => {
 		const para = (item.children ?? [])[0]
 		if (!para) return null
 		const atoms = atomize((para.children ?? []) as never[])
@@ -146,7 +150,7 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 		const description = descriptions.join(' ').trim().replace(/\.$/, '')
 		if (description) check['description'] = description
 
-		return {name, check}
+		return {name, check, ...(matched.lead ? {lead: matched.lead} : {}), ...(matched.head ? {head: matched.head} : {})}
 	}
 
 	// ---------------------------------------------------------- regions
@@ -291,6 +295,7 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 				label: parsed.name,
 				op: String(parsed.check['op']),
 			})
+			anchors.push({kind: 'substitute', name: parsed.name, start: from(item), end: to(item), indent: indentOf(item), ...(parsed.lead ? {lead: parsed.lead} : {}), ...(parsed.head ? {head: parsed.head} : {})})
 		}
 		claimed.add(i)
 	})
@@ -312,6 +317,16 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 			const key = subjectKey(atoms.find((a) => a.kind === 'prop')?.text ?? '')
 			if (subjects.has(key)) r.subjectName = key
 		}
+		const headingNode = nodes.find((n) => n.type === 'heading' && lineOf(n) === r.line)
+		const owned = mine.map(([n]) => n)
+		anchors.push({
+			kind: 'requirement',
+			requirement: r.name,
+			name: r.name,
+			start: headingNode ? from(headingNode) : (owned[0] ? from(owned[0]) : 0),
+			end: owned.length ? Math.max(...owned.map(to)) : (headingNode ? to(headingNode) : 0),
+			insertAt: headingNode ? to(headingNode) : (owned[0] ? from(owned[0]) : 0),
+		})
 		r.subject = (r.subjectName ? subjects.get(r.subjectName) : null) ?? soleSubject()
 		ctx.props = r.subject ? r.subject.props : allProps
 
@@ -329,30 +344,36 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 				if (/^In scope:?$/i.test(text)) {
 					role = 'scope'
 					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: 'applies_to follows'})
+					anchors.push({kind: 'directive', requirement: r.name, name: 'applies_to:lead', start: from(node), end: to(node)})
 					continue
 				}
 				if (/^Must hold:?$/i.test(text)) {
 					role = 'checks'
 					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: 'checks follow'})
+					anchors.push({kind: 'directive', requirement: r.name, name: 'checks:lead', start: from(node), end: to(node)})
 					continue
 				}
 				if (/^(?:For|About) each /i.test(text) && r.subject) {
 					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: `subject: ${r.subject.def.subjectType}`})
+					anchors.push({kind: 'directive', requirement: r.name, name: 'subject', start: from(node), end: to(node)})
 					continue
 				}
 				if ((m = /^At least (\d+|one) \S.* must be in scope\.?$/i.exec(text))) {
 					r.minSubjects = m[1] === 'one' ? 1 : Number(m[1])
 					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: `min_subjects: ${r.minSubjects}`})
+					anchors.push({kind: 'directive', requirement: r.name, name: 'min_subjects', start: from(node), end: to(node)})
 					continue
 				}
 				if (/^No minimum\b/i.test(text)) {
 					r.minSubjects = 0
 					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: 'min_subjects: 0'})
+					anchors.push({kind: 'directive', requirement: r.name, name: 'min_subjects', start: from(node), end: to(node)})
 					continue
 				}
 				if (/^One \S.* must satisfy all of these\.?$/i.test(text)) {
 					r.require = 'some'
 					claim(i, {kind: 'directive', line, endLine: endOf(node), detail: 'require: some'})
+					anchors.push({kind: 'directive', requirement: r.name, name: 'require', start: from(node), end: to(node)})
 					continue
 				}
 				continue
@@ -367,12 +388,15 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 					claimed.add(i)
 					continue
 				}
+				const field = role === 'scope' ? 'applies_to' : 'checks'
+				let indent = ''
 				for (const item of node.children ?? []) {
 					const parsed = readRule(item)
 					if (!parsed) continue
 					const target = role === 'scope' ? r.appliesTo : r.checks
 					if (target[parsed.name]) err(lineOf(item), `${parsed.name}: already defined in this requirement`)
 					target[parsed.name] = parsed.check
+					indent = indentOf(item)
 					blocks.push({
 						kind: role === 'scope' ? 'scope' : 'rule',
 						line: lineOf(item),
@@ -380,7 +404,18 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 						label: parsed.name,
 						op: String(parsed.check['op']),
 					})
+					anchors.push({
+						kind: role === 'scope' ? 'scope' : 'rule',
+						requirement: r.name,
+						name: parsed.name,
+						start: from(item),
+						end: to(item),
+						indent: indentOf(item),
+						...(parsed.lead ? {lead: parsed.lead} : {}),
+						...(parsed.head ? {head: parsed.head} : {}),
+					})
 				}
+				anchors.push({kind: 'list', requirement: r.name, name: field, start: from(node), end: to(node), indent})
 				claimed.add(i)
 			}
 		}
@@ -455,8 +490,19 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 		})),
 	}))
 
+	const context: DocContext = {
+		constants: Object.fromEntries(ctx.constants),
+		substitutes: Object.fromEntries(ctx.substitutes),
+		properties: Object.fromEntries(reqs.map((r) => [r.name, [...(r.subject?.props ?? allProps).values()]])),
+		all: [...allProps.values()],
+	}
+
+	anchors.sort((a, b) => a.start - b.start)
+
 	return {
 		blocks,
+		anchors,
+		context,
 		subjects: summaries,
 		substitutes: [...ctx.substitutes.keys()],
 		constants: [...ctx.constants.keys()],

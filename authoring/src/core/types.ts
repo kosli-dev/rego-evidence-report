@@ -51,6 +51,36 @@ export interface Block {
 	op?: string
 }
 
+/**
+ * Where a construct came from, as source offsets, so an edit made to the
+ * compiled object can be written back into the Markdown that produced it.
+ *
+ * Offsets rather than lines because a patch replaces a span, not a row, and
+ * recorded here rather than recomputed by a second traversal — a writer that
+ * finds bullets its own way would eventually disagree with the reader about
+ * which bullet is which, which is the one failure this must not have.
+ */
+export interface Anchor {
+	kind: 'rule' | 'scope' | 'substitute' | 'requirement' | 'list' | 'directive'
+	/** The requirement a rule, scope filter, list or directive belongs to. */
+	requirement?: string
+	/** A check's name, or for a directive the field it sets. */
+	name?: string
+	start: number
+	end: number
+	/** For a list: the indent of its items, so an appended one lines up. */
+	indent?: string
+	/** For a rule: the quantifier the author wrote. It does not survive into
+	 *  the object, so re-rendering an edited bullet would otherwise silently
+	 *  replace "every" with "some". */
+	lead?: string
+	/** For a rule: the bold text the author used for the property it is about,
+	 *  which the plural-tolerant lookup means the object cannot recover. */
+	head?: string
+	/** For a requirement: where a directive or a new list may be inserted. */
+	insertAt?: number
+}
+
 export interface Diagnostic {
 	severity: 'error' | 'warning'
 	line: number
@@ -69,8 +99,21 @@ export interface SubjectSummary {
 	properties: Array<{display: string; path: Path; pathText: string}>
 }
 
+/** What a rendered rule resolves against: the same declarations the parser
+ *  read, kept so the two directions cannot disagree about what `**X**` means. */
+export interface DocContext {
+	constants: Record<string, unknown[]>
+	substitutes: Record<string, Check>
+	/** Requirement name -> the properties its subject declares. */
+	properties: Record<string, PropertyDef[]>
+	/** Everything declared anywhere, for document-level constructs. */
+	all: PropertyDef[]
+}
+
 export interface Analysis {
 	blocks: Block[]
+	anchors: Anchor[]
+	context: DocContext
 	subjects: SubjectSummary[]
 	/** Names a rule may refer to: `, or else \`initial_commit\`` and
 	 *  `treating **web-flow authors** as explained`. */

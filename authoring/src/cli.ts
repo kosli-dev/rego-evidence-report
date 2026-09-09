@@ -6,6 +6,9 @@
 //   evidence-md policy.md --explain       what each block became
 //   evidence-md policy.md --check         diff against the committed object
 //   evidence-md --lint spec.yaml          validate any requirements object
+//   evidence-md policy.md --apply s.yaml  write an edited object back into the
+//                                         Markdown, rewriting only the bullets
+//                                         whose checks changed
 
 import {execFileSync} from 'node:child_process'
 import {readFileSync, writeFileSync} from 'node:fs'
@@ -14,6 +17,7 @@ import {fileURLToPath} from 'node:url'
 import {parse as parseYaml, stringify as toYaml} from 'yaml'
 
 import {analyze} from './core/index.ts'
+import {applyRequirements} from './core/patch.ts'
 import {validateRequirements} from './core/validate.ts'
 import type {Analysis, Check, CustomOpRegistry, Diagnostic} from './core/types.ts'
 import {renderPath} from './core/paths.ts'
@@ -165,7 +169,7 @@ function main(argv: string[]): number {
 
 	const file = argv.find((a) => !a.startsWith('-') && a.endsWith('.md'))
 	if (!file) {
-		process.stderr.write('usage: evidence-md <policy.md> [-o data.yaml] [--explain] [--check]\n')
+		process.stderr.write('usage: evidence-md <policy.md> [-o data.yaml] [--explain] [--check] [--apply spec.yaml]\n')
 		return 2
 	}
 
@@ -180,6 +184,34 @@ function main(argv: string[]): number {
 
 	report(result.diagnostics, file)
 	if (!result.ok) return 1
+
+	const applyAt = argv.indexOf('--apply')
+	if (applyAt >= 0) {
+		const spec = argv[applyAt + 1]
+		if (!spec) {
+			process.stderr.write('--apply needs a requirements file\n')
+			return 2
+		}
+		const doc = parseYaml(readFileSync(spec, 'utf8')) as {requirements?: Record<string, unknown>}
+		const patch = applyRequirements(source, result, doc?.requirements ?? {}, registry())
+
+		// The patch is best-effort; this is what makes it safe. Recompile what
+		// it produced and insist it says exactly what was asked for, so an
+		// operator the writer cannot spell fails the command rather than
+		// half-landing in the document.
+		const after = analyze(patch.markdown, {customOps: registry()})
+		const drift = toYaml(after.requirements, {lineWidth: 0}) !== toYaml(doc?.requirements ?? {}, {lineWidth: 0})
+		for (const r of patch.refusals) process.stderr.write(`error: ${file}: ${r}\n`)
+		if (patch.refusals.length || drift) {
+			if (drift && !patch.refusals.length) process.stderr.write(`error: ${file}: the patched document does not compile to ${spec}\n`)
+			process.stderr.write(`${file}: not written\n`)
+			return 1
+		}
+		for (const c of patch.changes) process.stdout.write(`  ${c}\n`)
+		if (!patch.changes.length) process.stdout.write(`${file}: already says this\n`)
+		else writeFileSync(file, patch.markdown)
+		return 0
+	}
 
 	const outAt = argv.indexOf('-o')
 	const out = outAt >= 0 ? argv[outAt + 1] : undefined

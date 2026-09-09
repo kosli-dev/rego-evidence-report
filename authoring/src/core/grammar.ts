@@ -119,13 +119,13 @@ export function lookup(ctx: Ctx, display: string): PropertyDef | undefined {
 }
 
 /** The path of a property up to its first collection boundary. */
-function outerPath(p: PropertyDef): Path {
+export function outerPath(p: PropertyDef): Path {
 	return p.splits.length ? p.path.slice(0, p.splits[0]) : p.path
 }
 
 /** The path of a property after its last collection boundary — what a check
  *  inside `all`/`any` addresses, relative to one element. */
-function innerPath(p: PropertyDef): Path {
+export function innerPath(p: PropertyDef): Path {
 	return p.splits.length ? p.path.slice(p.splits[p.splits.length - 1]) : p.path
 }
 
@@ -143,6 +143,12 @@ const CMP: Record<string, {cmp: string; time: boolean}> = {
 }
 
 export class RuleError extends Error {}
+
+/** The comparison table, read the other way. */
+export function phraseFor(cmp: string, time: boolean): string {
+	for (const [phrase, spec] of Object.entries(CMP)) if (spec.cmp === cmp && spec.time === time) return phrase
+	throw new RuleError(`no phrase for comparison "${cmp}"`)
+}
 
 function patternsOf(n: Norm, rest: string, ctx: Ctx): unknown[] {
 	const one = new RegExp(`^${P}$`).exec(rest)
@@ -165,11 +171,25 @@ function patternsOf(n: Norm, rest: string, ctx: Ctx): unknown[] {
  * beside it. A hand-kept cheatsheet drifts from the parser within a month; this
  * one cannot, since VOCABULARY below is built from these same entries.
  */
+export interface RenderHelp {
+	/** A literal, back in backticks. */
+	code: (v: unknown) => string
+	/** A pattern list: the constant that holds it, or the patterns themselves. */
+	patterns: (values: unknown[]) => string
+	/** The bold name of the property declared at this path. Throws when none
+	 *  is, which is what stops a YAML-only path being written as prose that
+	 *  would not parse back. */
+	property: (path: Path) => string
+}
+
 interface LeafPhrase {
 	prose: string
 	produces: string
 	re: RegExp
 	build: (m: RegExpExecArray, n: Norm, path: Path, ctx: Ctx) => Check
+	/** The inverse of `build`: the predicate half, written back. Every row has
+	 *  one, and `npm run roundtrip` asserts build(render(c)) === c for each. */
+	write: (c: Check, h: RenderHelp) => string
 }
 
 const val = (n: Norm, i: string | undefined): unknown => literal(n.codes[Number(i)] ?? '')
@@ -180,60 +200,70 @@ const LEAVES: LeafPhrase[] = [
 		produces: 'present',
 		re: /^(?:be present|exist)$/,
 		build: (_m, _n, path) => ({op: 'present', path}),
+		write: () => `be present`,
 	},
 	{
 		prose: 'the **X** must be a non-empty string',
 		produces: 'non_empty_string',
 		re: /^be a non-empty string$/,
 		build: (_m, _n, path) => ({op: 'non_empty_string', path}),
+		write: () => `be a non-empty string`,
 	},
 	{
 		prose: 'the **X** must be `value`',
 		produces: 'equals',
 		re: new RegExp(`^be ${C}$`),
 		build: (m, n, path) => ({op: 'equals', path, value: val(n, m[1])}),
+		write: (c, h) => `be ${h.code(c["value"])}`,
 	},
 	{
 		prose: 'the **X** must be between `min` and `max`',
 		produces: 'range',
 		re: new RegExp(`^be between ${C} and ${C}$`),
 		build: (m, n, path) => ({op: 'range', path, min: val(n, m[1]), max: val(n, m[2])}),
+		write: (c, h) => `be between ${h.code(c["min"])} and ${h.code(c["max"])}`,
 	},
 	{
 		prose: 'the **X** must include `value`',
 		produces: 'includes',
 		re: new RegExp(`^include ${C}$`),
 		build: (m, n, path) => ({op: 'includes', path, value: val(n, m[1])}),
+		write: (c, h) => `include ${h.code(c["value"])}`,
 	},
 	{
 		prose: 'the **X** must not include `value`',
 		produces: 'excludes',
 		re: new RegExp(`^not include ${C}$`),
 		build: (m, n, path) => ({op: 'excludes', path, value: val(n, m[1])}),
+		write: (c, h) => `not include ${h.code(c["value"])}`,
 	},
 	{
 		prose: 'the **X** must match one of `pattern`, `pattern` (or a **constant**)',
 		produces: 'matches_any',
 		re: /^match one of (.+)$/,
 		build: (m, n, path, ctx) => ({op: 'matches_any', path, patterns: patternsOf(n, m[1] ?? '', ctx)}),
+		write: (c, h) => `match one of ${h.patterns(c["patterns"] as unknown[])}`,
 	},
 	{
 		prose: 'the **X** must match none of `pattern`, `pattern` (or a **constant**)',
 		produces: 'not_matches_any',
 		re: /^match none of (.+)$/,
 		build: (m, n, path, ctx) => ({op: 'not_matches_any', path, patterns: patternsOf(n, m[1] ?? '', ctx)}),
+		write: (c, h) => `match none of ${h.patterns(c["patterns"] as unknown[])}`,
 	},
 	{
 		prose: 'the **X** must be greater than / at least / less than / at most the **Y**',
 		produces: 'compare',
 		re: new RegExp(`^be (equal to|different from|greater than|at least|less than|at most) the ${P}$`),
 		build: (m, n, path, ctx) => twoSided(m, n, path, ctx, false),
+		write: (c, h) => `be ${phraseFor(String(c["cmp"]), false)} the ${h.property(c["right"] as Path)}`,
 	},
 	{
 		prose: 'the **X** must be after / at or after / before / at or before the **Y**',
 		produces: 'compare_time',
 		re: new RegExp(`^be (after|at or after|before|at or before) the ${P}$`),
 		build: (m, n, path, ctx) => twoSided(m, n, path, ctx, true),
+		write: (c, h) => `be ${phraseFor(String(c["cmp"]), true)} the ${h.property(c["right"] as Path)}`,
 	},
 ]
 
@@ -261,6 +291,8 @@ export interface Phrase {
 	prose: string
 	produces: string
 }
+
+export const LEAF_TABLE: ReadonlyArray<{produces: string; write: (c: Check, h: RenderHelp) => string}> = LEAVES
 
 export const VOCABULARY: Phrase[] = [
 	{group: 'Declarations', prose: 'A **thing** is each of `path`, identified by its `path`.', produces: 'subject_type, from, id'},
@@ -310,6 +342,14 @@ function elementCheck(n: Norm, rest: string, ctx: Ctx): Check {
 export interface Matched {
 	check: Check
 	op: string
+	/** The quantifier written before the property, where there was one. It is
+	 *  absent from the object, so a re-render has to be told it. */
+	lead?: string
+	/** The bold text the author used for that property. Rules read in the
+	 *  singular where the table declares a plural, and `lookup` accepts both —
+	 *  so the object cannot say which was written, and a re-render that fell
+	 *  back on the declared spelling would quietly pluralise the sentence. */
+	head?: string
 }
 
 /**
@@ -353,6 +393,8 @@ export function matchRule(atoms: Atom[], ctx: Ctx, nearMiss = true): Matched | n
 			const path = outerPath(prop)
 			return {
 				op,
+				lead: (/^(some|every|at least one|the)\b/.exec(s) ?? [])[1],
+				head: n.props[Number(m[1])],
 				check: {
 					op,
 					expression: def.expression,
@@ -368,12 +410,12 @@ export function matchRule(atoms: Atom[], ctx: Ctx, nearMiss = true): Matched | n
 	if ((m = new RegExp(`^every ${P} must (.+)$`).exec(s))) {
 		const prop = lookup(ctx, n.props[Number(m[1])] ?? '')
 		if (!prop) throw new RuleError(`no declared property named "${n.props[Number(m[1])]}"`)
-		return {op: 'all', check: {op: 'all', ...collection(prop), check: elementCheck(n, m[2] ?? '', ctx), ...extra}}
+		return {op: 'all', lead: 'every', head: n.props[Number(m[1])], check: {op: 'all', ...collection(prop), check: elementCheck(n, m[2] ?? '', ctx), ...extra}}
 	}
 	if ((m = new RegExp(`^(?:at least one|some) ${P} must (.+)$`).exec(s))) {
 		const prop = lookup(ctx, n.props[Number(m[1])] ?? '')
 		if (!prop) throw new RuleError(`no declared property named "${n.props[Number(m[1])]}"`)
-		return {op: 'any', check: {op: 'any', ...collection(prop), check: elementCheck(n, m[2] ?? '', ctx), ...extra}}
+		return {op: 'any', lead: (/^(at least one|some)\b/.exec(s) ?? [])[1], head: n.props[Number(m[1])], check: {op: 'any', ...collection(prop), check: elementCheck(n, m[2] ?? '', ctx), ...extra}}
 	}
 
 	// Leaf operators.
@@ -381,7 +423,7 @@ export function matchRule(atoms: Atom[], ctx: Ctx, nearMiss = true): Matched | n
 		const prop = lookup(ctx, n.props[Number(m[1])] ?? '')
 		if (!prop) throw new RuleError(`no declared property named "${n.props[Number(m[1])]}"`)
 		const check = predicate(n, m[2] ?? '', prop.path, ctx)
-		return {op: String(check['op']), check: {...check, ...extra}}
+		return {op: String(check['op']), lead: 'the', head: n.props[Number(m[1])], check: {...check, ...extra}}
 	}
 
 	// Not a rule. Report it only if it looks like one that failed to land.
