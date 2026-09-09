@@ -74,6 +74,9 @@ button { font:inherit; color:inherit; cursor:pointer; }
 .band.b-rule,.band.b-scope { background:var(--rule-wash); }
 .band.b-subject,.band.b-properties,.band.b-constant,.band.b-substitute,.band.b-requirement { background:var(--declare-wash); }
 .band.b-directive { background:var(--warn-wash); }
+/* A declared name no rule reads. Painted after the declaration band, so it
+   greys the row out rather than tinting beside it. */
+.band.b-unused { background:var(--sunk); }
 .gutter { width:3.3rem; flex:none; overflow:hidden; background:var(--sunk); border-right:1px solid var(--hairline);
   padding:var(--pad) 0; font-family:var(--mono); font-size:11px; line-height:var(--lh); }
 .gline { height:var(--lh); padding-right:.45rem; text-align:right; color:var(--faint);
@@ -81,6 +84,7 @@ button { font:inherit; color:inherit; cursor:pointer; }
 .k-rule,.k-scope        { border-left-color:var(--rule)    !important; background:var(--rule-wash);    color:var(--rule)    !important; }
 .k-subject,.k-properties,.k-constant,.k-substitute,.k-requirement
                         { border-left-color:var(--declare) !important; background:var(--declare-wash); color:var(--declare) !important; }
+.k-unused               { border-left-color:var(--hairline) !important; background:var(--sunk); color:var(--faint) !important; }
 .k-directive            { border-left-color:var(--warn)    !important; background:var(--warn-wash);    color:var(--warn)    !important; }
 .gline.hit { outline:1px solid var(--rule); outline-offset:-1px; }
 textarea { flex:1; min-width:0; border:0; resize:none; background:transparent; color:var(--ink); position:relative;
@@ -217,6 +221,10 @@ textarea:focus { outline:none; }
 .ptab td { padding:.28rem .9rem; border-top:1px solid var(--hairline); vertical-align:baseline; font-size:.78rem; }
 .ptab td:first-child { font-family:var(--serif); color:var(--ink); white-space:nowrap; }
 .ptab td:last-child { font-family:var(--mono); font-size:.7rem; color:var(--declare); overflow-wrap:anywhere; }
+.ptab tr.unused td { color:var(--faint); }
+.ptab tr.unused td:last-child { color:var(--faint); }
+.ptab tr.unused td:first-child::after { content:'unread'; margin-left:.5rem; font-family:var(--mono); font-size:.55rem;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--faint); }
 .subj { padding:.5rem .9rem; font-size:.76rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:.2rem 1.2rem; }
 .subj code { font-family:var(--mono); color:var(--ink); }
 
@@ -304,6 +312,7 @@ textarea:focus { outline:none; }
     <span><i style="background:var(--declare)"></i>declaration</span>
     <span><i style="background:var(--warn)"></i>directive</span>
     <span><i style="background:var(--hairline)"></i>prose</span>
+    <span><i style="background:var(--sunk);border:1px solid var(--hairline)"></i>declared, unread</span>
     <span class="note" id="note"></span>
   </div>
 </div>
@@ -491,7 +500,7 @@ function viewPolicy(result) {
         hr.append(el('th', null, 'Property'), el('th', null, 'Path'));
         t.append(hr);
         for (const prop of s.properties) {
-          const tr = el('tr');
+          const tr = el('tr', prop.used ? null : 'unused');
           tr.append(el('td', null, prop.display), el('td', null, prop.pathText));
           t.append(tr);
         }
@@ -744,17 +753,30 @@ function render(result) {
   for (const b of result.blocks)
     for (let i = b.line; i <= b.endLine && i <= lines.length; i++) kinds[i - 1] = b.kind;
 
+  // A declared name no rule reads. Not a diagnostic — declaring ahead of use is
+  // the author's business — but it is what you want to see when the question is
+  // which rows could go.
+  const unread = [];
+  for (const s of result.subjects)
+    for (const p of s.properties)
+      if (!p.used && p.line) { unread.push(p.line); kinds[p.line - 1] = 'unused'; }
+
   gutter.replaceChildren(...lines.map((_, i) =>
     el('div', 'gline' + (kinds[i] ? ' k-' + kinds[i] : ''), String(i + 1))));
 
   // Tint the source itself, behind the text, using the same line arithmetic as
   // the aligned blocks pane — so what you author and what you inspect agree.
-  bands.replaceChildren(...result.blocks.filter((b) => b.kind !== 'prose').map((b) => {
-    const band = el('div', 'band b-' + b.kind);
-    band.style.top = ((b.line - 1) * LH + PAD) + 'px';
-    band.style.height = (Math.max(1, b.endLine - b.line + 1) * LH) + 'px';
+  const bandFor = (kind, from, to) => {
+    const band = el('div', 'band b-' + kind);
+    band.style.top = ((from - 1) * LH + PAD) + 'px';
+    band.style.height = (Math.max(1, to - from + 1) * LH) + 'px';
     return band;
-  }));
+  };
+  bands.replaceChildren(
+    ...result.blocks.filter((b) => b.kind !== 'prose').map((b) => bandFor(b.kind, b.line, b.endLine)),
+    // After the declaration band, so it covers the row rather than sitting under it.
+    ...unread.map((line) => bandFor('unused', line, line)),
+  );
   bands.style.transform = 'translateY(' + -src.scrollTop + 'px)';
 
   $('n-req').textContent = Object.keys(result.requirements).length;

@@ -29,6 +29,7 @@ interface TableCellish {
 }
 interface TableRowish {
 	children?: TableCellish[]
+	position?: {start: {line: number}}
 }
 
 /** The property table. Column one is the prose name, column two the path. */
@@ -41,7 +42,7 @@ export function parseTable(rows: TableRowish[], cellText: (c: TableCellish) => s
 		const raw = cellText(cells[1] as TableCellish).trim()
 		if (!display || !raw) continue
 		const {path, splits} = parsePath(raw)
-		props.set(display.toLowerCase().replace(/\s+/g, ' '), {display, path, splits})
+		props.set(display.toLowerCase().replace(/\s+/g, ' '), {display, path, splits, line: row.position?.start.line ?? 0})
 	}
 	return props
 }

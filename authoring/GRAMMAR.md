@@ -346,6 +346,17 @@ applying a document's own YAML to it changes nothing; touching every check
 sends every bullet through the writer and still recompiles to the object asked
 for; and every paragraph of prose is still there afterwards, byte for byte.
 
+## Declared but unread
+
+A property nothing reads is not an error — declaring ahead of use is the
+author's business, and only they can say whether a row is finished with. But it
+is worth seeing, so the editor greys those rows in the source and tags them
+`unread` in the policy view.
+
+What counts as read is settled by writing every check back and noting which
+properties the writer resolved: the same resolution the prose uses, so nothing
+can be called dead that a sentence is reading.
+
 ## What has no home yet
 
 Requirement-level rationale. The report projects a requirement as exactly

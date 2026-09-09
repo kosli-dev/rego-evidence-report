@@ -17,6 +17,8 @@ export interface PropertyDef {
 	display: string
 	path: Path
 	splits: number[]
+	/** The table row it was declared on, where it was declared in a table. */
+	line?: number
 }
 
 export interface SubjectDef {
@@ -96,7 +98,15 @@ export interface SubjectSummary {
 	from: Path
 	id: Path
 	line: number
-	properties: Array<{display: string; path: Path; pathText: string}>
+	properties: Array<{
+		display: string
+		path: Path
+		pathText: string
+		line?: number
+		/** Whether any rule reads it. A declared name nothing reads is dead
+		 *  prose: harmless, but the author is the only one who can say so. */
+		used: boolean
+	}>
 }
 
 /** What a rendered rule resolves against: the same declarations the parser

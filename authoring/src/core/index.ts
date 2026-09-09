@@ -18,6 +18,7 @@ import {type Atom, type Ctx, RuleError, atomize, matchRecords, matchRule, plain,
 import {parseConstantHead, parseSubject, parseTable} from './declare.ts'
 import {validateRequirements} from './validate.ts'
 import {renderDeclared, renderPath} from './paths.ts'
+import {contextFor, writeCheck} from './render.ts'
 
 interface Node {
 	type: string
@@ -482,6 +483,34 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 
 	diagnostics.push(...validateRequirements(requirements, customOpNames))
 
+	const context: DocContext = {
+		constants: Object.fromEntries(ctx.constants),
+		substitutes: Object.fromEntries(ctx.substitutes),
+		properties: Object.fromEntries(reqs.map((r) => [r.name, [...(r.subject?.props ?? allProps).values()]])),
+		all: [...allProps.values()],
+		subjectOf: Object.fromEntries(reqs.filter((r) => r.subject).map((r) => [r.name, r.subject!.def.subjectType])),
+	}
+
+	// Which declared names any rule actually reads. Found by writing every check
+	// back and noting what the writer resolved — the same resolution the prose
+	// uses, so this cannot claim a property is dead that a sentence is reading.
+	// A name nothing reads is not an error: the author may have declared ahead
+	// of use, and only they can say. It is worth showing, not diagnosing.
+	const read = new Set<PropertyDef>()
+	const noteReads = (owner: string, check: Check): void => {
+		const seen = contextFor(context, owner, ctx.customOps)
+		seen.record = (p) => read.add(p)
+		try {
+			writeCheck(seen, check)
+		} catch {
+			// No prose form; it names nothing this can vouch for.
+		}
+	}
+	for (const [name, body] of Object.entries(requirements))
+		for (const field of ['checks', 'applies_to'])
+			for (const check of Object.values(((body as Record<string, unknown>)[field] ?? {}) as Record<string, Check>)) noteReads(name, check)
+	for (const check of ctx.substitutes.values()) noteReads('\u0000document', check)
+
 	const summaries: SubjectSummary[] = [...subjects.values()].map((e) => ({
 		name: e.def.subjectType,
 		subjectType: e.def.subjectType,
@@ -492,16 +521,10 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 			display: p.display,
 			path: p.path,
 			pathText: renderDeclared(p.path, p.splits),
+			line: p.line,
+			used: read.has(p),
 		})),
 	}))
-
-	const context: DocContext = {
-		constants: Object.fromEntries(ctx.constants),
-		substitutes: Object.fromEntries(ctx.substitutes),
-		properties: Object.fromEntries(reqs.map((r) => [r.name, [...(r.subject?.props ?? allProps).values()]])),
-		all: [...allProps.values()],
-		subjectOf: Object.fromEntries(reqs.filter((r) => r.subject).map((r) => [r.name, r.subject!.def.subjectType])),
-	}
 
 	anchors.sort((a, b) => a.start - b.start)
 
