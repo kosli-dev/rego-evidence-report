@@ -253,6 +253,11 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 					label: lastSubject?.def.subjectType,
 					detail: `${parsed.size} properties`,
 				})
+				// The table is the one construct with no counterpart in the
+				// object: naming a path is a Markdown-only act. An edit made to
+				// the object can therefore need a row that does not exist yet,
+				// so the writer has to be able to find this table and add one.
+				if (lastSubject) anchors.push({kind: 'table', name: lastSubject.def.subjectType, start: from(node), end: to(node)})
 			} catch (e) {
 				err(lineOf(node), (e as Error).message)
 			}
@@ -495,6 +500,7 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 		substitutes: Object.fromEntries(ctx.substitutes),
 		properties: Object.fromEntries(reqs.map((r) => [r.name, [...(r.subject?.props ?? allProps).values()]])),
 		all: [...allProps.values()],
+		subjectOf: Object.fromEntries(reqs.filter((r) => r.subject).map((r) => [r.name, r.subject!.def.subjectType])),
 	}
 
 	anchors.sort((a, b) => a.start - b.start)

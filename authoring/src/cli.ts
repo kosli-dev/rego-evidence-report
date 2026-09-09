@@ -17,7 +17,7 @@ import {fileURLToPath} from 'node:url'
 import {parse as parseYaml, stringify as toYaml} from 'yaml'
 
 import {analyze} from './core/index.ts'
-import {applyRequirements} from './core/patch.ts'
+import {applyRequirements, differences} from './core/patch.ts'
 import {validateRequirements} from './core/validate.ts'
 import type {Analysis, Check, CustomOpRegistry, Diagnostic} from './core/types.ts'
 import {renderPath} from './core/paths.ts'
@@ -200,10 +200,11 @@ function main(argv: string[]): number {
 		// operator the writer cannot spell fails the command rather than
 		// half-landing in the document.
 		const after = analyze(patch.markdown, {customOps: registry()})
-		const drift = toYaml(after.requirements, {lineWidth: 0}) !== toYaml(doc?.requirements ?? {}, {lineWidth: 0})
+		const drift = differences(after.requirements, doc?.requirements ?? {})
 		for (const r of patch.refusals) process.stderr.write(`error: ${file}: ${r}\n`)
-		if (patch.refusals.length || drift) {
-			if (drift && !patch.refusals.length) process.stderr.write(`error: ${file}: the patched document does not compile to ${spec}\n`)
+		if (patch.refusals.length || drift.length) {
+			if (drift.length && !patch.refusals.length)
+				for (const d of drift) process.stderr.write(`error: ${file}: ${d} does not come back from the patched document\n`)
 			process.stderr.write(`${file}: not written\n`)
 			return 1
 		}

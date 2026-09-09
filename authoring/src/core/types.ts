@@ -61,7 +61,7 @@ export interface Block {
  * which bullet is which, which is the one failure this must not have.
  */
 export interface Anchor {
-	kind: 'rule' | 'scope' | 'substitute' | 'requirement' | 'list' | 'directive'
+	kind: 'rule' | 'scope' | 'substitute' | 'requirement' | 'list' | 'directive' | 'table'
 	/** The requirement a rule, scope filter, list or directive belongs to. */
 	requirement?: string
 	/** A check's name, or for a directive the field it sets. */
@@ -108,6 +108,9 @@ export interface DocContext {
 	properties: Record<string, PropertyDef[]>
 	/** Everything declared anywhere, for document-level constructs. */
 	all: PropertyDef[]
+	/** Requirement name -> the subject type it is about, which is how a new
+	 *  property finds the table it belongs in. */
+	subjectOf: Record<string, string>
 }
 
 export interface Analysis {

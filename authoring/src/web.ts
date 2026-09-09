@@ -13,7 +13,7 @@ import {gfmTableFromMarkdown} from 'mdast-util-gfm-table'
 import {parse as fromYaml, stringify as toYaml} from 'yaml'
 import customOps from '../custom_ops.json' with {type: 'json'}
 import {analyze} from './core/index.ts'
-import {applyRequirements} from './core/patch.ts'
+import {applyRequirements, differences} from './core/patch.ts'
 import {validateRequirements} from './core/validate.ts'
 import type {Analysis, CustomOpRegistry} from './core/types.ts'
 
@@ -86,19 +86,6 @@ export function applyYaml(markdown: string, yamlText: string): ApplyResult {
 	}
 }
 
-/** Every place two objects disagree, named by its path. Used to check the
- *  patch landed, and to say precisely where it did not. */
-export function differences(got: unknown, want: unknown, at = ''): string[] {
-	if (JSON.stringify(got) === JSON.stringify(want)) return []
-	const plain = (v: unknown): boolean => typeof v !== 'object' || v === null || Array.isArray(v)
-	if (plain(got) || plain(want)) return [at || '(document)']
-	const a = got as Record<string, unknown>
-	const b = want as Record<string, unknown>
-	const out: string[] = []
-	for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) out.push(...differences(a[key], b[key], at ? `${at}.${key}` : key))
-	return out
-}
-
-export {analyze, validateRequirements}
+export {analyze, validateRequirements, differences}
 export {VOCABULARY} from './core/grammar.ts'
 export const customOpNames = (): string[] => Object.keys(registry())

@@ -96,7 +96,23 @@ for (const file of POLICIES) {
 	if (missing.length) fail('prose', `${missing.length} paragraph(s) lost, first: "${missing[0]!.slice(0, 60)}…"`)
 	else pass('prose survives')
 
-	// 4. Removing one check takes its bullet and nothing else.
+	// 4. A check on a path the table does not name. The object is complete; the
+	// Markdown is the side that is missing something, and the writer names it.
+	const grown = JSON.parse(JSON.stringify(analysis.requirements)) as Record<string, {checks: Record<string, unknown>; subject_type?: string}>
+	const host = Object.keys(grown)[0]!
+	grown[host]!.checks['round_trip_probe'] = {
+		op: 'non_empty_string',
+		path: ['probe', 'undeclared_field'],
+		description: 'A field nobody named in the table',
+	}
+	const added = applyYaml(markdown, yamlOf(grown))
+	if (added.refusals.length) fail('declare', `refused: ${added.refusals.join('; ')}`)
+	else if (added.drift.length) fail('declare', `drift at ${added.drift.join(', ')}`)
+	else if (!/\|\s*`probe\.undeclared_field`\s*\|/.test(added.markdown)) fail('declare', 'the property table gained no row')
+	else if (proseOf(markdown).some((p) => !added.markdown.includes(p))) fail('declare', 'prose lost')
+	else pass('declare a path the table does not name')
+
+	// 5. Removing one check takes its bullet and nothing else.
 	const firstReq = Object.keys(analysis.requirements)[0]!
 	const cut = JSON.parse(JSON.stringify(analysis.requirements)) as Record<string, {checks: Record<string, unknown>}>
 	const names = Object.keys(cut[firstReq]!.checks)

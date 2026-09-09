@@ -293,6 +293,21 @@ bullet can be rewritten whole. The author's own wording survives the rewrite —
 the quantifier they chose, and their spelling of a property the table declares
 in the plural — because both are recorded when the sentence is read.
 
+**The property table is the one thing the object does not have.** `from`, `id`
+and `subject_type` are fields the requirement needs anyway, but *naming*
+`approved_by` "**approver**" happens only in the Markdown. So a check added to
+the object can be entirely valid and still have no prose form, for a reason that
+is not the object's fault — nobody has named the path it reads. The writer
+declares it rather than refusing: it adds a row to the subject's table, names it
+after the path's last segment, and says so.
+
+```
+added prod_deploy.window_open · named `release.change_window` **change window**
+```
+
+The name is mechanical, and renaming it is a one-word edit that changes nothing
+in the object — which is the point: prose names have no counterpart to break.
+
 Two edits are lossy, and say so:
 
 - **Deleting a check** deletes its bullet, and the description written under it.

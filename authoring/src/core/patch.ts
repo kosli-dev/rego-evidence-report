@@ -18,9 +18,10 @@
 // approximated. The caller then recompiles the patched source and asserts it
 // equals what was asked for — see verifiedPatch in web.ts.
 
-import type {Analysis, Anchor, Check, CustomOpRegistry} from './types.ts'
+import type {Analysis, Anchor, Check, CustomOpRegistry, Path, PropertyDef} from './types.ts'
 import {RuleError} from './grammar.ts'
-import {contextFor, writeBullet, wrap} from './render.ts'
+import {renderDeclared} from './paths.ts'
+import {type RenderCtx, contextFor, writeBullet, wrap} from './render.ts'
 
 type Req = Record<string, unknown>
 
@@ -34,6 +35,13 @@ export interface PatchResult {
 	touched: string[]
 }
 
+/** A property the writer had to name because the object used a path the table
+ *  does not. Held per subject, since that is the table it goes in. */
+interface Invented {
+	display: string
+	pathText: string
+}
+
 interface Edit {
 	start: number
 	end: number
@@ -41,6 +49,22 @@ interface Edit {
 }
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/**
+ * Every place two objects disagree, named by its path. Key order is not a
+ * disagreement: a check added at the end of a list compiles to the end of the
+ * map, wherever the edit put it in the YAML.
+ */
+export function differences(got: unknown, want: unknown, at = ''): string[] {
+	if (same(got, want)) return []
+	const flat = (v: unknown): boolean => typeof v !== 'object' || v === null || Array.isArray(v)
+	if (flat(got) || flat(want)) return [at || '(document)']
+	const a = got as Record<string, unknown>
+	const b = want as Record<string, unknown>
+	const out: string[] = []
+	for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) out.push(...differences(a[key], b[key], at ? `${at}.${key}` : key))
+	return out
+}
 const map = (r: Req | undefined, field: string): Record<string, Check> => ((r?.[field] ?? {}) as Record<string, Check>)
 
 export function applyRequirements(
@@ -54,6 +78,36 @@ export function applyRequirements(
 	const changes: string[] = []
 	const refusals: string[] = []
 	const touched: string[] = []
+
+	// A path the object uses and the table does not name. The object is not at
+	// fault — naming a path is a Markdown-only act — so the writer declares it
+	// rather than refusing the edit, and says so.
+	const invented = new Map<string, Invented[]>()
+	const contexts = new Map<string, RenderCtx>()
+	const ctxFor = (req: string): RenderCtx => {
+		const held = contexts.get(req)
+		if (held) return held
+		const ctx = contextFor(analysis.context, req, customOps)
+		const subject = analysis.context.subjectOf[req]
+		ctx.invent = (path, splits) => {
+			if (!subject) throw new RuleError('this requirement is about no declared subject, so a new property has nowhere to go')
+			const rows = invented.get(subject) ?? []
+			const made: PropertyDef = {display: nameFor(ctx, rows, path), path, splits}
+			rows.push({display: made.display, pathText: renderDeclared(path, splits)})
+			invented.set(subject, rows)
+			return made
+		}
+		contexts.set(req, ctx)
+		return ctx
+	}
+	/** Undo the declarations a bullet made before it failed to write. */
+	const rollback = (req: string, props: number, rows: number): void => {
+		const ctx = contexts.get(req)
+		if (ctx) ctx.props.length = props
+		const subject = analysis.context.subjectOf[req]
+		const held = subject ? invented.get(subject) : undefined
+		if (held) held.length = rows
+	}
 
 	const anchor = (kind: Anchor['kind'], requirement?: string, name?: string): Anchor | undefined =>
 		analysis.anchors.find((a) => a.kind === kind && a.requirement === requirement && a.name === name)
@@ -112,7 +166,8 @@ export function applyRequirements(
 					continue
 				}
 				if (same(was[name], now[name])) continue
-				const ctx = contextFor(analysis.context, req, customOps)
+				const ctx = ctxFor(req)
+				const marks: [number, number] = [ctx.props.length, (invented.get(analysis.context.subjectOf[req] ?? '') ?? []).length]
 				try {
 					if (was[name] && spot) {
 						// The author's quantifier and their spelling of the property
@@ -131,13 +186,57 @@ export function applyRequirements(
 						touched.push(name)
 					}
 				} catch (e) {
+					rollback(req, marks[0], marks[1])
 					refusals.push(`${req}.${name}: ${(e as Error).message}`)
 				}
 			}
 		}
 	}
 
+	// The new rows, once every bullet that wanted them has been written.
+	for (const [subject, rows] of invented) {
+		if (!rows.length) continue
+		const table = analysis.anchors.find((a) => a.kind === 'table' && a.name === subject)
+		if (!table) {
+			refusals.push(`${subject}: has no property table, so \`${rows[0]!.pathText}\` cannot be named`)
+			continue
+		}
+		edits.push({start: table.start, end: table.end, text: addRows(markdown.slice(table.start, table.end), rows)})
+		for (const r of rows) changes.push(`named \`${r.pathText}\` **${r.display}** under ${subject}`)
+	}
+
 	return {markdown: splice(markdown, edits), changes, refusals, touched}
+}
+
+/** A name for a path nobody named: its last plain segment, read aloud. */
+function nameFor(ctx: RenderCtx, pending: Invented[], path: Path): string {
+	const words = path.filter((seg): seg is string => typeof seg === 'string')
+	const taken = new Set([...ctx.props.map((p) => p.display.toLowerCase()), ...pending.map((p) => p.display.toLowerCase())])
+	const say = (raw: string): string => raw.replace(/[_-]+/g, ' ').trim().toLowerCase()
+	for (let take = 1; take <= words.length; take++) {
+		const candidate = say(words.slice(words.length - take).join(' '))
+		if (candidate && !taken.has(candidate)) return candidate
+	}
+	// Every suffix is spoken for; fall back to the whole path, which cannot be.
+	return say(words.join(' ')) + ' path'
+}
+
+/** The table, with rows appended and every column realigned. Rewriting it
+ *  whole is what keeps a longer path from breaking the alignment the author
+ *  had; a table that already fits comes back byte for byte. */
+function addRows(source: string, rows: Invented[]): string {
+	const lines = source.split('\n').filter((l) => l.trim())
+	const cells = (line: string): string[] =>
+		line
+			.trim()
+			.replace(/^\||\|$/g, '')
+			.split('|')
+			.map((c) => c.trim())
+	const header = cells(lines[0] ?? '| Property | Path |')
+	const body = [...lines.slice(2).map(cells), ...rows.map((r) => [r.display, `\`${r.pathText}\``])]
+	const width = header.map((h, i) => Math.max(h.length, ...body.map((r) => (r[i] ?? '').length)))
+	const line = (r: string[]): string => `| ${width.map((w, i) => (r[i] ?? '').padEnd(w)).join(' | ')} |`
+	return [line(header), `| ${width.map((w) => '-'.repeat(w)).join(' | ')} |`, ...body.map(line)].join('\n')
 }
 
 function directive(

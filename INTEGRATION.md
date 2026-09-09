@@ -1396,7 +1396,16 @@ those ranges and nothing else. Changing a threshold in the YAML rewrites one
 bullet; the paragraphs around it are never addressed, so they cannot move. An
 edit with no prose form is refused by name — and refused *wholesale*, because
 the patch is recompiled and kept only if it says exactly what was asked for, so
-an incomplete writer surfaces as a refusal rather than as damaged prose. An
+an incomplete writer surfaces as a refusal rather than as damaged prose.
+
+The asymmetry worth knowing about is the property table: it is the only
+construct with no counterpart in the object. `from`, `id` and `subject_type` are
+fields the requirement needs anyway, but naming `approved_by` "**approver**"
+happens only in the Markdown. A check added to the object can therefore be
+perfectly valid and still unsayable, because nobody has named the path it reads.
+The writer adds the row instead of refusing, naming it after the path's last
+segment; renaming it afterwards is a one-word edit that changes nothing in the
+object. An
 engineer can keep editing the object and let the prose accrete around them;
 `npm run roundtrip` holds that over the real policies. `--apply` does the same
 from the command line.
