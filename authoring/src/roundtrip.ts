@@ -112,7 +112,39 @@ for (const file of POLICIES) {
 	else if (proseOf(markdown).some((p) => !added.markdown.includes(p))) fail('declare', 'prose lost')
 	else pass('declare a path the table does not name')
 
-	// 5. Removing one check takes its bullet and nothing else.
+	// 5. Typing your way to a path repoints one row; it does not stack a row per
+	// keystroke. Three successive edits to the same path, each applied to what
+	// the last one produced.
+	const rows = (text: string): number => text.split('\n').filter((l) => /^\s*\|/.test(l)).length
+	const pick = (spec: Record<string, {checks?: Record<string, {path?: unknown[]}>}>): [string, string] | null => {
+		for (const [req, body] of Object.entries(spec))
+			for (const [check, def] of Object.entries(body.checks ?? {}))
+				if (Array.isArray(def.path) && typeof def.path[def.path.length - 1] === 'string') return [req, check]
+		return null
+	}
+	const chosen = pick(analysis.requirements as never)
+	if (chosen) {
+		const [req, check] = chosen
+		const width = rows(markdown)
+		let doc = markdown
+		let broke = ''
+		for (const suffix of ['z', 'zz', '_2']) {
+			const spec = JSON.parse(JSON.stringify(analyze(doc, {customOps: registry()}).requirements)) as Record<string, {checks: Record<string, {path: string[]}>}>
+			const path = spec[req]!.checks[check]!.path
+			path[path.length - 1] = String(path[path.length - 1]).replace(/(z|zz|_2)$/, '') + suffix
+			const step = applyYaml(doc, yamlOf(spec))
+			if (!step.ok) {
+				broke = `${suffix}: ${[...step.refusals, ...step.drift].join('; ')}`
+				break
+			}
+			doc = step.markdown
+		}
+		if (broke) fail('repoint', broke)
+		else if (rows(doc) !== width) fail('repoint', `the table went from ${width} lines to ${rows(doc)}`)
+		else pass(`repoint ${req}.${check} through three path edits`)
+	}
+
+	// 6. Removing one check takes its bullet and nothing else.
 	const firstReq = Object.keys(analysis.requirements)[0]!
 	const cut = JSON.parse(JSON.stringify(analysis.requirements)) as Record<string, {checks: Record<string, unknown>}>
 	const names = Object.keys(cut[firstReq]!.checks)

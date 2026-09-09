@@ -21,7 +21,7 @@
 import type {Analysis, Anchor, Check, CustomOpRegistry, Path, PropertyDef} from './types.ts'
 import {RuleError} from './grammar.ts'
 import {renderDeclared} from './paths.ts'
-import {type RenderCtx, contextFor, writeBullet, wrap} from './render.ts'
+import {type RenderCtx, contextFor, writeBullet, writeCheck, wrap} from './render.ts'
 
 type Req = Record<string, unknown>
 
@@ -40,6 +40,45 @@ export interface PatchResult {
 interface Invented {
 	display: string
 	pathText: string
+}
+
+/** The properties one check reads, found by writing it with nothing to invent.
+ *  The writer is asked rather than the paths compared, so this cannot disagree
+ *  with what the prose will actually say. */
+function readsOf(analysis: Analysis, req: string, check: Check, customOps: CustomOpRegistry): PropertyDef[] {
+	const seen: PropertyDef[] = []
+	const ctx = contextFor(analysis.context, req, customOps)
+	ctx.record = (p) => {
+		if (!seen.includes(p)) seen.push(p)
+	}
+	try {
+		writeCheck(ctx, check)
+	} catch {
+		// It has no prose form, so it names nothing this can free.
+	}
+	return seen
+}
+
+/** Every property still spoken for once the edit lands — one bullet excepted,
+ *  because that is the bullet whose old reading is up for reuse. */
+function spokenFor(
+	analysis: Analysis,
+	target: Record<string, unknown>,
+	customOps: CustomOpRegistry,
+	except: {req: string; name: string},
+): Set<string> {
+	const out = new Set<string>()
+	const note = (req: string, check: Check): void => {
+		for (const p of readsOf(analysis, req, check, customOps)) out.add(p.display)
+	}
+	for (const [req, body] of Object.entries(target))
+		for (const field of ['checks', 'applies_to'])
+			for (const [name, check] of Object.entries(map(body as Req, field)))
+				if (req !== except.req || name !== except.name) note(req, check)
+	// Substitutes are declared once and shared, and their bullets are not
+	// patched here — but they read properties, so their rows are not free.
+	for (const check of Object.values(analysis.context.substitutes)) note('\u0000document', check)
+	return out
 }
 
 interface Edit {
@@ -83,7 +122,14 @@ export function applyRequirements(
 	// fault — naming a path is a Markdown-only act — so the writer declares it
 	// rather than refusing the edit, and says so.
 	const invented = new Map<string, Invented[]>()
+	const repointed = new Map<string, Invented[]>()
 	const contexts = new Map<string, RenderCtx>()
+	// Rows the bullet being written is free to take over: the ones its previous
+	// reading named, that nothing else reads any more. Editing a path is then a
+	// path edit, not a fresh declaration — which is what stops a table growing
+	// a row for every keystroke on the way to the path you meant.
+	let offer: PropertyDef[] = []
+
 	const ctxFor = (req: string): RenderCtx => {
 		const held = contexts.get(req)
 		if (held) return held
@@ -91,22 +137,42 @@ export function applyRequirements(
 		const subject = analysis.context.subjectOf[req]
 		ctx.invent = (path, splits) => {
 			if (!subject) throw new RuleError('this requirement is about no declared subject, so a new property has nowhere to go')
+			const pathText = renderDeclared(path, splits)
+
+			// A property is only interchangeable with one of the same shape: a
+			// leaf for a leaf, a collection for a collection.
+			const spare = offer.findIndex((p) => p.splits.length === splits.length)
+			if (spare >= 0) {
+				const [old] = offer.splice(spare, 1)
+				const at = ctx.props.indexOf(old!)
+				if (at >= 0) ctx.props.splice(at, 1)
+				repointed.set(subject, [...(repointed.get(subject) ?? []), {display: old!.display, pathText}])
+				return {display: old!.display, path, splits}
+			}
+
 			const rows = invented.get(subject) ?? []
 			const made: PropertyDef = {display: nameFor(ctx, rows, path), path, splits}
-			rows.push({display: made.display, pathText: renderDeclared(path, splits)})
+			rows.push({display: made.display, pathText})
 			invented.set(subject, rows)
 			return made
 		}
 		contexts.set(req, ctx)
 		return ctx
 	}
-	/** Undo the declarations a bullet made before it failed to write. */
-	const rollback = (req: string, props: number, rows: number): void => {
+
+	/** Everything a bullet may have touched, so a failed write leaves none of
+	 *  it behind: a refusal must not half-declare a subject. */
+	const mark = (req: string): (() => void) => {
 		const ctx = contexts.get(req)
-		if (ctx) ctx.props.length = props
-		const subject = analysis.context.subjectOf[req]
-		const held = subject ? invented.get(subject) : undefined
-		if (held) held.length = rows
+		const subject = analysis.context.subjectOf[req] ?? ''
+		const props = ctx ? [...ctx.props] : []
+		const made = [...(invented.get(subject) ?? [])]
+		const moved = [...(repointed.get(subject) ?? [])]
+		return () => {
+			if (ctx) ctx.props.splice(0, ctx.props.length, ...props)
+			if (invented.has(subject)) invented.set(subject, made)
+			if (repointed.has(subject)) repointed.set(subject, moved)
+		}
 	}
 
 	const anchor = (kind: Anchor['kind'], requirement?: string, name?: string): Anchor | undefined =>
@@ -167,7 +233,8 @@ export function applyRequirements(
 				}
 				if (same(was[name], now[name])) continue
 				const ctx = ctxFor(req)
-				const marks: [number, number] = [ctx.props.length, (invented.get(analysis.context.subjectOf[req] ?? '') ?? []).length]
+				const undo = mark(req)
+				offer = was[name] ? readsOf(analysis, req, was[name]!, customOps).filter((p) => !spokenFor(analysis, target, customOps, {req, name}).has(p.display)) : []
 				try {
 					if (was[name] && spot) {
 						// The author's quantifier and their spelling of the property
@@ -186,23 +253,26 @@ export function applyRequirements(
 						touched.push(name)
 					}
 				} catch (e) {
-					rollback(req, marks[0], marks[1])
+					undo()
 					refusals.push(`${req}.${name}: ${(e as Error).message}`)
 				}
 			}
 		}
 	}
 
-	// The new rows, once every bullet that wanted them has been written.
-	for (const [subject, rows] of invented) {
-		if (!rows.length) continue
+	// The table, once every bullet that wanted a row has been written.
+	for (const subject of new Set([...invented.keys(), ...repointed.keys()])) {
+		const added = invented.get(subject) ?? []
+		const moved = repointed.get(subject) ?? []
+		if (!added.length && !moved.length) continue
 		const table = analysis.anchors.find((a) => a.kind === 'table' && a.name === subject)
 		if (!table) {
-			refusals.push(`${subject}: has no property table, so \`${rows[0]!.pathText}\` cannot be named`)
+			refusals.push(`${subject}: has no property table, so \`${(added[0] ?? moved[0])!.pathText}\` cannot be named`)
 			continue
 		}
-		edits.push({start: table.start, end: table.end, text: addRows(markdown.slice(table.start, table.end), rows)})
-		for (const r of rows) changes.push(`named \`${r.pathText}\` **${r.display}** under ${subject}`)
+		edits.push({start: table.start, end: table.end, text: editTable(markdown.slice(table.start, table.end), moved, added)})
+		for (const r of moved) changes.push(`pointed **${r.display}** at \`${r.pathText}\``)
+		for (const r of added) changes.push(`named \`${r.pathText}\` **${r.display}** under ${subject}`)
 	}
 
 	return {markdown: splice(markdown, edits), changes, refusals, touched}
@@ -212,7 +282,7 @@ export function applyRequirements(
 function nameFor(ctx: RenderCtx, pending: Invented[], path: Path): string {
 	const words = path.filter((seg): seg is string => typeof seg === 'string')
 	const taken = new Set([...ctx.props.map((p) => p.display.toLowerCase()), ...pending.map((p) => p.display.toLowerCase())])
-	const say = (raw: string): string => raw.replace(/[_-]+/g, ' ').trim().toLowerCase()
+	const say = (raw: string): string => raw.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
 	for (let take = 1; take <= words.length; take++) {
 		const candidate = say(words.slice(words.length - take).join(' '))
 		if (candidate && !taken.has(candidate)) return candidate
@@ -221,10 +291,10 @@ function nameFor(ctx: RenderCtx, pending: Invented[], path: Path): string {
 	return say(words.join(' ')) + ' path'
 }
 
-/** The table, with rows appended and every column realigned. Rewriting it
- *  whole is what keeps a longer path from breaking the alignment the author
- *  had; a table that already fits comes back byte for byte. */
-function addRows(source: string, rows: Invented[]): string {
+/** The table, with rows repointed or appended and every column realigned.
+ *  Rewriting it whole is what keeps a longer path from breaking the alignment
+ *  the author had; a table that already fits comes back byte for byte. */
+function editTable(source: string, moved: Invented[], added: Invented[]): string {
 	const lines = source.split('\n').filter((l) => l.trim())
 	const cells = (line: string): string[] =>
 		line
@@ -232,8 +302,17 @@ function addRows(source: string, rows: Invented[]): string {
 			.replace(/^\||\|$/g, '')
 			.split('|')
 			.map((c) => c.trim())
+	const key = (t: string): string => t.toLowerCase().replace(/\s+/g, ' ').trim()
+	const repoint = new Map(moved.map((r) => [key(r.display), r.pathText]))
 	const header = cells(lines[0] ?? '| Property | Path |')
-	const body = [...lines.slice(2).map(cells), ...rows.map((r) => [r.display, `\`${r.pathText}\``])]
+	const body = [
+		...lines.slice(2).map((l) => {
+			const row = cells(l)
+			const to = repoint.get(key(row[0] ?? ''))
+			return to ? [row[0] ?? '', `\`${to}\``, ...row.slice(2)] : row
+		}),
+		...added.map((r) => [r.display, `\`${r.pathText}\``]),
+	]
 	const width = header.map((h, i) => Math.max(h.length, ...body.map((r) => (r[i] ?? '').length)))
 	const line = (r: string[]): string => `| ${width.map((w, i) => (r[i] ?? '').padEnd(w)).join(' | ')} |`
 	return [line(header), `| ${width.map((w) => '-'.repeat(w)).join(' | ')} |`, ...body.map(line)].join('\n')

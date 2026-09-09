@@ -308,6 +308,20 @@ added prod_deploy.window_open · named `release.change_window` **change window**
 The name is mechanical, and renaming it is a one-word edit that changes nothing
 in the object — which is the point: prose names have no counterpart to break.
 
+**Editing a path repoints a row; it does not add one.** When a check changes
+which path it reads, the property its previous reading named is usually left
+reading for nobody — so the writer takes that row over rather than declaring a
+second one, keeping the name the author gave it:
+
+```
+rewrote prod_deploy.ci_green · pointed **CI checks** at `ci_checks_2`
+```
+
+Without that, typing your way to the path you meant leaves a row behind at every
+pause. A row is only taken over when nothing else reads it and the shape matches
+— a leaf for a leaf, a collection for a collection — which is checked by asking
+the writer what each check reads, not by comparing paths.
+
 Two edits are lossy, and say so:
 
 - **Deleting a check** deletes its bullet, and the description written under it.

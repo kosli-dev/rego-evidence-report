@@ -31,6 +31,9 @@ export interface RenderCtx {
 	 * supplies this, the writer declares the path instead of refusing it.
 	 */
 	invent?: (path: Path, splits: number[]) => PropertyDef
+	/** Told about every property a rule reads. A caller uses it to work out
+	 *  which rows of the table are still spoken for. */
+	record?: (prop: PropertyDef) => void
 }
 
 export function contextFor(doc: DocContext, requirement: string, customOps: CustomOpRegistry): RenderCtx {
@@ -70,7 +73,14 @@ const bold = (display: string): string => `**${display}**`
 const article = (word: string): string => (/^[aeiou]/i.test(word) ? 'an' : 'a')
 
 function property(ctx: RenderCtx, path: Path): PropertyDef {
-	return ctx.props.find((p) => same(p.path, path)) ?? declare(ctx, path, [], renderPath(path))
+	const found = ctx.props.find((p) => same(p.path, path))
+	return found ? use(ctx, found) : declare(ctx, path, [], renderPath(path))
+}
+
+/** Note that a rule reads this property, and hand it back. */
+function use(ctx: RenderCtx, prop: PropertyDef): PropertyDef {
+	ctx.record?.(prop)
+	return prop
 }
 
 /** Ask the caller to name a path, or say plainly that nobody has. */
@@ -78,7 +88,7 @@ function declare(ctx: RenderCtx, path: Path, splits: number[], shown: string): P
 	if (!ctx.invent) throw new RuleError(`no declared property has the path \`${shown}\` — add a row to the Subjects table first`)
 	const made = ctx.invent(path, splits)
 	ctx.props.push(made)
-	return made
+	return use(ctx, made)
 }
 
 function patternsClause(ctx: RenderCtx, values: unknown[]): string {
@@ -107,9 +117,8 @@ function element(ctx: RenderCtx, outer: PropertyDef, inner: Check): string {
 	if (!path.length) return predicate(ctx, inner)
 
 	const stem = outerPath(outer)
-	const prop =
-		ctx.props.find((p) => same(innerPath(p), path) && startsWith(p.path, stem)) ??
-		declare(ctx, [...stem, ...path], [stem.length], renderDeclared([...stem, ...path], [stem.length]))
+	const held = ctx.props.find((p) => same(innerPath(p), path) && startsWith(p.path, stem))
+	const prop = held ? use(ctx, held) : declare(ctx, [...stem, ...path], [stem.length], renderDeclared([...stem, ...path], [stem.length]))
 
 	if (inner['op'] === 'equals' && !('substitute' in inner))
 		return `have ${article(prop.display)} ${bold(prop.display)} of ${code(inner['value'])}`
@@ -127,7 +136,8 @@ function substituteName(ctx: RenderCtx, sub: unknown): string {
 function records(ctx: RenderCtx, entry: unknown): string {
 	const e = entry as {path?: Path; each?: string[]}
 	if (!e || !e.path || !e.each || e.each.length !== 1) throw new RuleError('an input that is not a single projection cannot be written as prose')
-	const prop = ctx.props.find((p) => same(outerPath(p), e.path)) ?? declare(ctx, e.path, [], renderPath(e.path))
+	const held = ctx.props.find((p) => same(outerPath(p), e.path))
+	const prop = held ? use(ctx, held) : declare(ctx, e.path, [], renderPath(e.path))
 	const possessive = prop.display.endsWith('s') ? "'" : "'s"
 	return `Records the ${bold(prop.display)}${possessive} ${code(e.each[0])}.`
 }
@@ -182,7 +192,8 @@ export function writeCheck(ctx: RenderCtx, check: Check, lead?: string, head?: s
 		const inputs = (c['inputs'] ?? []) as unknown[]
 		if (!same(inputs.slice(0, derived.length), derived)) throw new RuleError(`"${op}" carries inputs the registry does not derive`)
 		extraInputs.push(...inputs.slice(derived.length))
-		const prop = ctx.props.find((p) => same(outerPath(p), path)) ?? declare(ctx, path, [], renderPath(path))
+		const held = ctx.props.find((p) => same(outerPath(p), path))
+		const prop = held ? use(ctx, held) : declare(ctx, path, [], renderPath(path))
 		return {rule: `${lead ?? 'some'} ${spell(prop, head)} must ${custom.phrase}${tail}`, records: extraInputs.map((e) => records(ctx, e)), description}
 	}
 
@@ -199,7 +210,7 @@ export function writeCheck(ctx: RenderCtx, check: Check, lead?: string, head?: s
 		)
 		// Two boundaries are declared `a[].b[]`, one is the bare path.
 		const shape: [Path, number[]] = each ? [[...path, ...each], [path.length, path.length + each.length]] : [path, []]
-		const prop = found ?? declare(ctx, shape[0], shape[1], renderDeclared(shape[0], shape[1]))
+		const prop = found ? use(ctx, found) : declare(ctx, shape[0], shape[1], renderDeclared(shape[0], shape[1]))
 		const quantifier = op === 'all' ? 'every' : (lead ?? 'some')
 		return {rule: `${quantifier} ${spell(prop, head)} must ${element(ctx, prop, (c['check'] ?? {}) as Check)}${tail}`, records: rendered, description}
 	}

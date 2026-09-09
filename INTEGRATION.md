@@ -1405,7 +1405,9 @@ happens only in the Markdown. A check added to the object can therefore be
 perfectly valid and still unsayable, because nobody has named the path it reads.
 The writer adds the row instead of refusing, naming it after the path's last
 segment; renaming it afterwards is a one-word edit that changes nothing in the
-object. An
+object. Changing a path repoints the row its previous reading named rather than
+adding a second one, so editing towards the path you meant does not leave a row
+behind at every pause. An
 engineer can keep editing the object and let the prose accrete around them;
 `npm run roundtrip` holds that over the real policies. `--apply` does the same
 from the command line.
