@@ -219,43 +219,104 @@ export function applyRequirements(
 			const kind = field === 'checks' ? 'rule' : 'scope'
 			const was = map(before, field)
 			const now = map(after, field)
-			for (const name of new Set([...Object.keys(was), ...Object.keys(now)])) {
-				const spot = anchor(kind, req, name)
-				if (was[name] && !now[name]) {
-					if (!spot) {
-						refusals.push(`${req}.${name}: cannot find where it was written`)
-						continue
-					}
-					edits.push({start: lineStart(markdown, spot.start), end: swallow(markdown, spot.end), text: ''})
-					changes.push(`removed ${req}.${name}, and its description`)
-					touched.push(name)
-					continue
+
+			const gone = Object.keys(was).filter((n) => !(n in now))
+			const fresh = Object.keys(now).filter((n) => !(n in was))
+
+			// A name that disappeared and one that appeared carrying the same
+			// check is a rename. Rewriting that bullet in place keeps its
+			// position and the description under it; deleting it and appending
+			// a stranger at the end of the list would lose both.
+			const renamed = new Map<string, string>()
+			for (const from of [...gone]) {
+				const to = fresh.find((f) => same(was[from], now[f]))
+				if (!to) continue
+				renamed.set(from, to)
+				gone.splice(gone.indexOf(from), 1)
+				fresh.splice(fresh.indexOf(to), 1)
+			}
+			// One out, one in, and neither matched: a rename with an edit.
+			if (gone.length === 1 && fresh.length === 1) {
+				renamed.set(gone[0]!, fresh[0]!)
+				gone.length = 0
+				fresh.length = 0
+			}
+
+			const rewrite = (from: string, to: string): void => {
+				const spot = anchor(kind, req, from)
+				if (!spot) {
+					refusals.push(`${req}.${from}: cannot find where it was written`)
+					return
 				}
-				if (same(was[name], now[name])) continue
 				const ctx = ctxFor(req)
 				const undo = mark(req)
-				offer = was[name] ? readsOf(analysis, req, was[name]!, customOps).filter((p) => !spokenFor(analysis, target, customOps, {req, name}).has(p.display)) : []
+				offer = readsOf(analysis, req, was[from]!, customOps).filter((p) => !spokenFor(analysis, target, customOps, {req, name: to}).has(p.display))
 				try {
-					if (was[name] && spot) {
-						// The author's quantifier and their spelling of the property
-						// only survive an edit that leaves the operator alone;
-						// past that they may no longer describe the check.
-						const kept = was[name]?.['op'] === now[name]?.['op']
-						edits.push({start: lineStart(markdown, spot.start), end: spot.end, text: writeBullet(ctx, name, now[name]!, spot.indent ?? '', kept ? spot.lead : undefined, kept ? spot.head : undefined)})
-						changes.push(`rewrote ${req}.${name}`)
-						touched.push(name)
-					} else {
-						const list = anchor('list', req, field)
-						if (!list) throw new RuleError(`there is no ${field === 'checks' ? '"Must hold:"' : '"In scope:"'} list to add it to`)
-						const gap = markdown.slice(list.start, list.end).includes('\n\n') ? '\n\n' : '\n'
-						edits.push({start: list.end, end: list.end, text: gap + writeBullet(ctx, name, now[name]!, list.indent ?? '')})
-						changes.push(`added ${req}.${name}`)
-						touched.push(name)
-					}
+					// The author's quantifier and their spelling of the property
+					// only survive an edit that leaves the operator alone; past
+					// that they may no longer describe the check.
+					const kept = was[from]?.['op'] === now[to]?.['op']
+					edits.push({
+						start: lineStart(markdown, spot.start),
+						end: spot.end,
+						text: writeBullet(ctx, to, now[to]!, spot.indent ?? '', kept ? spot.lead : undefined, kept ? spot.head : undefined),
+					})
+					changes.push(from === to ? `rewrote ${req}.${to}` : `renamed ${req}.${from} to ${to}`)
+					touched.push(to)
+				} catch (e) {
+					undo()
+					refusals.push(`${req}.${to}: ${(e as Error).message}`)
+				}
+			}
+
+			for (const [from, to] of renamed) rewrite(from, to)
+			for (const name of Object.keys(now)) if (name in was && !same(was[name], now[name])) rewrite(name, name)
+
+			for (const name of gone) {
+				const spot = anchor(kind, req, name)
+				if (!spot) {
+					refusals.push(`${req}.${name}: cannot find where it was written`)
+					continue
+				}
+				edits.push({start: lineStart(markdown, spot.start), end: swallow(markdown, spot.end), text: ''})
+				changes.push(`removed ${req}.${name}, and its description`)
+				touched.push(name)
+			}
+
+			if (!fresh.length) continue
+
+			// Where a new bullet goes: after the last item still standing, so an
+			// insertion can never land inside a deletion. If none is left, in
+			// front of the list, and the deletions take the rest away.
+			const list = anchor('list', req, field)
+			if (!list) {
+				for (const name of fresh) refusals.push(`${req}.${name}: there is no ${field === 'checks' ? '"Must hold:"' : '"In scope:"'} list to add it to`)
+				continue
+			}
+			const standing = analysis.anchors.filter((a) => a.kind === kind && a.requirement === req && a.name && !gone.includes(a.name))
+			const tail = standing[standing.length - 1]
+			const gap = markdown.slice(list.start, list.end).includes('\n\n') ? '\n\n' : '\n'
+
+			// One edit for all of them, so they land in the order they were
+			// written rather than the order the splice happens to reach them.
+			const bullets: string[] = []
+			for (const name of fresh) {
+				const ctx = ctxFor(req)
+				const undo = mark(req)
+				offer = []
+				try {
+					bullets.push(writeBullet(ctx, name, now[name]!, list.indent ?? ''))
+					changes.push(`added ${req}.${name}`)
+					touched.push(name)
 				} catch (e) {
 					undo()
 					refusals.push(`${req}.${name}: ${(e as Error).message}`)
 				}
+			}
+			if (bullets.length) {
+				const at = tail ? tail.end : list.start
+				const text = bullets.join(gap)
+				edits.push({start: at, end: at, text: tail ? gap + text : text + gap})
 			}
 		}
 	}

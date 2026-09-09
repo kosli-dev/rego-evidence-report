@@ -144,7 +144,25 @@ for (const file of POLICIES) {
 		else pass(`repoint ${req}.${check} through three path edits`)
 	}
 
-	// 6. Removing one check takes its bullet and nothing else.
+	// 6. Renaming is not remove-and-add: the bullet keeps its place in the list
+	// and the description written under it.
+	const renaming = JSON.parse(JSON.stringify(analysis.requirements)) as Record<string, {checks: Record<string, unknown>; applies_to?: Record<string, unknown>}>
+	const host2 = Object.keys(renaming)[0]!
+	const field = renaming[host2]!.applies_to ? 'applies_to' : 'checks'
+	const table = renaming[host2]![field] as Record<string, unknown>
+	const was = Object.keys(table)[0]!
+	const order = (text: string): string[] => (text.match(/^\s*- `[\w-]+`/gm) ?? []).map((l) => l.trim())
+	table[`${was}_renamed`] = table[was]
+	delete table[was]
+	const renamed = applyYaml(markdown, yamlOf(renaming))
+	const positions = order(renamed.markdown)
+	if (renamed.refusals.length || renamed.drift.length) fail('rename', [...renamed.refusals, ...renamed.drift].join('; '))
+	else if (positions.length !== order(markdown).length) fail('rename', `${order(markdown).length} bullets became ${positions.length}`)
+	else if (positions.indexOf(`- \`${was}_renamed\``) !== order(markdown).indexOf(`- \`${was}\``)) fail('rename', 'the bullet moved')
+	else if (proseOf(markdown).some((p) => !renamed.markdown.includes(p))) fail('rename', 'prose lost')
+	else pass(`rename ${host2}.${was} in ${field}`)
+
+	// 7. Removing one check takes its bullet and nothing else.
 	const firstReq = Object.keys(analysis.requirements)[0]!
 	const cut = JSON.parse(JSON.stringify(analysis.requirements)) as Record<string, {checks: Record<string, unknown>}>
 	const names = Object.keys(cut[firstReq]!.checks)

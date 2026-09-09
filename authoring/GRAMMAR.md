@@ -322,6 +322,11 @@ pause. A row is only taken over when nothing else reads it and the shape matches
 — a leaf for a leaf, a collection for a collection — which is checked by asking
 the writer what each check reads, not by comparing paths.
 
+**Renaming is not remove-and-add.** A name that disappears and one that appears
+carrying the same check is read as a rename, and the bullet is rewritten where
+it stands — so it keeps its place in the list and the description written under
+it. Only a name that genuinely has no counterpart is deleted.
+
 Two edits are lossy, and say so:
 
 - **Deleting a check** deletes its bullet, and the description written under it.
