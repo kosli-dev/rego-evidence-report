@@ -814,7 +814,11 @@ function render(result) {
 // are patched into the bullets that produced them. Everything else in the file,
 // the rationale paragraphs included, is never addressed and so never moves.
 
-let ybox = null, ydirty = false, ytimer = 0;
+// `ypending` means the pane holds an edit the document has not taken: a parse
+// error, or a refusal. While that is true the text is the author's and nothing
+// may overwrite it — losing what somebody typed because it did not apply is
+// worse than showing it next to the reason it did not.
+let ybox = null, ypending = false, ytimer = 0;
 
 function buildYaml() {
   const wrap = el('div', 'ywrap');
@@ -833,13 +837,13 @@ function buildYaml() {
   };
   area.addEventListener('scroll', () => { pre.scrollTop = area.scrollTop; pre.scrollLeft = area.scrollLeft; });
   area.addEventListener('input', () => {
-    ydirty = true;
     paint();
     clearTimeout(ytimer);
     ytimer = setTimeout(writeBack, 400);
   });
-  // Leaving the pane accepts the canonical spelling of whatever landed.
-  area.addEventListener('blur', () => { ydirty = false; if (last) { area.value = last.yaml.trim(); paint(); } });
+  // Leaving the pane accepts the canonical spelling of whatever landed — unless
+  // something is still unapplied, which is exactly what you would want to keep.
+  area.addEventListener('blur', () => { if (!ypending && last) { area.value = last.yaml.trim(); paint(); } });
   area.addEventListener('keydown', (e) => {
     if (e.key !== 'Tab') return;
     e.preventDefault();
@@ -861,6 +865,7 @@ function say(kind, label, text) {
 
 function writeBack() {
   const res = EvidenceMD.applyYaml(src.value, ybox.area.value);
+  ypending = true;
   if (res.error) return say('warn', 'yaml', res.error);
 
   // A change with no prose form is refused by name rather than approximated,
@@ -872,6 +877,7 @@ function writeBack() {
   const refused = res.refusals.length ? res.refusals : res.drift.map((d) => d + ' \u2014 no prose form');
   if (refused.length) return say('bad', 'not applied', refused.join(' \u00b7 '));
 
+  ypending = false;
   if (res.markdown === src.value) return say('', 'in sync', 'the Markdown already says this');
   src.value = res.markdown;
   compile();
@@ -891,11 +897,12 @@ function writeBack() {
 function viewYaml(result) {
   const box = ybox ?? buildYaml();
   if (panel.firstChild !== box.wrap) panel.replaceChildren(box.wrap);
-  if (!ydirty) {
-    box.area.value = result.yaml.trim() || '# nothing compiled yet';
-    box.paint();
-    box.stat.hidden = true;
-  }
+  // Refresh from the document, except while somebody is typing into it or
+  // holding an edit it has not taken.
+  if (ypending || document.activeElement === box.area) return;
+  box.area.value = result.yaml.trim() || '# nothing compiled yet';
+  box.paint();
+  box.stat.hidden = true;
 }
 
 function goto(line) {
@@ -942,6 +949,8 @@ for (const ev of ['keyup', 'click']) src.addEventListener(ev, () => {
 
 function load(which) {
   current = which;
+  // A different document: whatever the YAML pane was holding is not about it.
+  ypending = false;
   for (const [id, key] of [['s-pd','pd'],['s-43','c43'],['s-ms','ms']])
     $(id).setAttribute('aria-pressed', String(which === key));
   src.value = store.get(which) ?? SAMPLES[which];
@@ -956,14 +965,16 @@ $('s-reset').addEventListener('click', () => { store.del(current); load(current)
 const TABS = [['t-blocks','blocks'],['t-policy','policy'],['t-doc','doc'],['t-yaml','yaml'],['t-ref','ref']];
 for (const [id, name] of TABS) $(id).addEventListener('click', () => {
   tab = name;
-  ydirty = false;
   for (const [i, n] of TABS) $(i).setAttribute('aria-selected', String(n === name));
   panel.scrollTop = 0;
   if (last) render(last);
 });
 $('copy').addEventListener('click', async () => {
   const b = $('copy');
-  try { await navigator.clipboard.writeText(last?.yaml ?? ''); b.textContent = 'Copied'; }
+  // On the YAML tab, copy what is in the pane — including an edit that has not
+  // been applied, which is the one a reader is most likely to want to send on.
+  const text = tab === 'yaml' && ybox ? ybox.area.value : (last?.yaml ?? '');
+  try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
   catch { b.textContent = 'Blocked'; }
   setTimeout(() => { b.textContent = 'Copy YAML'; }, 1400);
 });

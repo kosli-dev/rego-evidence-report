@@ -12,7 +12,9 @@
 // `npm run roundtrip` asserts matchRule(render(c)) === c for every operator.
 
 import type {Check, CustomOpRegistry, DocContext, Path, PropertyDef} from './types.ts'
-import {renderDeclared, renderPath} from './paths.ts'
+import {fromMarkdown} from 'mdast-util-from-markdown'
+import {literal, renderDeclared, renderPath} from './paths.ts'
+import {atomize, plain} from './grammar.ts'
 import {LEAF_TABLE, type RenderHelp, RuleError, outerPath, innerPath} from './grammar.ts'
 
 export interface RenderCtx {
@@ -61,12 +63,68 @@ function names(prop: PropertyDef, written: string | undefined): boolean {
  *  still resolves — "every **CI check**" over a table that says "CI checks". */
 const spell = (prop: PropertyDef, written?: string): string => bold(names(prop, written) ? written! : prop.display)
 
-/** A literal, back in backticks. A value holding a backtick is fenced with two,
- *  which is what CommonMark asks for and what the parser reads back. */
+/** An identifier, back in backticks: a check's name, a substitute's, a field.
+ *  One holding a backtick is fenced with two, as CommonMark asks. */
 export function code(v: unknown): string {
 	const text = v === null ? 'null' : String(v)
 	if (!text.includes('`')) return `\`${text}\``
 	return `\`\` ${text} \`\``
+}
+
+/**
+ * A sentence of the author's own words, escaped so the document reads it back
+ * as the same words.
+ *
+ * Descriptions are prose and may contain anything — a `*`, a backtick, a
+ * bracket — all of which mean something in Markdown. Rather than guess at a
+ * safe escape set, escape lightly, read the result back through the same
+ * parser the transpiler uses, and escalate only if it came back different.
+ */
+export function prose(text: string): string {
+	const light = text.replace(/[\\`*_[\]<&]/g, (c) => `\\${c}`)
+	if (readsBack(light, text)) return light
+	const heavy = text.replace(/[!-/:-@[-`{-~]/g, (c) => `\\${c}`)
+	if (readsBack(heavy, text)) return heavy
+	throw new RuleError('this description cannot be written as Markdown without changing what it says')
+}
+
+function readsBack(markdown: string, want: string): boolean {
+	const tree = fromMarkdown(markdown) as {children?: Array<{children?: unknown[]}>}
+	const para = (tree.children ?? [])[0]
+	if (!para || (tree.children ?? []).length !== 1) return false
+	return plain(atomize((para.children ?? []) as never[])) === want
+}
+
+/**
+ * A literal, back in backticks — and only where the document reads it back as
+ * the same value.
+ *
+ * Prose writes a bare token, so the string "true" and the boolean true have one
+ * spelling between them and the reader takes the boolean; a code span also eats
+ * a leading space and turns a newline into one. Rather than enumerate those,
+ * write the span, read it back through the same parser, and insist.
+ */
+export function value(v: unknown): string {
+	const text = v === null ? 'null' : String(v)
+	const written = text.includes('`') ? `\`\` ${text} \`\`` : `\`${text}\``
+	const back = readCode(written)
+	if (back === null) throw new RuleError(`the value ${JSON.stringify(text)} cannot be written as a code span`)
+	const read = literal(back)
+	if (read !== v)
+		throw new RuleError(
+			typeof read !== typeof v
+				? `the value \`${back}\` would be read back as ${read === null ? 'null' : typeof read}, not ${typeof v} — prose writes a bare token, so a ${typeof v} that looks like ${read === null ? 'null' : `a ${typeof read}`} has no spelling`
+				: `the value ${JSON.stringify(text)} would be read back as ${JSON.stringify(String(read))}`,
+		)
+	return written
+}
+
+/** The one inline code span a fragment holds, or null if it is not one. */
+function readCode(markdown: string): string | null {
+	const tree = fromMarkdown(markdown) as {children?: Array<{children?: Array<{type: string; value?: string}>}>}
+	const kids = (tree.children ?? [])[0]?.children ?? []
+	if ((tree.children ?? []).length !== 1 || kids.length !== 1 || kids[0]?.type !== 'inlineCode') return null
+	return kids[0].value ?? ''
 }
 
 const bold = (display: string): string => `**${display}**`
@@ -85,6 +143,12 @@ function use(ctx: RenderCtx, prop: PropertyDef): PropertyDef {
 
 /** Ask the caller to name a path, or say plainly that nobody has. */
 function declare(ctx: RenderCtx, path: Path, splits: number[], shown: string): PropertyDef {
+	// A declaration is a code span in a table cell, and the path notation reads
+	// `.` and `[]` itself, so a segment carrying any of those cannot be written
+	// down — it would come back as a different path, or as a broken table.
+	for (const seg of path)
+		if (typeof seg === 'string' && /[|`.[\]\n]/.test(seg))
+			throw new RuleError(`the path segment \`${seg}\` cannot be declared: a table cell holds it as a code span, and \` . [ ] |\` all mean something there`)
 	if (!ctx.invent) throw new RuleError(`no declared property has the path \`${shown}\` — add a row to the Subjects table first`)
 	const made = ctx.invent(path, splits)
 	ctx.props.push(made)
@@ -98,7 +162,7 @@ function patternsClause(ctx: RenderCtx, values: unknown[]): string {
 
 function help(ctx: RenderCtx): RenderHelp {
 	return {
-		code,
+		code: value,
 		patterns: (values) => patternsClause(ctx, values),
 		property: (path) => bold(property(ctx, path).display),
 	}
@@ -121,7 +185,7 @@ function element(ctx: RenderCtx, outer: PropertyDef, inner: Check): string {
 	const prop = held ? use(ctx, held) : declare(ctx, [...stem, ...path], [stem.length], renderDeclared([...stem, ...path], [stem.length]))
 
 	if (inner['op'] === 'equals' && !('substitute' in inner))
-		return `have ${article(prop.display)} ${bold(prop.display)} of ${code(inner['value'])}`
+		return `have ${article(prop.display)} ${bold(prop.display)} of ${value(inner['value'])}`
 	return `have ${article(prop.display)} ${bold(prop.display)} that must ${predicate(ctx, {...inner, path: []} as Check)}`
 }
 
@@ -167,6 +231,11 @@ export function writeCheck(ctx: RenderCtx, check: Check, lead?: string, head?: s
 	const c = {...check}
 	const description = typeof c['description'] === 'string' ? c['description'] : ''
 	delete c['description']
+	// A description is the sentences after the rule, and the reader drops the
+	// full stop that ends the last one. So a description carrying its own is
+	// unreachable: it would come back one character shorter, every time.
+	if (/\.\s*$/.test(description))
+		throw new RuleError('a description is a phrase, not a sentence — drop the trailing full stop, the writer adds one')
 
 	let tail = ''
 	if ('substitute' in c) {
@@ -187,10 +256,12 @@ export function writeCheck(ctx: RenderCtx, check: Check, lead?: string, head?: s
 			if (!named) throw new RuleError(`the patterns on "${op}" are not a declared constant`)
 			tail = `, treating ${bold(named)} as explained` + tail
 		}
-		if (c['expression'] !== custom.expression) throw new RuleError(`"${op}" carries an expression the registry does not define`)
+		if (c['expression'] !== custom.expression)
+			throw new RuleError(`"${op}" carries an \`expression\` the registry does not define — a custom operator's expression comes from authoring/custom_ops.json, not from the spec`)
 		const derived = derivedInputs(ctx, op, path)
 		const inputs = (c['inputs'] ?? []) as unknown[]
-		if (!same(inputs.slice(0, derived.length), derived)) throw new RuleError(`"${op}" carries inputs the registry does not derive`)
+		if (!same(inputs.slice(0, derived.length), derived))
+			throw new RuleError(`"${op}" reads \`inputs\` the registry does not derive from its \`path\` — a custom operator's inputs follow its path, so the two have to move together`)
 		extraInputs.push(...inputs.slice(derived.length))
 		const held = ctx.props.find((p) => same(outerPath(p), path))
 		const prop = held ? use(ctx, held) : declare(ctx, path, [], renderPath(path))
@@ -224,30 +295,49 @@ export function writeCheck(ctx: RenderCtx, check: Check, lead?: string, head?: s
 export function writeBullet(ctx: RenderCtx, name: string, check: Check, indent = '', lead?: string, head?: string): string {
 	const {rule, records: recorded, description} = writeCheck(ctx, check, lead, head)
 	const sentences = [`${code(name)} — ${rule}.`, ...recorded]
-	if (description) sentences.push(description.replace(/\.?$/, '.'))
+	if (description) sentences.push(`${prose(description)}.`)
 	return wrap(sentences.join(' '), indent)
 }
 
-/**
- * Wrap at word boundaries, never inside a code span: a soft break inside
- * backticks becomes a space in the value, which would quietly rewrite a regex.
- */
+/** Wrap at word boundaries, but never inside a code span or in front of a
+ *  token that would start a new block. */
 export function wrap(text: string, indent: string, width = 78): string {
-	// Words, except that a code span holding spaces is one word: a soft break
-	// inside backticks becomes a space in the value, which would quietly
-	// rewrite a regex.
+	// Words, except that a code span is one word however many spaces it holds
+	// and however it is fenced: a line break inside backticks becomes a space in
+	// the value, which would quietly rewrite a regex.
 	const tokens: string[] = []
-	for (const word of text.split(/\s+/).filter(Boolean)) {
-		const last = tokens[tokens.length - 1]
-		if (last && ((last.match(/`/g) ?? []).length % 2 === 1)) tokens[tokens.length - 1] = `${last} ${word}`
-		else tokens.push(word)
+	let buf = ''
+	for (let i = 0; i < text.length; ) {
+		const ch = text[i]!
+		if (ch === '`') {
+			const fence = /^`+/.exec(text.slice(i))![0]
+			const close = text.indexOf(fence, i + fence.length)
+			const end = close < 0 ? text.length : close + fence.length
+			buf += text.slice(i, end)
+			i = end
+			continue
+		}
+		if (/\s/.test(ch)) {
+			if (buf) tokens.push(buf)
+			buf = ''
+			i++
+			continue
+		}
+		buf += ch
+		i++
 	}
+	if (buf) tokens.push(buf)
+
+	// A line that began with a list marker, a heading or a quote would end the
+	// paragraph and take the rest of the description with it. Rather than escape
+	// the author's words, simply never break before such a token.
+	const startsBlock = (t: string): boolean => /^(?:[-+>#]|\d+[.)])/.test(t)
 
 	const lines: string[] = []
 	let line = `${indent}- `
 	let empty = true
 	for (const token of tokens) {
-		if (!empty && line.length + 1 + token.length > width) {
+		if (!empty && line.length + 1 + token.length > width && !startsBlock(token)) {
 			lines.push(line)
 			line = `${indent}  `
 			empty = true

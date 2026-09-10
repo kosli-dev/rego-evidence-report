@@ -346,6 +346,30 @@ applying a document's own YAML to it changes nothing; touching every check
 sends every bullet through the writer and still recompiles to the object asked
 for; and every paragraph of prose is still there afterwards, byte for byte.
 
+## What an edit to the object cannot say
+
+Prose is not a serialisation format, and a few objects have no spelling in it.
+Each is refused by name rather than approximated, so the document is never left
+saying something the object does not:
+
+- **A description ending in a full stop.** The reader drops the stop that ends
+  the last sentence, so such a description would come back one character
+  shorter, every time. Descriptions are phrases; the writer adds the stop.
+- **A value that would be read back as something else.** Prose writes a bare
+  token, so the string `"true"` and the boolean `true` have one spelling between
+  them and the reader takes the boolean. The same goes for a value with leading
+  spaces or a newline in it, which a code span does not preserve.
+- **A path segment containing `` ` ``, `.`, `[`, `]` or `|`.** A declaration is
+  a code span in a table cell, and all of those mean something there.
+- **A custom operator whose `inputs` or `expression` do not match the
+  registry.** Its prose names the operator and what it applies to; everything
+  else comes from `custom_ops.json`, so a spec that disagrees cannot be written.
+
+And one thing that is quietly lost rather than refused: **formatting inside a
+description**. A code span or a bold span in a description is not in the object
+— the reader keeps the words and drops the markup — so regenerating that bullet
+writes the words back plainly.
+
 ## Declared but unread
 
 A property nothing reads is not an error — declaring ahead of use is the

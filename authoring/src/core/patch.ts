@@ -134,7 +134,9 @@ export function applyRequirements(
 		const held = contexts.get(req)
 		if (held) return held
 		const ctx = contextFor(analysis.context, req, customOps)
-		const subject = analysis.context.subjectOf[req]
+		// A requirement the document does not have yet is about the subject its
+		// own object names, since the analysis has never seen it.
+		const subject = analysis.context.subjectOf[req] ?? String((target[req] as Req | undefined)?.['subject_type'] ?? '')
 		ctx.invent = (path, splits) => {
 			if (!subject) throw new RuleError('this requirement is about no declared subject, so a new property has nowhere to go')
 			const pathText = renderDeclared(path, splits)
@@ -190,15 +192,18 @@ export function applyRequirements(
 				refusals.push(`${req}: cannot find where it was written`)
 				continue
 			}
-			edits.push({start: lineStart(markdown, region.start), end: swallow(markdown, region.end), text: ''})
+			edits.push(cut(markdown, region.start, region.end))
 			changes.push(`removed ${req}, and the prose written under it`)
 			continue
 		}
 		if (!before && after) {
+			const ctx = ctxFor(req)
+			const undo = mark(req)
 			try {
-				edits.push(addRequirement(markdown, analysis, req, after, customOps))
+				edits.push(addRequirement(markdown, analysis, req, after, ctx))
 				changes.push(`added ${req}`)
 			} catch (e) {
+				undo()
 				refusals.push(`${req}: ${(e as Error).message}`)
 			}
 			continue
@@ -250,7 +255,14 @@ export function applyRequirements(
 				}
 				const ctx = ctxFor(req)
 				const undo = mark(req)
-				offer = readsOf(analysis, req, was[from]!, customOps).filter((p) => !spokenFor(analysis, target, customOps, {req, name: to}).has(p.display))
+				// Rows this bullet is free to take over: the ones its previous
+				// reading named, less the ones anything else reads — and less
+				// the ones its *new* reading still needs, which is how a check
+				// that records a field from one path while testing another
+				// keeps both rows when only one of them moves.
+				const busy = spokenFor(analysis, target, customOps, {req, name: to})
+				const keeps = new Set(readsOf(analysis, req, now[to]!, customOps).map((p) => p.display))
+				offer = readsOf(analysis, req, was[from]!, customOps).filter((p) => !busy.has(p.display) && !keeps.has(p.display))
 				try {
 					// The author's quantifier and their spelling of the property
 					// only survive an edit that leaves the operator alone; past
@@ -278,34 +290,43 @@ export function applyRequirements(
 					refusals.push(`${req}.${name}: cannot find where it was written`)
 					continue
 				}
-				edits.push({start: lineStart(markdown, spot.start), end: swallow(markdown, spot.end), text: ''})
+				edits.push(cut(markdown, spot.start, spot.end))
 				changes.push(`removed ${req}.${name}, and its description`)
 				touched.push(name)
 			}
 
+			const LEAD = {applies_to: 'In scope:', checks: 'Must hold:'} as const
+			const leadOf = (f: 'applies_to' | 'checks'): Anchor | undefined =>
+				analysis.anchors.find((a) => a.kind === 'directive' && a.requirement === req && a.name === `${f}:lead`)
+
+			// Emptied, and its lead-in goes with it: an "In scope:" standing over
+			// nothing is not just untidy, it runs into the sentence below it and
+			// stops being read as a lead-in at all.
+			if (!Object.keys(now).length && Object.keys(was).length) {
+				const orphan = leadOf(field)
+				if (orphan) {
+					edits.push(cut(markdown, orphan.start, orphan.end))
+					changes.push(`removed ${req}'s "${LEAD[field]}", which now heads nothing`)
+				}
+			}
+
 			if (!fresh.length) continue
 
-			// Where a new bullet goes: after the last item still standing, so an
-			// insertion can never land inside a deletion. If none is left, in
-			// front of the list, and the deletions take the rest away.
 			const list = anchor('list', req, field)
-			if (!list) {
-				for (const name of fresh) refusals.push(`${req}.${name}: there is no ${field === 'checks' ? '"Must hold:"' : '"In scope:"'} list to add it to`)
-				continue
-			}
-			const standing = analysis.anchors.filter((a) => a.kind === kind && a.requirement === req && a.name && !gone.includes(a.name))
+			const lead = leadOf(field)
+			// Where a new bullet goes: after the last item still standing, so an
+			// insertion can never land inside a deletion.
+			const standing = list ? analysis.anchors.filter((a) => a.kind === kind && a.requirement === req && a.name && !gone.includes(a.name)) : []
 			const tail = standing[standing.length - 1]
-			const gap = markdown.slice(list.start, list.end).includes('\n\n') ? '\n\n' : '\n'
+			const gap = list && markdown.slice(list.start, list.end).includes('\n\n') ? '\n\n' : '\n'
 
-			// One edit for all of them, so they land in the order they were
-			// written rather than the order the splice happens to reach them.
 			const bullets: string[] = []
 			for (const name of fresh) {
 				const ctx = ctxFor(req)
 				const undo = mark(req)
 				offer = []
 				try {
-					bullets.push(writeBullet(ctx, name, now[name]!, list.indent ?? ''))
+					bullets.push(writeBullet(ctx, name, now[name]!, list?.indent ?? ''))
 					changes.push(`added ${req}.${name}`)
 					touched.push(name)
 				} catch (e) {
@@ -313,10 +334,25 @@ export function applyRequirements(
 					refusals.push(`${req}.${name}: ${(e as Error).message}`)
 				}
 			}
-			if (bullets.length) {
-				const at = tail ? tail.end : list.start
-				const text = bullets.join(gap)
-				edits.push({start: at, end: at, text: tail ? gap + text : text + gap})
+			if (!bullets.length) continue
+			const text = bullets.join(gap)
+
+			// A list to join, a lead-in whose list has gone, or neither — in
+			// which case both are written, and a scope filter goes in front of
+			// "Must hold:", where the reader expects it.
+			if (tail) edits.push({start: tail.end, end: tail.end, text: gap + text})
+			else if (list) edits.push({start: list.start, end: list.start, text: text + gap})
+			else if (lead) edits.push({start: lead.end, end: lead.end, text: `\n\n${text}`})
+			else {
+				const ahead = field === 'applies_to' ? (leadOf('checks') ?? anchor('list', req, 'checks')) : undefined
+				const region = anchor('requirement', req, req)
+				if (ahead) edits.push({start: lineStart(markdown, ahead.start), end: lineStart(markdown, ahead.start), text: `${LEAD[field]}\n\n${text}\n\n`})
+				else if (region) edits.push({start: region.end, end: region.end, text: `\n\n${LEAD[field]}\n\n${text}`})
+				else {
+					for (const name of fresh) refusals.push(`${req}.${name}: cannot find where to write it`)
+					continue
+				}
+				changes.push(`opened ${req}'s "${LEAD[field]}" list`)
 			}
 		}
 	}
@@ -396,7 +432,7 @@ function directive(
 		return
 	}
 	if (spot && prose === null) {
-		edits.push({start: lineStart(markdown, spot.start), end: swallow(markdown, spot.end), text: ''})
+		edits.push(cut(markdown, spot.start, spot.end))
 		changes.push(`removed ${req}'s \`${field}\` sentence`)
 		return
 	}
@@ -430,8 +466,7 @@ function requireProse(req: Req): string | null {
 
 /** A requirement the document does not have yet. Its heading text is the
  *  author's to write; the name stands in until they do. */
-function addRequirement(markdown: string, analysis: Analysis, name: string, req: Req, customOps: CustomOpRegistry): Edit {
-	const ctx = contextFor(analysis.context, name, customOps)
+function addRequirement(markdown: string, analysis: Analysis, name: string, req: Req, ctx: RenderCtx): Edit {
 	const parts: string[] = [`## ${name.replace(/_/g, ' ')} \`${name}\``]
 	if (analysis.subjects.length > 1 && req['subject_type']) parts.push(`For each **${String(req['subject_type'])}**.`)
 	const min = minSubjectsProse(req)
@@ -455,15 +490,21 @@ function addRequirement(markdown: string, analysis: Analysis, name: string, req:
 
 const lineStart = (s: string, at: number): number => s.lastIndexOf('\n', at - 1) + 1
 
-/** Take the blank line after a deleted block with it, so removing a bullet
- *  does not leave a hole in the list. */
-function swallow(s: string, end: number): number {
-	let i = end
-	for (;;) {
-		const m = /^[ \t]*\n/.exec(s.slice(i))
-		if (!m) return i
-		i += m[0].length
-	}
+/**
+ * The span to remove for a block, blank lines included.
+ *
+ * One of the two blank lines around it goes too, or the document grows a hole
+ * where the block was — and it has to be the one *before*, so that whatever
+ * follows keeps the blank line that separates it. Taking the one after instead
+ * closes the list onto the paragraph below, and that paragraph is then read as
+ * the last bullet's description: prose silently becoming policy.
+ */
+function cut(s: string, start: number, end: number): Edit {
+	let from = lineStart(s, start)
+	const nl = s.indexOf('\n', end)
+	const before = /\n[ \t]*\n$/.exec(s.slice(0, from))
+	if (before) from -= before[0].length - 1
+	return {start: from, end: nl < 0 ? s.length : nl + 1, text: ''}
 }
 
 function splice(s: string, edits: Edit[]): string {

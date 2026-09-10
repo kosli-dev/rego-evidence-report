@@ -289,6 +289,14 @@ export function analyze(markdown: string, opts: {customOps?: CustomOpRegistry} =
 
 	nodes.forEach((node, i) => {
 		if (node.type !== 'list' || owner[i] || claimed.has(i)) return
+		// A list of bare patterns that reached this far is a constant's list
+		// that lost its sentence — something was written between them. Say that,
+		// rather than reporting each pattern as a rule with no rule in it.
+		if (isPatternList(node)) {
+			err(lineOf(node), 'a list of patterns has to come straight after the sentence that names the constant, with nothing between them')
+			claimed.add(i)
+			return
+		}
 		if (!(node.children ?? []).some(isNamedBullet)) return
 		for (const item of node.children ?? []) {
 			const parsed = readRule(item)

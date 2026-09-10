@@ -62,16 +62,25 @@ export interface ApplyResult {
  * An incomplete writer then shows up as a refusal, never as mangled prose.
  */
 export function applyYaml(markdown: string, yamlText: string): ApplyResult {
+	const stop = (error: string): ApplyResult => ({markdown, changes: [], refusals: [], touched: [], drift: [], ok: false, error})
+
 	let target: Record<string, unknown>
 	try {
 		const doc = fromYaml(yamlText) as {requirements?: Record<string, unknown>} | null
-		target = (doc?.requirements ?? {}) as Record<string, unknown>
+		// A missing key is not an empty policy. Read as one it would delete
+		// every requirement in the document, which is never what a half-typed
+		// or half-deleted pane means.
+		if (!doc || typeof doc !== 'object' || !('requirements' in doc)) return stop('no `requirements:` here — nothing to apply')
+		target = (doc.requirements ?? {}) as Record<string, unknown>
 		if (typeof target !== 'object' || Array.isArray(target)) throw new Error('`requirements` must be a mapping')
 	} catch (e) {
-		return {markdown, changes: [], refusals: [], touched: [], drift: [], ok: false, error: (e as Error).message}
+		return stop((e as Error).message)
 	}
 
 	const before = analyze(markdown, {customOps: registry()})
+	// Patching a document that does not compile would diff against a policy the
+	// Markdown never meant, and write the difference into it.
+	if (!before.ok) return stop('fix the Markdown first — a document that does not compile has nothing to diff against')
 	const patched = applyRequirements(markdown, before, target, registry())
 	const after = analyze(patched.markdown, {customOps: registry()})
 	const drift = differences(after.requirements, target)
