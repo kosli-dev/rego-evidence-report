@@ -18,44 +18,120 @@ What that buys is the one thing the parity harness structurally cannot do. The
 harness feeds 23 synthetic inputs to the port and to a **vendored copy** of
 `four-eyes.rego`; it cannot see that copy drifting from what is deployed, and at
 the last refresh (2026-09-07) it had drifted in five verdict-changing ways, of
-which the harness caught **one**. Real trails, continuously, at no risk, close
-that. They also supply the two shapes nobody has ever observed: a pull request
-with **two distinct authors**, and a **root-commit trail**.
+which the harness caught **one**. Real trails close that — and, as V0 below
+works out, they can be replayed retrospectively rather than waited for. They also
+supply the two shapes nobody has ever observed: a pull request with **two
+distinct authors**, and a **root-commit trail**.
 
-## Three increments. Stop the mob after V1
+## Four increments. V0 is the whole of Monday
 
-| | what | needs | risk |
+| | what | needs | feedback arrives |
 | --- | --- | --- | --- |
-| **V1** | verdict parity on real trails | a bundle file + one extra workflow step | one added step, `--no-assert`, nothing gated |
-| **V2** | the report out through `violations` | V1 + an evidence-mode branch in the policy (**not written yet**) + a custom attestation type | a second full evaluation per run; a deliberate forced denial on a field with a published contract |
+| **V0** | **retrospective replay** — run the port locally over trails the incumbent has already judged | a read API token + a bundle | **same morning**, over hundreds of trails |
+| **V1** | shadow step in the workflow | V0 + one extra CI step | next release, 10–14 days out, one release's commits |
+| **V2** | the report out through `violations` | V1 + an evidence-mode branch (**not written yet**) + a custom attestation type | — |
 | **V3** | Excel exporter over the report | V2 + schema-driven exporter (unstarted) | — |
 
-V1 is the whole value of the morning. V2 is worth **scaffolding** on the day
-(decide the attestation name, agree who can create the type) and building after.
+**V0 was added after a conversation on 2026-09-11 and it reorders everything.**
+In-CI shadow mode couples every answer to the release cadence: one run every
+10–14 days, covering only the commits in that release. Replay is not coupled to
+anything. Trails persist in Kosli, so the port can be run *now* against the exact
+trails the incumbent already evaluated in recent runs — as many as we like, as
+often as we like, with no workflow change, no CI permissions, and no waiting.
 
-## V1, two routes. Do the offline one first
+V1's only remaining unique value is proving it runs inside their CI. That is
+worth having, and it is not worth blocking on.
 
-**Route A — offline, over a document the workflow already captures.** Control
-43's own README says its input document is produced with `kosli evaluate trails
-… --show-input`. So a real document may already exist, or costs one CI run to
-produce. Then:
+## V0 — replay, which is where Monday goes
+
+Everything below runs on **2.13.1**, which is what is installed. No CLI upgrade,
+no `--params`, no `kosli evaluate input`.
+
+**1. Enumerate the trails the incumbent has judged.**
 
 ```sh
-opa eval -d bundle.rego -i input.json --format=pretty 'data.policy.allow'
-python3 fieldkit/kit.py run examples/control_43.rego input.json \
-    --ops examples/control_43_ops.rego     # one row per (commit, check), with cause
+kosli list trails --flow <flow> --page-limit 100 --output json --org <org> \
+  | jq -r '.[].name' > trails.txt          # trail.name is the commit sha
 ```
 
-No API call, no pipeline change, no CI permissions. **Every real-data question
-except "does it run in their CI" is answerable this way**, and it is where the
-two-author PR and root-commit shapes get read. Start here; it can be done before
-touching a workflow file.
+`--page` walks back through history, so the corpus is as deep as patience allows.
 
-`kosli evaluate input` is the CLI-native version of the same thing (INTEGRATION.md
-infers it is present on that image, which is ≥ 2.18.0). It is **not** in 2.13.1,
-so it has never been run here — see task 5.
+**2. Run the port over them.**
 
-**Route B — a second step in the workflow.** The existing evaluation step is:
+```sh
+kosli evaluate trails $(cat trails.txt) \
+  --attestations "<pr-attestation-name>,initial-commit-by-verified-committer" \
+  --flow <flow> --policy evidence-bundle.rego --output json --show-input \
+  > port.json
+```
+
+`--show-input` folds the input document into the same response, so one call
+returns both the verdict and what was judged. **Capture it.** Re-running the
+policy over saved documents costs zero API calls, which is what makes iterating
+on a check cheap:
+
+```sh
+jq '.input' port.json > input.json
+opa eval -d evidence-bundle.rego -i input.json 'data.policy.allow'
+```
+
+**3. Get the incumbent's verdict for the same trails — two ways, use both.**
+
+The workflow already re-attests the whole `{allow, violations}` result as a
+generic user-data attestation, so **the historical verdict is stored in Kosli**,
+not only in CI logs:
+
+```sh
+kosli get attestation <result-attestation-name> --flow <flow> --trail <sha> --output json
+```
+
+And the vendored copy runs locally over the same captured document:
+
+```sh
+opa eval --ignore '*.json' -d src/library.rego -d examples -i input.json \
+  'data.four_eyes_vendored.allow'
+```
+
+**That gives a three-way comparison, and the third leg is the point:**
+
+| | |
+| --- | --- |
+| **A** | the stored verdict — what the incumbent said at release time |
+| **B** | the vendored `four-eyes.rego`, run now over the trail as it is now |
+| **C** | the port, run now over the same document |
+
+**B vs C** is the policy difference — the thing we actually want to measure.
+**A vs B** isolates everything that is *not* policy difference: the trail having
+changed since, or the deployed policy having moved. Without A, a B-vs-C
+divergence is ambiguous and someone will spend an hour on it.
+
+**The caveat that makes A necessary.** `kosli evaluate trails` fetches the trail
+as it is **now**, not as it was when the gate ran. A trail that has since gained
+a second `pull_request` attestation — reachable whenever `KOSLI_ATTESTATION_NAME`
+changes — is defect 3's exact shape: the incumbent crashes with
+`eval_conflict_error` and the port denies. That would look like a policy
+divergence and is not one.
+
+**4. Go looking for the two shapes nobody has observed.** This is the part
+in-CI shadow mode could never do well, because it only ever sees one release.
+With a few hundred captured documents it is a search, not a hope:
+
+```sh
+# a pull request with two or more distinct commit authors
+jq '[.. | objects | select(has("commits")) |
+     [.commits[].author_username] | unique | length] | max' input.json
+
+# a root-commit trail carrying the substitute
+grep -l 'custom:initial-commit-by-verified-committer' *.json
+```
+
+The per-author rule has only ever met synthetic input, and the substitute's type
+string is settled from source and never witnessed on the wire. Either one turning
+up in the corpus closes a line in INTEGRATION.md's status list.
+
+## V1 — the shadow step, once V0 is boring
+
+The existing evaluation step is:
 
 ```sh
 kosli evaluate trails <SHAS…> \
@@ -65,8 +141,8 @@ kosli evaluate trails <SHAS…> \
 # verdict read with: jq -r '.allow'
 ```
 
-The shadow step is that command with `--policy bundle.rego`, its `.allow`
-compared and logged, never gating:
+The shadow step is that command with `--policy evidence-bundle.rego`, its
+`.allow` compared and logged, never gating:
 
 ```sh
 kosli evaluate trails <SHAS…> \
@@ -78,9 +154,9 @@ test "$(jq -r '.allow' shadow.json)" = "$(jq -r '.allow' incumbent.json)" \
   || echo "::warning::shadow verdict differs on $SHAS"
 ```
 
-`--no-assert` is exit-code hygiene only: stdout carries the full JSON either
-way, because the printer runs before the deny error. Keep the `|| true`
-regardless — a shadow step must not be able to fail the job.
+`--no-assert` is exit-code hygiene only: stdout carries the full JSON either way,
+because the printer runs before the deny error. Keep the `|| true` regardless —
+a shadow step must not be able to fail the job.
 
 ## The constraints this design is pinned by
 
@@ -189,12 +265,16 @@ part of the demo the room reacted to, and the answer is a build step we own.
 
 ### Before Monday — needs someone else, so ask today
 
-1. **Which repo, flow and branch does the mob use?** Needs to be a pipeline that
-   actually produces trails with PR attestations, and a flow we may attest to.
-2. **Get one real `--show-input` document.** This unblocks route A entirely and
-   is the single highest-value item on this list. If it has to leave the machine
-   it was captured on, redact it first: `python3 fieldkit/sanitize.py real.json >
-   safe.json`, then check `--audit`.
+1. **A read-scoped API token, plus the org and flow name.** This is now the
+   single blocking item: V0 is nothing but `kosli list trails` and
+   `kosli evaluate trails` against a real flow, and neither runs without it.
+   Read access is enough — nothing in V0 writes. It replaces the old "hand us a
+   captured `--show-input` document" ask, because with a token we capture as many
+   as we want ourselves.
+2. **The name of the attestation holding the incumbent's result.** The workflow
+   re-attests the whole `{allow, violations}` as generic user data; that stored
+   verdict is leg **A** of the three-way comparison, and without it a divergence
+   cannot be attributed. One name, from the workflow YAML.
 3. ~~**The `four-eyes.rego` ref.**~~ **Closed 2026-09-11: we are in sync.** The
    2026-09-07 capture is md5 `6daf6919ede1925a1509d3ebe143fa54` / sha256
    `51d131921a6971dc…`, matching the hash in
@@ -205,18 +285,19 @@ part of the demo the room reacted to, and the answer is a build step we own.
    refresh, not for Monday.
 4. **Who can run `kosli create attestation-type`** in that org? V2 only, but the
    answer takes days and the ask takes a minute.
-5. **What `kosli version` does the CI image run?** INTEGRATION.md *infers* ≥ 2.18.0
-   from `--no-assert` being present. `--params` and `kosli evaluate input` are
-   inferred from that, and both are load-bearing for V2. One `kosli version` line
-   in a workflow run settles it. (Locally we are on **2.13.1**, which has
-   neither; stable is 2.39.2.)
+5. **What `kosli version` does the CI image run?** Not needed for V0 — the
+   installed 2.13.1 does everything replay requires. It matters from V1 on:
+   INTEGRATION.md *infers* ≥ 2.18.0 from `--no-assert` being present, and
+   `--params` is inferred from that and is load-bearing for V2. One
+   `kosli version` line in a workflow run settles it.
 
 ### Before Monday — ours
 
-6. **Upgrade the local CLI** (`brew upgrade kosli-cli`, 2.13.1 → 2.39.2) and
-   rehearse `--params` and `kosli evaluate input` against the stub API, so
-   neither is first met in the mob. Note that several documented claims were
-   measured on 2.13.1; re-check rather than assume on the new one.
+6. **Optional: upgrade the local CLI** (`brew upgrade kosli-cli`, 2.13.1 →
+   2.39.2). Not needed for V0, and there is an argument for *not* doing it before
+   Monday: several documented claims were measured on 2.13.1, and replay is the
+   first thing that will be run against real data. Upgrade after, then re-check
+   rather than assume.
 
    For the record, on 2.13.1 `kosli evaluate trails` has exactly six flags —
    `--attestations`, `--flow`, `--help`, `--output`, `--policy`, `--show-input`.
@@ -276,42 +357,55 @@ policy — the library has no dependencies.
 
 Budget assumes a half day.
 
-1. **(20 min) Orient.** [START_HERE.md](START_HERE.md), then one report on
+1. **(15 min) Orient.** [START_HERE.md](START_HERE.md), then one report on
    `demo/trail_self_approved.json`. Everyone runs it themselves.
-2. **(30 min) Route A on real data.** `kit.py shape` on the real document first —
-   it prints paths, types, and how many siblings carry each field, and **never a
-   value** — then `kit.py run`. Read `cause` before reading `passed`.
-3. **(20 min) Bundle it.** `python3 fieldkit/bundle.py --policy
+2. **(15 min) Bundle it.** `python3 fieldkit/bundle.py --policy
    examples/control_43.rego --ops examples/control_43_ops.rego --package
-   control43 --verify-with <real>.json -o evidence-bundle.rego`. It prints
-   *report identical before and after the merge*; that line is the deliverable.
-4. **(45 min) Route B.** Add the shadow step to the workflow, `--no-assert`,
-   `|| true`, verdict compared and logged. Run the pipeline once.
-5. **(30 min) Read the first divergence.** There will be one. Triage it with the
-   table below before anyone changes a policy.
-6. **(20 min) Decide V2.** Attestation name (**must not** be where
+   control43 -o evidence-bundle.rego`, adding `--verify-with` once there is a
+   real document. It prints *report identical before and after the merge*; that
+   line is the deliverable.
+3. **(20 min) Pull a corpus.** `kosli list trails`, then `kosli evaluate trails
+   … --show-input` over a first batch of ten. Save every document. Look at one
+   with `kit.py shape` before looking at any verdict — it prints paths, types
+   and how many siblings carry each field, and never a value.
+4. **(45 min) Replay, three ways.** A, B and C over the first batch. Expect the
+   first hour's divergences to be setup, not policy: a wrong attestation name, a
+   selector matching nothing, `--attestations` filtering something out.
+5. **(45 min) Widen.** Hundreds of trails, then triage what is left with the
+   table below. Nobody changes a policy before a divergence is attributed.
+6. **(20 min) Search the corpus** for a two-author pull request and a
+   root-commit trail. Both are "never observed" lines in INTEGRATION.md's status
+   list, and this is the first time either has been searchable.
+7. **(20 min) Decide V1 and V2.** Whether the shadow step is worth adding now
+   that replay exists; the attestation name for the report (**must not** be where
    `four-eyes-result` lands — that schema expects one human string per failing
-   commit), who creates the type, whether the evidence-mode branch is ours.
-7. **(15 min) Write down what to carry back.**
+   commit); who creates the type; whether the evidence-mode branch is ours.
+8. **(15 min) Write down what was learnt.**
 
 ### Triaging a divergence
 
-Four causes, in the order to rule them out:
+Five causes, in the order to rule them out:
 
-1. **Our vendored copy is stale** — task 3 above. Check first; it was the answer
-   last time.
-2. **The port is right and the incumbent is wrong.** Four defects are reproduced
+1. **The input moved, not the policy.** Replay fetches the trail as it is now,
+   so a trail that gained or lost an attestation since the gate ran will diverge
+   for reasons that have nothing to do with either policy. **A vs B** is the test:
+   if the stored verdict disagrees with the vendored copy run today, the input
+   drifted and C is not implicated. Check this first — it is the cause replay
+   introduces and in-CI shadow mode does not have.
+2. **Our vendored copy is stale** — retired for Monday, see task 3, but it was
+   the answer last time and will be again after the next upstream change.
+3. **The port is right and the incumbent is wrong.** Four defects are reproduced
    and documented (INTEGRATION.md → *Four defects in the current policy*):
    a string approval timestamp always counting as after the cutoff, a commit with
    no timestamp not raising the cutoff, two `pull_request` attestations crashing
    evaluation outright, and one commit already producing two violation strings.
    Any of these appearing on real data is a **finding worth the whole exercise**,
    and belongs to the control's owners either way.
-3. **A selector matches nothing.** The failure mode to fear, because it denies —
+4. **A selector matches nothing.** The failure mode to fear, because it denies —
    the safe direction — and so hides itself. The tell: a `cause` of `unmatched`
    or `absent` on a check whose evidence you know exists, or a substitute that
    never once reports `substituted` across a whole report.
-4. **A real breach.** `cause: value`.
+5. **A real breach.** `cause: value`.
 
 ### What to write down
 
