@@ -63,7 +63,7 @@ library is text and travels anywhere, but the evaluator does not.
 Confirm the toolchain before trusting any result:
 
 ```sh
-opa test src examples --ignore '*.json'   # expect PASS: 396/396
+opa test src examples --ignore '*.json'   # expect PASS: 428/428
 ```
 
 ## Bundling for `kosli evaluate`

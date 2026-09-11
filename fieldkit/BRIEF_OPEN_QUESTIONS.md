@@ -9,7 +9,7 @@ do not synthesise around it.
 
 ```sh
 git fetch --depth 1 origin integration && git reset --hard FETCH_HEAD
-opa test src examples --ignore '*.json'   # expect PASS: 396/396
+opa test src examples --ignore '*.json'   # expect PASS: 428/428
 ```
 
 If the round-5 clone is gone:
